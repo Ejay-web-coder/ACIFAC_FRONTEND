@@ -103,7 +103,7 @@ export function fetchAnalytics(from: string, to: string) {
 }
 
 export async function forgotPasswordRequest(payload: { usernameOrEmail: string }) {
-  return apiFetch<{ message: string; resetToken?: string }>('/api/auth/forgot-password', {
+  return apiFetch<{ message: string }>('/api/auth/forgot-password', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -283,7 +283,7 @@ export async function updateAccountStatusRequest(id: number, status: Account['ac
 }
 
 export async function resetMemberPasswordRequest(id: number) {
-  return apiFetch<{ message: string; temporaryPassword: string }>(`/api/admin/accounts/${id}/reset-password`, {
+  return apiFetch<{ message: string }>(`/api/admin/accounts/${id}/reset-password`, {
     method: 'POST',
   });
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Search, Plus, Edit, Archive, RotateCcw, Eye, Filter, X } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
+import { AddMemberModal, type MemberDraftData } from '../components/AddMemberModal';
 import { addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
@@ -273,6 +274,63 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       yearlyIncome: ''
     });
     toast.success('Member added successfully.');
+  };
+
+  const buildDraftPayload = (draft: MemberDraftData) => {
+    const cleanedFullName = draft.fullName.trim();
+    const nameParts = cleanedFullName ? cleanedFullName.split(/\s+/) : [];
+    const firstName = draft.firstName || nameParts[0] || '';
+    const middleName = draft.middleName || '';
+    const lastName = draft.lastName || nameParts.slice(1).join(' ') || '';
+    const effectiveIdType = draft.idType === 'Other' ? (draft.idTypeOther || 'Other') : draft.idType;
+    const childrenText = draft.children.filter((child) => child.name.trim()).map((child) => `${child.name.trim()} (${child.age || 'Age not provided'})`).join('; ');
+    const incomeText = draft.incomeSources.filter((source) => source.source.trim() || source.amount.trim()).map((source) => `${source.source || 'Income'}: ${source.amount || '0'}`).join('; ');
+    return {
+      member_number: draft.memberNumber || null,
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      email: draft.email.trim(),
+      phone: draft.phone.trim() || draft.cpNo.trim(),
+      address: draft.address.trim() || draft.permanentAddress.trim(),
+      barangay: draft.barangay.trim(),
+      municipality: draft.municipality.trim(),
+      province: draft.province.trim(),
+      date_of_birth: draft.birthday || null,
+      gender: draft.gender || null,
+      civil_status: draft.civilStatus || null,
+      education: draft.highestEducation || null,
+      id_type: effectiveIdType || null,
+      id_number: draft.idNumber.trim() || null,
+      rsbsa_no: draft.rsbsaNumber.trim() || null,
+      livelihood: draft.livelihood.trim() || null,
+      farm_area_ha: draft.farmArea ? Number(draft.farmArea) : null,
+      yearly_income: draft.annualIncome ? Number(draft.annualIncome) : null,
+      spouse_name: draft.spouseName.trim() || null,
+      spouse_age: draft.spouseAge ? Number(draft.spouseAge) : null,
+      spouse_contact: draft.spouseContact.trim() || null,
+      children: childrenText || null,
+      emergency_contact: null,
+      membership_date: draft.membershipAcceptanceDate || dateOnlyToday(),
+      share_capital: draft.shareCapital ? Number(draft.shareCapital) : 0,
+      status: 'active',
+      profile_photo: null,
+      notes: incomeText || null,
+      id_document_name: null,
+    };
+  };
+
+  const handleDraftSubmit = async (draft: MemberDraftData, photoFile: File | null, idDocumentFile: File | null) => {
+    const payload = buildDraftPayload(draft);
+    try {
+      const { data: newMember } = await createMemberRequest(payload, idDocumentFile, photoFile);
+      setMembers((current) => [newMember, ...current]);
+      await loadMembers();
+      setShowAddModal(false);
+      toast.success('Member added successfully.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to add member.');
+    }
   };
 
   const handleEditMember = (member: Member) => {
@@ -837,427 +895,13 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         </div>
       )}
 
-      {/* Add Member Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 text-white p-6 border-b border-green-800">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold">Add New Member</h2>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="p-2 hover:bg-green-500 rounded-lg transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            <form id="addMemberForm" onSubmit={handleAddMember}>
-              <div className="p-6 space-y-6">
-                  {/* Account Information Card */}
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-blue-900 mb-4 pb-3 border-b-2 border-blue-300">Account Information</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-3">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Full Name *</label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
-                          placeholder="Full name"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Email *</label>
-                        <input
-                          type="email"
-                          required
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
-                          placeholder="email@example.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone *</label>
-                        <input
-                          type="tel"
-                          required
-                          value={formData.phone}
-                          onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setFillout({ ...fillout, cpNo: e.target.value }); }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
-                          placeholder="+63 XXX XXX XXXX"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Share Capital *</label>
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="100"
-                          value={formData.shareCapital}
-                          onChange={(e) => setFormData({ ...formData, shareCapital: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div className="md:col-span-3">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Address *</label>
-                        <textarea
-                          required
-                          value={formData.address}
-                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
-                          rows={2}
-                          placeholder="Complete address"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Personal Information Card */}
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-50 border border-purple-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-purple-900 mb-4 pb-3 border-b-2 border-purple-300">Personal Information</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">First Name</label>
-                        <input
-                          type="text"
-                          value={fillout.firstName}
-                          onChange={(e) => setFillout({ ...fillout, firstName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="First name"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Middle Name</label>
-                        <input
-                          type="text"
-                          value={fillout.middleName}
-                          onChange={(e) => setFillout({ ...fillout, middleName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Middle name"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Last Name</label>
-                        <input
-                          type="text"
-                          value={fillout.lastName}
-                          onChange={(e) => setFillout({ ...fillout, lastName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Last name"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Birthday</label>
-                        <input
-                          type="date"
-                          value={fillout.birthday}
-                          onChange={(e) => setFillout({ ...fillout, birthday: e.target.value, age: calculateAge(e.target.value) })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Age</label>
-                        <input
-                          type="number"
-                          readOnly
-                          value={fillout.age}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Age"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Gender</label>
-                        <select
-                          value={fillout.gender}
-                          onChange={(e) => setFillout({ ...fillout, gender: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                        >
-                          <option value="">Select</option>
-                          <option value="male">Male</option>
-                          <option value="female">Female</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Civil Status</label>
-                        <select
-                          value={fillout.civilStatus}
-                          onChange={(e) => setFillout({ ...fillout, civilStatus: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                        >
-                          <option value="">Select</option>
-                          <option value="single">Single</option>
-                          <option value="married">Married</option>
-                          <option value="divorced">Divorced</option>
-                          <option value="widowed">Widowed</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Education</label>
-                        <select
-                          value={fillout.highestEducation}
-                          onChange={(e) => setFillout({ ...fillout, highestEducation: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                        >
-                          <option value="">Select</option>
-                          <option value="elementary">Elementary</option>
-                          <option value="highschool">High School</option>
-                          <option value="vocational">Vocational</option>
-                          <option value="college">College</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Contact & ID Card */}
-                  <div className="bg-gradient-to-br from-orange-50 to-orange-50 border border-orange-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-orange-900 mb-4 pb-3 border-b-2 border-orange-300">Contact & Identification</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">CP No.</label>
-                        <input
-                          type="text"
-                          value={fillout.cpNo}
-                          onChange={(e) => { setFillout({ ...fillout, cpNo: e.target.value }); setFormData({ ...formData, phone: e.target.value }); }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Contact number"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">ID Type</label>
-                        <input
-                          type="text"
-                          value={fillout.idType}
-                          onChange={(e) => setFillout({ ...fillout, idType: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="e.g., Driver's License"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">ID Number</label>
-                        <input
-                          type="text"
-                          value={fillout.idNo}
-                          onChange={(e) => setFillout({ ...fillout, idNo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="ID number"
-                        />
-                      </div>
-                      <div className="md:col-span-4">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Permanent Address</label>
-                        <textarea
-                          value={fillout.permanentAddress}
-                          onChange={(e) => setFillout({ ...fillout, permanentAddress: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          rows={2}
-                          placeholder="Sito/Street, Barangay, Municipality, Province"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Location & Farm Card */}
-                  <div className="bg-gradient-to-br from-green-50 to-green-50 border border-green-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-green-900 mb-4 pb-3 border-b-2 border-green-300">Location & Farm Details</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Barangay</label>
-                        <input
-                          type="text"
-                          value={fillout.barangay}
-                          onChange={(e) => setFillout({ ...fillout, barangay: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Barangay"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Municipality</label>
-                        <input
-                          type="text"
-                          value={fillout.municipality}
-                          onChange={(e) => setFillout({ ...fillout, municipality: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Municipality"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Province</label>
-                        <input
-                          type="text"
-                          value={fillout.province}
-                          onChange={(e) => setFillout({ ...fillout, province: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Province"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">RSBSA No.</label>
-                        <input
-                          type="text"
-                          value={fillout.rsbsaNo}
-                          onChange={(e) => setFillout({ ...fillout, rsbsaNo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="RSBSA number"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Livelihood</label>
-                        <input
-                          type="text"
-                          value={fillout.livelihood}
-                          onChange={(e) => setFillout({ ...fillout, livelihood: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="e.g., Farmer"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Farm Area (ha)</label>
-                        <input
-                          type="text"
-                          value={fillout.farmArea}
-                          onChange={(e) => setFillout({ ...fillout, farmArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="in hectares"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Corn Area (ha)</label>
-                        <input
-                          type="text"
-                          value={fillout.cornArea}
-                          onChange={(e) => setFillout({ ...fillout, cornArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="in hectares"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Palay Area (ha)</label>
-                        <input
-                          type="text"
-                          value={fillout.palayArea}
-                          onChange={(e) => setFillout({ ...fillout, palayArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="in hectares"
-                        />
-                      </div>
-                      <div className="md:col-span-5">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Yearly Income</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={fillout.yearlyIncome}
-                          onChange={(e) => setFillout({ ...fillout, yearlyIncome: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="e.g., 100000"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Family Information Card */}
-                  <div className="bg-gradient-to-br from-pink-50 to-pink-50 border border-pink-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-pink-900 mb-4 pb-3 border-b-2 border-pink-300">Family Information</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Spouse Name</label>
-                        <input
-                          type="text"
-                          value={fillout.spouseName}
-                          onChange={(e) => setFillout({ ...fillout, spouseName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Spouse name"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Spouse Age</label>
-                        <input
-                          type="number"
-                          value={fillout.spouseAge}
-                          onChange={(e) => setFillout({ ...fillout, spouseAge: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Age"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Spouse Contact</label>
-                        <input
-                          type="text"
-                          value={fillout.spouseContact}
-                          onChange={(e) => setFillout({ ...fillout, spouseContact: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Contact number"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Children</label>
-                        <input
-                          type="text"
-                          value={fillout.children}
-                          onChange={(e) => setFillout({ ...fillout, children: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="e.g., Ana - 18, Carlos - 15"
-                        />
-                      </div>
-                      <div className="md:col-span-4">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Emergency Contact</label>
-                        <input
-                          type="text"
-                          value={fillout.emergencyContact}
-                          onChange={(e) => setFillout({ ...fillout, emergencyContact: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                          placeholder="Name / contact"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Required Documents Card */}
-                  <div className="bg-gradient-to-br from-red-50 to-red-50 border border-red-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-red-900 mb-4 pb-3 border-b-2 border-red-300">Required Documents</h3>
-                    <div className="grid gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Upload ID Document *</label>
-                        <input
-                          type="file"
-                          required
-                          accept="image/*,.pdf"
-                          onChange={(e) => setUploadFiles({ ...uploadFiles, idDocument: e.target.files?.[0] || null })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
-                        />
-                        {uploadFiles.idDocument && (
-                          <p className="text-xs text-green-600 mt-1">✓ {uploadFiles.idDocument.name}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-              </div>
-            </form>
-            {/* Footer */}
-            <div className="sticky bottom-0 p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="addMemberForm"
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition"
-              >
-                Add Member
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddMemberModal
+          open={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onSubmit={handleDraftSubmit}
+          isSubmitting={false}
+        />
       )}
 
       {/* Edit Member Modal */}

@@ -16,7 +16,7 @@ export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [recoveryIdentifier, setRecoveryIdentifier] = useState('');
-  const [resetToken, setResetToken] = useState('');
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('resetToken') || '');
   const [resetForm, setResetForm] = useState({ newPassword: '', confirmPassword: '' });
   const [adminForm, setAdminForm] = useState({
     username: '',
@@ -74,8 +74,7 @@ export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
     setIsSubmitting(true);
     try {
       const response = await forgotPasswordRequest({ usernameOrEmail: recoveryIdentifier });
-      toast.success(response.message, response.resetToken ? { description: `Development reset token: ${response.resetToken}` } : undefined);
-      if (response.resetToken) setResetToken(response.resetToken);
+      toast.success(response.message);
       setShowForgotPassword(false);
       setRecoveryIdentifier('');
     } catch (error) {

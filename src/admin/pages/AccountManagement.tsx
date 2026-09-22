@@ -81,7 +81,7 @@ export function AccountManagement() {
   const resetPassword = async (account: Account) => {
     try {
       const response = await resetMemberPasswordRequest(account.user_id);
-      toast.success('Temporary password generated. Share it securely.', { description: response.temporaryPassword });
+      toast.success(response.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to reset password.');
     }

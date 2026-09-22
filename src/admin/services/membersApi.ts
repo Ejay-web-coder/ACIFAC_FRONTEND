@@ -120,12 +120,13 @@ export function fetchMemberStatistics() {
   return memberFetch<ApiResponse<MemberStatistics>>('/api/members/statistics');
 }
 
-export function createMemberRequest(payload: Record<string, unknown>, document: File | null) {
+export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, String(value));
   });
   if (document) form.append('idDocument', document);
+  if (profilePhoto) form.append('profilePhoto', profilePhoto);
   return memberFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
