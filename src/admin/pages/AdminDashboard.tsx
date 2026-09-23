@@ -1,10 +1,9 @@
 import { Users, PhilippinePeso, Tractor, Store, TrendingUp, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { fetchMemberStatistics } from '../services/membersApi';
-import { fetchAdminLoans, fetchAdminMachinery, fetchKadiwaData } from '../../app/services/authApi';
-import { fetchMembers } from '../services/membersApi';
-import { addDateOnlyDays, dateOnlySortValue, dateOnlyToday, formatDate, formatDateTime, timestampSortValue } from '../../utils/dateTime';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchAdminDashboard } from '../../app/services/authApi';
+import { formatDateTime } from '../../utils/dateTime';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 
 const stats = [
   {
@@ -37,45 +36,7 @@ const stats = [
 ];
 
 type DashboardAlert = { id: string; message: string; type: 'warning' | 'info' | 'success' };
-type DashboardActivity = { id: string; type: string; action: string; time: string; date: number };
-
-function localDateKey(date = new Date()) {
-  return dateOnlyToday(date);
-}
-
-function buildDashboardAlerts(loans: Awaited<ReturnType<typeof fetchAdminLoans>>['loans'], machinery: Awaited<ReturnType<typeof fetchAdminMachinery>>, kadiwa: Awaited<ReturnType<typeof fetchKadiwaData>>): DashboardAlert[] {
-  const today = localDateKey();
-  const weekEnd = addDateOnlyDays(today, 7);
-  const dueThisWeek = loans.filter((loan) => {
-    const dueDate = loan.dueDate.slice(0, 10);
-    return (loan.status === 'active' || loan.status === 'overdue') && loan.balance > 0 && dueDate >= today && dueDate <= weekEnd;
-  }).length;
-  const scheduledOperations = machinery.operations.filter((operation) => operation.status === 'scheduled').length;
-  const lowStockItems = kadiwa.inventory.filter((item) => item.stock <= item.reorderLevel).length;
-
-  const alerts: Array<DashboardAlert | null> = [
-    dueThisWeek > 0 ? { id: 'loans-due', message: `${dueThisWeek} loan${dueThisWeek === 1 ? '' : 's'} due for payment this week`, type: 'warning' as const } : null,
-    scheduledOperations > 0 ? { id: 'machinery-scheduled', message: `${scheduledOperations} machinery operation${scheduledOperations === 1 ? '' : 's'} scheduled`, type: 'info' as const } : null,
-    lowStockItems > 0 ? { id: 'kadiwa-low-stock', message: `${lowStockItems} Kadiwa item${lowStockItems === 1 ? '' : 's'} at or below reorder level`, type: 'warning' as const } : null,
-  ];
-
-  return alerts.filter((alert): alert is DashboardAlert => alert !== null);
-}
-
-function buildRecentActivities(members: Awaited<ReturnType<typeof fetchMembers>>['data'], loansData: Awaited<ReturnType<typeof fetchAdminLoans>>, machinery: Awaited<ReturnType<typeof fetchAdminMachinery>>, kadiwa: Awaited<ReturnType<typeof fetchKadiwaData>>): DashboardActivity[] {
-  const activities: DashboardActivity[] = [
-    ...members.map((member) => ({ id: `member-${member.id}`, type: 'Member', action: `New member registration: ${member.name}`, time: formatDateTime(member.createdAt), date: timestampSortValue(member.createdAt) })),
-    ...loansData.payments.map((payment) => ({ id: `payment-${payment.id}`, type: 'Loan', action: `Loan payment received from ${payment.memberName}: ₱${payment.amount.toLocaleString()}`, time: formatDate(payment.paymentDate), date: dateOnlySortValue(payment.paymentDate) })),
-    ...loansData.loans.map((loan) => ({ id: `loan-${loan.databaseId}`, type: 'Loan', action: `Loan approved for ${loan.memberName}: ₱${loan.amount.toLocaleString()}`, time: formatDate(loan.dateApproved), date: dateOnlySortValue(loan.dateApproved) })),
-    ...machinery.operations.map((operation) => ({ id: `machinery-${operation.id}`, type: 'Machinery', action: `Machinery rental: ${operation.memberName} - ${operation.machineryName}`, time: formatDate(operation.startDate), date: dateOnlySortValue(operation.startDate) })),
-    ...kadiwa.sales.filter((sale) => sale.status === 'completed').map((sale) => ({ id: `sale-${sale.id}`, type: 'Store', action: `Kadiwa sale recorded by ${sale.encoder}: ₱${sale.netSales.toLocaleString()}`, time: formatDateTime(sale.date), date: timestampSortValue(sale.date) })),
-  ];
-
-  return activities
-    .filter((activity) => !Number.isNaN(activity.date))
-    .sort((first, second) => second.date - first.date)
-    .slice(0, 5);
-}
+type DashboardActivity = { id: string; type: string; action: string; time: string };
 
 export function AdminDashboard() {
   const [totalMembers, setTotalMembers] = useState<number | null>(null);
@@ -84,43 +45,27 @@ export function AdminDashboard() {
   const [kadiwaRevenue, setKadiwaRevenue] = useState<number | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
   const [recentActivities, setRecentActivities] = useState<DashboardActivity[]>([]);
+  const [loadError, setLoadError] = useState('');
 
-  useEffect(() => {
-    fetchMemberStatistics()
-      .then(({ data }) => setTotalMembers(data.totalMembers))
-      .catch(() => setTotalMembers(null));
-
-    fetchAdminLoans()
-      .then((loanData) => {
-        const { loans } = loanData;
-        const balance = loans
-          .filter((loan) => loan.status === 'active' || loan.status === 'overdue')
-          .reduce((total, loan) => total + loan.balance, 0);
-        setTotalLoans(balance);
-        fetchAdminMachinery()
-          .then((machinery) => fetchKadiwaData().then((kadiwa) => setAlerts(buildDashboardAlerts(loans, machinery, kadiwa))))
-          .catch(() => undefined);
-        fetchMembers('', 5)
-          .then((members) => fetchAdminMachinery().then((machinery) => fetchKadiwaData().then((kadiwa) => setRecentActivities(buildRecentActivities(members.data, loanData, machinery, kadiwa)))))
-          .catch(() => undefined);
+  // One request returns every figure on this page (previously 9 requests).
+  const loadDashboard = useCallback(() => {
+    fetchAdminDashboard()
+      .then(({ stats, alerts: serverAlerts, recentActivities: activities }) => {
+        setTotalMembers(stats.totalMembers);
+        setTotalLoans(stats.outstandingLoans);
+        setMachineryOperations(stats.machineryOperations);
+        setKadiwaRevenue(stats.kadiwaRevenue);
+        setAlerts(serverAlerts);
+        setRecentActivities(activities.map((activity) => ({ id: activity.id, type: activity.type, action: activity.action, time: formatDateTime(activity.at) })));
+        setLoadError('');
       })
-      .catch(() => setTotalLoans(null));
-
-    fetchAdminMachinery()
-      .then(({ operations }) => setMachineryOperations(operations.length))
-      .catch(() => setMachineryOperations(null));
-
-    fetchKadiwaData()
-      .then(({ sales }) => {
-        const revenue = sales
-          .filter((sale) => sale.status === 'completed')
-          .reduce((total, sale) => total + sale.netSales, 0);
-        setKadiwaRevenue(revenue);
-      })
-      .catch(() => setKadiwaRevenue(null));
+      .catch((error: Error) => setLoadError(error.message));
   }, []);
 
-  const formatCurrency = (value: number | null) => value === null ? '—' : `₱${value.toLocaleString()}`;
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
+  useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'rental_requests', 'machinery_operations', 'kadiwa_sales', 'kadiwa_inventory'], loadDashboard, 1000);
+
+  const formatCurrency = (value: number | null) => value === null ? '—' : `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const dashboardStats = [
     {
@@ -140,6 +85,7 @@ export function AdminDashboard() {
 
   return (
     <div className="space-y-4 md:space-y-6">
+      {loadError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Unable to load dashboard data: {loadError}</p>}
       {/* Stats Grid - Responsive */}
       <div className="grid w-full grid-cols-1 gap-3 min-w-0 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
         {dashboardStats.map((stat) => {

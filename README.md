@@ -1,45 +1,36 @@
-# React + Vite
+# ACIFAC Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite + TypeScript UI for the ACIFAC Monitoring and Data Management System.
+It talks only to the ACIFAC Express API (never directly to the database); the API uses Supabase
+PostgreSQL.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-
-## ACIFAC Gmail Notifications
-
-Configure these variables in `ACIFAC_BACKEND/.env` using a Gmail App Password, never a normal Gmail password:
-
-```env
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=465
-EMAIL_SECURE=true
-EMAIL_USER=your-gmail@example.com
-EMAIL_APP_PASSWORD=your-16-character-app-password
-EMAIL_FROM=your-gmail@example.com
-FRONTEND_URL=http://localhost:5173
-ACIFAC_TIME_ZONE=Asia/Manila
-```
-
-Run the backend migration from `ACIFAC_BACKEND`:
+## Local development
 
 ```bash
-npm run migrate
+npm install
+npm run dev          # http://localhost:5173, /api is proxied to http://localhost:4000
+npm run typecheck    # TypeScript (strict)
+npm run build
 ```
 
-Restart the backend after changing `.env`:
+## Structure
 
-```bash
-npm run dev
-```
+* `src/lib/api.ts` — the single HTTP client (session cookie + `X-Requested-With` CSRF header).
+* `src/lib/liveUpdates.ts` — `useLiveRefresh(tables, callback)`: re-fetches when the server reports a
+  change (Server-Sent Events from `/api/events`), replacing polling.
+* `src/app/services/authApi.ts`, `src/admin/services/*` — typed API functions.
+* `src/utils/dateTime.ts` — every date is shown in Asia/Manila; date-only values (`YYYY-MM-DD`)
+  are never shifted by time zones.
 
-An authenticated administrator can verify delivery with `POST /api/admin/email-test` and a JSON body such as `{ "recipient": "admin@example.com" }`. Email delivery failures are logged in PostgreSQL and do not roll back successful account, loan, or payment changes.
+## Deployment (Vercel — the `acifac_system` Vercel project)
+
+1. Vercel → project **acifac_system** → Settings → Git: connect this repository
+   (`Ejay-web-coder/ACIFAC_FRONTEND`). It is currently linked to a different starter repository.
+2. Settings → Environment Variables: `VITE_API_URL=https://<your-backend-host>` (no trailing slash).
+3. Deploy. `vercel.json` provides the SPA rewrite (so `/reset-password?token=…` links work) and
+   caching headers.
+4. On the backend set `CORS_ORIGIN` and `FRONTEND_URL` to the Vercel URL (e.g.
+   `https://acifacsystem.vercel.app`) and `COOKIE_SAMESITE=none` when the API is on another site.
+
+`netlify.toml` / `public/_redirects` are kept for a possible Netlify deployment but are not used by
+Vercel.

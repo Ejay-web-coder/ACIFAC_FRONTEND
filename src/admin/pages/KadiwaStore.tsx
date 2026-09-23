@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
-import { Search, Plus, ShoppingCart, Package } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Search, Plus, ShoppingCart, Package, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
-import { createKadiwaInventory, createKadiwaSale, fetchKadiwaData, restockKadiwaInventory } from '../../app/services/authApi';
-import { dateOnlyToday } from '../../utils/dateTime';
+import { createKadiwaInventory, createKadiwaSale, fetchKadiwaData, restockKadiwaInventory, type KadiwaSaleItem, type KadiwaSummary } from '../../app/services/authApi';
+import { useLiveRefresh } from '../../lib/liveUpdates';
+import { formatDateTime } from '../../utils/dateTime';
 
 interface Sale {
   id: string;
@@ -15,6 +17,7 @@ interface Sale {
   netSales: number;
   paymentMethod: 'cash';
   status: 'completed' | 'pending';
+  items: KadiwaSaleItem[];
 }
 
 interface InventoryItem {
@@ -40,7 +43,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
     groceriesPrice: 0,
     vegetablesPrice: 0,
     meatPrice: 0,
-    totalExpenses: 0
+    totalExpenses: 0,
+    items: [] as Array<{ inventoryId: string; quantity: string }>
   });
   const [stockFormData, setStockFormData] = useState({
     name: '',
@@ -54,30 +58,39 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState<'inventory' | 'sales'>('inventory');
+  const [summary, setSummary] = useState<KadiwaSummary | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    fetchKadiwaData()
+  const loadData = useCallback(() => {
+    fetchKadiwaData({ limit: 100 })
       .then((data) => {
         setSales(data.sales);
         setInventory(data.inventory);
+        setSummary(data.summary);
+        setError('');
       })
       .catch((loadError: Error) => setError(loadError.message));
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+  useLiveRefresh(['kadiwa_inventory', 'kadiwa_sales'], loadData);
 
   const filteredSales = sales.filter(sale =>
     sale.encoder.toLowerCase().includes(searchTerm.toLowerCase()) ||
     sale.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const today = dateOnlyToday();
-  const todaySales = sales.filter(s => s.date.slice(0, 10) === today).length;
-  const todayRevenue = sales
-    .filter(s => s.date.slice(0, 10) === today)
-    .reduce((sum, s) => sum + s.netSales, 0);
-
-  const totalInventoryUnits = inventory.reduce((sum, item) => sum + item.stock, 0);
-  const lowStockItems = inventory.filter(item => item.stock <= item.reorderLevel).length;
-  const inventoryValue = inventory.reduce((sum, item) => sum + (item.stock * item.price), 0);
+  // Totals are calculated by the server in the cooperative's time zone.
+  const todaySales = summary?.todaySales ?? 0;
+  const todayRevenue = summary?.todayRevenue ?? 0;
+  const totalInventoryUnits = Math.round(inventory.reduce((sum, item) => sum + item.stock * 100, 0)) / 100;
+  const lowStockItems = summary?.lowStockItems ?? inventory.filter(item => item.stock <= item.reorderLevel).length;
+  const inventoryValue = summary?.inventoryValue ?? 0;
+  const itemEstimate = (inventoryId: string, quantity: string) => {
+    const product = inventory.find((item) => item.id === inventoryId);
+    return product ? Math.round(product.price * Number(quantity || 0) * 100) / 100 : 0;
+  };
+  const updateSaleItem = (index: number, key: 'inventoryId' | 'quantity', value: string) => setFormData((prev) => ({ ...prev, items: prev.items.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item) }));
 
   const canEdit = userRole === 'admin';
 
@@ -101,19 +114,27 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
+    setIsSaving(true);
     try {
-      const response = await createKadiwaSale(formData);
-      setSales(prev => [response.sale, ...prev]);
+      const response = await createKadiwaSale({ ...formData, items: formData.items.filter((item) => item.inventoryId && item.quantity) });
+      toast.success('Sale recorded', { description: `Net sales ₱${response.sale.netSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}. Inventory updated.` });
+      loadData();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Unable to save sale.');
+      const message = submitError instanceof Error ? submitError.message : 'Unable to save sale.';
+      setError(message);
+      toast.error('Unable to save sale', { description: message });
       return;
+    } finally {
+      setIsSaving(false);
     }
     setFormData({
       encoderName: '',
       groceriesPrice: 0,
       vegetablesPrice: 0,
       meatPrice: 0,
-      totalExpenses: 0
+      totalExpenses: 0,
+      items: []
     });
     setShowForm(false);
   };
@@ -124,8 +145,9 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
     if (!stockFormData.name.trim()) return;
 
     try {
-      const response = await createKadiwaInventory(stockFormData);
-      setInventory(prev => [response.item, ...prev]);
+      await createKadiwaInventory(stockFormData);
+      toast.success('Inventory item added');
+      loadData();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Unable to save inventory item.');
       return;
@@ -145,6 +167,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
     try {
       const response = await restockKadiwaInventory(itemId, quantity);
       setInventory(prev => prev.map(item => item.id === itemId ? response.item : item));
+      toast.success(`${response.item.name} restocked`, { description: `New stock: ${response.item.stock} ${response.item.unit}` });
     } catch (restockError) {
       setError(restockError instanceof Error ? restockError.message : 'Unable to restock item.');
     }
@@ -339,7 +362,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">Encoder: {sale.encoder}</p>
-                    <p className="text-sm text-gray-500">{sale.date}</p>
+                    <p className="text-sm text-gray-500">{formatDateTime(sale.date)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-gray-500">Total Sales</p>
@@ -419,7 +442,38 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
               </div>
 
               <div className="border-t border-gray-200 pt-4 mt-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Sales by Type</h3>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">Items Sold from Inventory</h3>
+                  <button type="button" onClick={() => setFormData((prev) => ({ ...prev, items: [...prev.items, { inventoryId: '', quantity: '' }] }))} className="inline-flex items-center gap-1 text-sm font-medium text-green-700 hover:text-green-800"><Plus className="w-4 h-4" />Add item</button>
+                </div>
+                {formData.items.length === 0 && <p className="text-xs text-gray-500">Items added here are deducted from stock when the sale is saved.</p>}
+                <div className="space-y-3">
+                  {formData.items.map((item, index) => {
+                    const product = inventory.find((candidate) => candidate.id === item.inventoryId);
+                    return (
+                      <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_auto] sm:items-end">
+                        <label className="block text-sm font-medium text-gray-700">Product
+                          <select value={item.inventoryId} onChange={(e) => updateSaleItem(index, 'inventoryId', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600">
+                            <option value="">Select product</option>
+                            {inventory.map((option) => <option key={option.id} value={option.id} disabled={option.stock <= 0}>{option.name} — ₱{option.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}/{option.unit} ({option.stock} in stock)</option>)}
+                          </select>
+                        </label>
+                        <label className="block text-sm font-medium text-gray-700">Quantity
+                          <input type="number" min="0.01" step="0.01" max={product?.stock} value={item.quantity} onChange={(e) => updateSaleItem(index, 'quantity', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600" />
+                        </label>
+                        <div className="flex items-center gap-3 pb-2 text-sm text-gray-700">
+                          <span>₱{itemEstimate(item.inventoryId, item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                          <button type="button" onClick={() => setFormData((prev) => ({ ...prev, items: prev.items.filter((_, itemIndex) => itemIndex !== index) }))} className="text-red-600 hover:text-red-700" aria-label="Remove item"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Other Sales by Type</h3>
+                <p className="text-xs text-gray-500 mb-4">For goods not tracked in inventory. Inventory items above are added to their category automatically.</p>
                 <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

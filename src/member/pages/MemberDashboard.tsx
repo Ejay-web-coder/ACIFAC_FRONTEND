@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
 import { User, PhilippinePeso, TrendingUp, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { UserRole } from '../../app/App';
-import { fetchMyMemberData, MyMemberData } from '../../app/services/authApi';
+import { useMyMemberData } from '../../lib/useMyMemberData';
+import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
 
 interface MemberDashboardProps {
@@ -10,12 +10,7 @@ interface MemberDashboardProps {
 }
 
 export function MemberDashboard({ userRole }: MemberDashboardProps) {
-  const [memberData, setMemberData] = useState<MyMemberData | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    fetchMyMemberData().then(setMemberData).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load member data.'));
-  }, []);
+  const { memberData, error } = useMyMemberData();
 
   if (userRole !== 'member') {
     return <div className="p-4 md:p-8 text-sm md:text-base">Access restricted to members only</div>;
@@ -26,8 +21,8 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
 
   const { member, loans, payments } = memberData;
   const activeLoans = loans.filter((loan) => loan.status === 'active' || loan.status === 'overdue');
-  const loanBalance = activeLoans.reduce((total, loan) => total + Number(loan.balance || 0), 0);
-  const nextLoan = activeLoans.filter((loan) => loan.next_payment_date).sort((left, right) => String(left.next_payment_date).localeCompare(String(right.next_payment_date)))[0];
+  const loanBalance = sumMoney(activeLoans.map((loan) => loan.balance));
+  const nextLoan = activeLoans.filter((loan) => loan.nextPaymentDate).sort((left, right) => String(left.nextPaymentDate).localeCompare(String(right.nextPaymentDate)))[0];
   const recentPayments = payments.slice(0, 3);
 
   return (
@@ -90,8 +85,8 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
             </div>
             <div className="min-w-0">
               <p className="text-xs md:text-sm text-gray-600">Next Payment</p>
-              <p className="font-bold text-gray-900 text-base md:text-lg">{nextLoan ? `₱${Number(nextLoan.monthly_payment).toLocaleString()}` : 'None'}</p>
-              {nextLoan && <p className="text-xs text-gray-500 mt-1">Due: {formatDate(nextLoan.next_payment_date)}</p>}
+              <p className="font-bold text-gray-900 text-base md:text-lg">{nextLoan ? `₱${Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : 'None'}</p>
+              {nextLoan && <p className="text-xs text-gray-500 mt-1">Due: {formatDate(nextLoan.nextPaymentDate)}</p>}
             </div>
           </div>
         </div>
@@ -104,7 +99,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
           <div className="min-w-0">
             <h3 className="font-bold text-sm md:text-base text-yellow-900">Upcoming Payment Reminder</h3>
             <p className="text-xs md:text-sm text-yellow-800 mt-1">
-              {nextLoan ? `Your next loan payment of ₱${Number(nextLoan.monthly_payment).toLocaleString()} is due on ${formatDate(nextLoan.next_payment_date)}.` : 'You have no upcoming loan payments.'}
+              {!nextLoan ? 'You have no upcoming loan payments.' : nextLoan.status === 'overdue' ? `Your loan ${nextLoan.id} is overdue: ₱${nextLoan.overdueAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })} is past due. Please settle it at the ACIFAC office.` : `Your next loan payment of ₱${Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment).toLocaleString('en-PH', { minimumFractionDigits: 2 })} is due on ${formatDate(nextLoan.nextPaymentDate)}.`}
             </p>
           </div>
         </div>
@@ -142,7 +137,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
             >
               <div className="min-w-0">
                 <p className="font-medium text-gray-900 text-sm md:text-base">Loan payment</p>
-                <p className="text-xs md:text-sm text-gray-500">{formatDate(payment.payment_date)}</p>
+                <p className="text-xs md:text-sm text-gray-500">{formatDate(payment.paymentDate)}</p>
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="font-bold text-gray-900 text-sm md:text-base">₱{Number(payment.amount).toLocaleString()}</p>

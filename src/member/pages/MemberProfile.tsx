@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
 import { User, Mail, Phone, MapPin, Calendar, CreditCard } from 'lucide-react';
 import { UserRole } from '../../app/App';
-import { fetchMyMemberData, MyMemberData } from '../../app/services/authApi';
+import { useMyMemberData } from '../../lib/useMyMemberData';
+import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
 
 interface MemberProfileProps {
@@ -9,12 +9,7 @@ interface MemberProfileProps {
 }
 
 export function MemberProfile({ userRole }: MemberProfileProps) {
-  const [memberData, setMemberData] = useState<MyMemberData | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    fetchMyMemberData().then(setMemberData).catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load member data.'));
-  }, []);
+  const { memberData, error } = useMyMemberData();
 
   if (userRole !== 'member') {
     return <div className="p-8">Access restricted to members only</div>;
@@ -25,7 +20,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
 
   const { member, loans, payments, shareDetails } = memberData;
   const address = [member.address, member.barangay, member.municipality, member.province].filter(Boolean).join(', ');
-  const totalLoanBalance = loans.reduce((total, loan) => total + Number(loan.balance || 0), 0);
+  const totalLoanBalance = sumMoney(loans.map((loan) => loan.balance));
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -103,7 +98,16 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
               <p className="text-sm text-blue-700">Share Capital</p>
             </div>
             <p className="text-2xl font-bold text-blue-900">
-              ₱{member.share_capital.toLocaleString()}
+              ₱{member.share_capital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="p-4 bg-green-50 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <CreditCard className="w-5 h-5 text-green-600" />
+              <p className="text-sm text-green-700">Savings Deposits</p>
+            </div>
+            <p className="text-2xl font-bold text-green-900">
+              ₱{(memberData.savings?.total ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
             </p>
           </div>
 
@@ -113,7 +117,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
               <p className="text-sm text-purple-700">Dividends Earned</p>
             </div>
             <p className="text-2xl font-bold text-purple-900">
-              ₱{totalLoanBalance.toLocaleString()}
+              ₱{totalLoanBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
             </p>
           </div>
 
@@ -152,7 +156,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-lg bg-green-50 p-5 sm:col-span-1">
             <div className="mb-2 flex items-center gap-2 text-green-700"><CreditCard className="h-5 w-5" /><p className="text-sm font-medium">Total Loan Balance</p></div>
-            <p className="text-3xl font-bold text-green-900">₱{totalLoanBalance.toLocaleString()}</p>
+            <p className="text-3xl font-bold text-green-900">₱{totalLoanBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
           </div>
           <div className="rounded-lg bg-gray-50 p-5"><p className="mb-2 text-sm font-medium text-gray-600">Last Payment</p><p className="text-2xl font-bold text-gray-900">{payments[0] ? `₱${Number(payments[0].amount).toLocaleString()}` : 'None'}</p></div>
           <div className="rounded-lg bg-gray-50 p-5"><p className="mb-2 text-sm font-medium text-gray-600">Payments</p><p className="text-2xl font-bold text-gray-900">{payments.length}</p></div>
@@ -160,7 +164,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         <div className="overflow-x-auto">
           <h3 className="mb-3 text-sm font-semibold text-gray-900">Recent Loan Payments</h3>
           <table className="w-full min-w-[560px]"><thead className="border-y border-gray-200 bg-gray-50"><tr>{['Date', 'Amount', 'Remaining Balance', 'Status'].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{heading}</th>)}</tr></thead>
-            <tbody className="divide-y divide-gray-100">{payments.slice(0, 5).map((payment) => <tr key={payment.id}><td className="px-4 py-3 text-sm text-gray-600">{payment.payment_date}</td><td className="px-4 py-3 text-sm font-semibold text-gray-900">₱{Number(payment.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-4 py-3 text-sm text-gray-900">₱{Number(payment.remaining_balance).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-4 py-3"><span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Completed</span></td></tr>)}</tbody>
+            <tbody className="divide-y divide-gray-100">{payments.slice(0, 5).map((payment) => <tr key={payment.id}><td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td><td className="px-4 py-3 text-sm font-semibold text-gray-900">₱{Number(payment.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-4 py-3 text-sm text-gray-900">₱{Number(payment.remainingBalance).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-4 py-3"><span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Completed</span></td></tr>)}</tbody>
           </table>
         </div>
       </div>

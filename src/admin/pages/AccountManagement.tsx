@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 import {
   Account,
   AvailableMember,
@@ -43,6 +44,7 @@ export function AccountManagement() {
   };
 
   useEffect(() => { void loadData(); }, []);
+  useLiveRefresh(['users', 'members'], () => { void loadData(); }, 800);
 
   const createAccount = async (event: React.FormEvent) => {
     event.preventDefault();

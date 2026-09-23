@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { dateOnlyToday } from '../../utils/dateTime';
 import { Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 
 export interface MemberDraftChild {
@@ -61,7 +62,8 @@ export interface MemberDraftData {
   initialPaidUpCapital: string;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Today's date in Asia/Manila (toISOString() would give the UTC date before 8 AM).
+const today = () => dateOnlyToday();
 
 const initialState: MemberDraftData = {
   memberNumber: '',

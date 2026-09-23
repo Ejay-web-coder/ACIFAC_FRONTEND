@@ -1,37 +1,52 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { User, Bell, Shield, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { changePasswordRequest } from '../../app/services/authApi';
+import { changePasswordRequest, fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
+import { closeLiveUpdates } from '../../lib/liveUpdates';
 
-export function MemberSettings() {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
-  const [profileData, setProfileData] = useState({
-    name: 'Member User',
-    email: 'member@acifac.org',
-    phone: '+63 912 345 6789',
-    membershipNumber: 'ACIFAC-2024-001'
-  });
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    smsNotifications: false,
-    loanReminders: true
-  });
-
-  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>(mustChangePassword ? 'security' : 'profile');
+  const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', membershipNumber: '' });
+  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
   const [passwordFormData, setPasswordFormData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const loadAccount = useCallback(() => {
+    fetchCurrentUser()
+      .then(({ user }) => {
+        if (!user) return;
+        setProfileData({ name: user.display_name || '', email: user.email || '', phone: user.phone || '', membershipNumber: user.member_number || '' });
+        if (user.notification_preferences) setNotificationSettings(user.notification_preferences);
+      })
+      .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
+  }, []);
+
+  useEffect(() => { loadAccount(); }, [loadAccount]);
+
+  // Members can update their own contact details; their name and membership
+  // record are maintained by the cooperative office.
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Profile updated successfully!');
+    try {
+      await updateProfileRequest({ email: profileData.email, phone: profileData.phone });
+      toast.success('Profile updated successfully!');
+      loadAccount();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update profile.');
+    }
   };
 
-  const handleSaveNotifications = () => {
-    toast.success('Notification settings saved!');
+  const handleSaveNotifications = async () => {
+    try {
+      await updateNotificationPreferencesRequest(notificationSettings);
+      toast.success('Notification settings saved!');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save notification settings.');
+    }
   };
 
   const handlePasswordFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,13 +64,16 @@ export function MemberSettings() {
       toast.error('Please fill in all fields!');
       return;
     }
-    if (passwordFormData.newPassword.length < 6) {
-      toast.error('New password must be at least 6 characters!');
+    if (passwordFormData.newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters with upper and lower case letters, a number and a symbol.');
       return;
     }
     try {
       await changePasswordRequest(passwordFormData);
       toast.success('Password changed successfully! Please sign in again.');
+      // The server ends every session after a password change.
+      closeLiveUpdates();
+      window.setTimeout(() => window.location.replace('/login'), 800);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to change password.');
       return;
@@ -131,8 +149,9 @@ export function MemberSettings() {
                     <input
                       type="text"
                       value={profileData.name}
-                      onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      readOnly
+                      title="Your name is maintained by the ACIFAC office"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -206,7 +225,7 @@ export function MemberSettings() {
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
-                      <p className="text-sm text-gray-600">Receive updates via SMS</p>
+                      <p className="text-sm text-gray-600">Receive updates via SMS (saved as a preference; SMS delivery is not set up yet)</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input

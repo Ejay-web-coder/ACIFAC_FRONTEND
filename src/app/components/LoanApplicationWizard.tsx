@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, Plus, Search, Trash2 } from 'lucide-react';
 import { fetchMembers } from '../../admin/services/membersApi';
+import { fetchLoanQuote, type LoanQuote } from '../services/authApi';
 import type { Member } from '../../admin/pages/MembershipManagement';
 
+// Display labels only. Every amount shown is calculated by the backend
+// (POST /api/loans/quote) with the same code that saves the loan.
 export const MAX_LOAN_PER_HECTARE = 50000;
 export const DEFAULT_INTEREST_RATE = 2.5;
 
@@ -58,12 +61,27 @@ export function LoanApplicationWizard({ initialMember = null, allowMemberLookup 
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  const [quote, setQuote] = useState<LoanQuote | null>(null);
+  const [quoteError, setQuoteError] = useState('');
   const area = Number(form.farmArea) || 0;
   const requested = Number(form.amount) || 0;
-  const maximum = area * MAX_LOAN_PER_HECTARE;
-  const interest = requested * DEFAULT_INTEREST_RATE / 100;
-  const total = requested + interest;
-  const monthly = total / (Number(form.term) || 1);
+  const maximum = quote?.maximumEligibleAmount ?? 0;
+  const interest = quote?.calculatedInterest ?? 0;
+  const total = quote?.totalRepayment ?? 0;
+  const monthly = quote?.monthlyPayment ?? 0;
+
+  useEffect(() => {
+    const farmArea = form.farmArea.trim() || '0';
+    const amount = form.amount.trim() || '0';
+    if (!/^\d+(\.\d{1,2})?$/.test(farmArea) || !/^\d+(\.\d{1,2})?$/.test(amount)) { setQuote(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchLoanQuote({ farmArea, amount, term: form.term || '12' })
+        .then((result) => { if (!cancelled) { setQuote(result); setQuoteError(''); } })
+        .catch((error: Error) => { if (!cancelled) { setQuote(null); setQuoteError(error.message); } });
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [form.farmArea, form.amount, form.term]);
   const inKindTotal = form.inKindItems.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0), 0);
   const steps = ['Borrower', 'Farm', 'Loan', 'Farm inputs', 'Co-maker', 'Collateral', 'Review'];
   const needsInputs = ['in-kind', 'combination'].includes(form.loanMode);
@@ -89,14 +107,14 @@ export function LoanApplicationWizard({ initialMember = null, allowMemberLookup 
   const stepValid = useMemo(() => {
     if (step === 1) return !!(form.memberId && form.borrowerEmail && form.borrowerPhone && form.borrowerAddress);
     if (step === 2) return area > 0 && !!(form.cropsPlanted && form.cropSeason && form.barangay && form.municipality && form.province) && (form.irrigationType !== 'other' || !!form.irrigationOther);
-    if (step === 3) return !!(form.loanType && form.purpose && form.loanMode && Number.isInteger(Number(form.term)) && Number(form.term) > 0 && requested > 0 && requested <= maximum);
+    if (step === 3) return !!(form.loanType && form.purpose && form.loanMode && Number.isInteger(Number(form.term)) && Number(form.term) > 0 && requested > 0 && quote?.withinLimit === true);
     if (step === 4) return !needsInputs || (form.inKindItems.length > 0 && form.inKindItems.every((item) => item.item && item.quantity && Number(item.quantity) > 0 && item.unit && item.unitPrice && Number(item.unitPrice) > 0));
     return true;
   }, [step, form, area, maximum, requested, needsInputs]);
   const next = () => { if (!stepValid) { setError(step === 3 && requested > maximum ? `Requested loan amount exceeds the maximum eligible amount of ${money(maximum)} for ${area} hectares.` : 'Complete the required fields with valid values before continuing.'); return; } setError(''); setStep((current) => Math.min(7, current + 1)); };
   const submit = async () => { if (!stepValid) { setError('Please correct the application before submitting.'); return; } setSaving(true); setError(''); try { await onSubmit(form); } catch (submitError) { setConfirming(false); setError(submitError instanceof Error ? submitError.message : 'Unable to submit the application.'); } finally { setSaving(false); } };
 
-  const calculationPanel = <aside className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><h3 className="font-bold">Loan eligibility</h3><dl className="mt-3 space-y-2"><div className="flex justify-between gap-4"><dt>Farm area</dt><dd className="font-semibold">{area.toFixed(2)} ha</dd></div><div className="flex justify-between gap-4"><dt>Maximum per hectare</dt><dd className="font-semibold">{money(MAX_LOAN_PER_HECTARE)}</dd></div><div className="flex justify-between gap-4 border-t border-emerald-200 pt-2"><dt>Maximum eligible</dt><dd className="font-bold">{money(maximum)}</dd></div><div className="flex justify-between gap-4"><dt>Requested amount</dt><dd className={requested > maximum ? 'font-bold text-red-700' : 'font-semibold'}>{money(requested)}</dd></div><div className="flex justify-between gap-4"><dt>Interest rate</dt><dd className="font-semibold">{DEFAULT_INTEREST_RATE}% flat per term</dd></div><div className="flex justify-between gap-4"><dt>Estimated interest</dt><dd className="font-semibold">{money(interest)}</dd></div><div className="flex justify-between gap-4 border-t border-emerald-200 pt-2"><dt>Total repayment</dt><dd className="font-bold">{money(total)}</dd></div><div className="flex justify-between gap-4"><dt>Est. monthly payment</dt><dd className="font-semibold">{money(monthly)}</dd></div></dl><p className="mt-3 text-xs text-emerald-800">Final values are recalculated by ACIFAC’s backend before saving.</p></aside>;
+  const calculationPanel = <aside className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"><h3 className="font-bold">Loan eligibility</h3><dl className="mt-3 space-y-2"><div className="flex justify-between gap-4"><dt>Farm area</dt><dd className="font-semibold">{area.toFixed(2)} ha</dd></div><div className="flex justify-between gap-4"><dt>Maximum per hectare</dt><dd className="font-semibold">{money(MAX_LOAN_PER_HECTARE)}</dd></div><div className="flex justify-between gap-4 border-t border-emerald-200 pt-2"><dt>Maximum eligible</dt><dd className="font-bold">{money(maximum)}</dd></div><div className="flex justify-between gap-4"><dt>Requested amount</dt><dd className={requested > maximum ? 'font-bold text-red-700' : 'font-semibold'}>{money(requested)}</dd></div><div className="flex justify-between gap-4"><dt>Interest rate</dt><dd className="font-semibold">{DEFAULT_INTEREST_RATE}% flat per term</dd></div><div className="flex justify-between gap-4"><dt>Estimated interest</dt><dd className="font-semibold">{money(interest)}</dd></div><div className="flex justify-between gap-4 border-t border-emerald-200 pt-2"><dt>Total repayment</dt><dd className="font-bold">{money(total)}</dd></div><div className="flex justify-between gap-4"><dt>Est. monthly payment</dt><dd className="font-semibold">{money(monthly)}</dd></div></dl><p className="mt-3 text-xs text-emerald-800">{quoteError || 'Amounts are calculated by ACIFAC’s backend, the same way they are saved.'}</p></aside>;
 
   return <div className="flex min-h-0 flex-1 flex-col"><div className="border-b border-slate-200 px-4 py-4 sm:px-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-slate-900 sm:text-xl">Agricultural Loan Application</h2><p className="text-sm text-slate-500">Step {step} of 7 — {steps[step - 1]}</p></div><button type="button" onClick={onCancel} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close application">×</button></div><ol className="mt-4 grid grid-cols-7 gap-1" aria-label="Application progress">{steps.map((label, index) => <li key={label}><div className={`h-2 rounded-full ${index + 1 <= step ? 'bg-green-600' : 'bg-slate-200'}`} /><span className="mt-1 hidden text-[10px] text-slate-500 lg:block">{label}</span></li>)}</ol></div>
     <div className="flex-1 overflow-y-auto p-4 sm:p-6"><div className="mx-auto max-w-5xl">{error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}

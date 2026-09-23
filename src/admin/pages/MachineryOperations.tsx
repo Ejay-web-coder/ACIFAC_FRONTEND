@@ -1,114 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
+import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
-
-interface Machinery {
-  id: string;
-  name: string;
-  type: string;
-  status: 'available' | 'in-use' | 'maintenance';
-  acquisitionDate: string;
-  lastMaintenance: string;
-  nextMaintenance: string;
-}
-
-interface Operation {
-  id: string;
-  machineryId: string;
-  machineryName: string;
-  memberName: string;
-  memberId: string;
-  purpose: string;
-  startDate: string;
-  endDate: string;
-  duration: number;
-  rentalFee: number;
-  status: 'ongoing' | 'completed' | 'scheduled';
-}
-
-const mockMachinery: Machinery[] = [
-  {
-    id: 'M-001',
-    name: 'Hand Tractor (Kubota)',
-    type: 'Tractor',
-    status: 'available',
-    acquisitionDate: '2023-05-10',
-    lastMaintenance: '2026-03-15',
-    nextMaintenance: '2026-06-15'
-  },
-  {
-    id: 'M-002',
-    name: 'Rice Thresher',
-    type: 'Thresher',
-    status: 'in-use',
-    acquisitionDate: '2023-08-20',
-    lastMaintenance: '2026-02-10',
-    nextMaintenance: '2026-05-10'
-  },
-  {
-    id: 'M-003',
-    name: 'Water Pump',
-    type: 'Irrigation',
-    status: 'available',
-    acquisitionDate: '2024-01-15',
-    lastMaintenance: '2026-04-01',
-    nextMaintenance: '2026-07-01'
-  },
-  {
-    id: 'M-004',
-    name: 'Rotavator',
-    type: 'Tractor',
-    status: 'maintenance',
-    acquisitionDate: '2023-11-05',
-    lastMaintenance: '2026-04-20',
-    nextMaintenance: '2026-04-27'
-  },
-];
-
-const mockOperations: Operation[] = [
-  {
-    id: 'OP-001',
-    machineryId: 'M-002',
-    machineryName: 'Rice Thresher',
-    memberName: 'Juan Dela Cruz',
-    memberId: 'ACIFAC-2024-001',
-    purpose: 'Rice harvesting',
-    startDate: '2026-04-23',
-    endDate: '2026-04-25',
-    duration: 2,
-    rentalFee: 800,
-    status: 'ongoing'
-  },
-  {
-    id: 'OP-002',
-    machineryId: 'M-001',
-    machineryName: 'Hand Tractor (Kubota)',
-    memberName: 'Maria Santos',
-    memberId: 'ACIFAC-2024-002',
-    purpose: 'Land preparation',
-    startDate: '2026-04-20',
-    endDate: '2026-04-22',
-    duration: 2,
-    rentalFee: 1200,
-    status: 'completed'
-  },
-  {
-    id: 'OP-003',
-    machineryId: 'M-003',
-    machineryName: 'Water Pump',
-    memberName: 'Pedro Reyes',
-    memberId: 'ACIFAC-2024-003',
-    purpose: 'Field irrigation',
-    startDate: '2026-04-26',
-    endDate: '2026-04-28',
-    duration: 2,
-    rentalFee: 600,
-    status: 'scheduled'
-  },
-];
+import { escapeHtml } from '../../utils/html';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 
 interface MachineryOperationsProps {
   userRole: UserRole;
@@ -121,6 +18,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const [reportMonth, setReportMonth] = useState(dateOnlyToday().slice(0, 7));
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   const [operations, setOperations] = useState<MachineryOperation[]>([]);
+  const [machinery, setMachinery] = useState<Machinery[]>([]);
+  const [ongoingOperations, setOngoingOperations] = useState(0);
   const [memberSuggestions, setMemberSuggestions] = useState<MemberSuggestion[]>([]);
   const [showMemberSuggestions, setShowMemberSuggestions] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
@@ -179,26 +78,55 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   };
 
   const printReport = () => {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+    // 'noopener' makes window.open return null, so the report window is opened
+    // normally and detached from this page afterwards.
+    const printWindow = window.open('', '_blank');
     if (!printWindow) {
       toast.error('Unable to open the print window. Please allow pop-ups and try again.');
       return;
     }
-    const tableRows = reportOperations.map((operation) => `<tr><td>${operation.id}</td><td>${operation.machineryName}</td><td>${operation.memberName}</td><td>${formatDate(operation.startDate)}</td><td>${formatDate(operation.endDate)}</td><td>${operation.duration}</td><td>₱${operation.rentalFee.toLocaleString()}</td><td>${operation.status}</td></tr>`).join('');
+    printWindow.opener = null;
+    const tableRows = reportOperations.map((operation) => `<tr><td>${operation.id}</td><td>${escapeHtml(operation.machineryName)}</td><td>${escapeHtml(operation.memberName)}</td><td>${formatDate(operation.startDate)}</td><td>${formatDate(operation.endDate)}</td><td>${operation.duration}</td><td>₱${operation.rentalFee.toLocaleString()}</td><td>${operation.status}</td></tr>`).join('');
     printWindow.document.write(`<html><head><title>Machinery Operations Report - ${reportMonthLabel}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{margin-bottom:4px}p{color:#555}table{border-collapse:collapse;width:100%;margin-top:24px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f3f4f6}.summary{font-weight:bold;margin-top:16px}</style></head><body><h1>Machinery Operations Report</h1><p>${reportMonthLabel}</p><p class="summary">${reportOperations.length} operation(s) · ₱${reportRevenue.toLocaleString()} total revenue</p><table><thead><tr><th>Operation</th><th>Machinery</th><th>Member</th><th>Start</th><th>End</th><th>Days</th><th>Rental Fee</th><th>Status</th></tr></thead><tbody>${tableRows || '<tr><td colspan="8">No operations found for this month.</td></tr>'}</tbody></table></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
   };
 
-  useEffect(() => {
-    fetchAdminMachinery()
-      .then(data => {
-        setRentalRequests(data.requests);
-        setOperations(data.operations);
-      })
-      .catch(error => toast.error(error instanceof Error ? error.message : 'Unable to load machinery operations.'));
+  const loadData = useCallback(async () => {
+    try {
+      const data = await fetchAdminMachinery({ limit: 200 });
+      setRentalRequests(data.requests);
+      setOperations(data.operations);
+      setMachinery(data.machinery);
+      setOngoingOperations(data.summary.ongoingOperations);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to load machinery operations.');
+    }
   }, []);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+  useLiveRefresh(['machinery', 'rental_requests', 'machinery_operations'], () => { void loadData(); });
+
+  const completeOperation = async (id: number) => {
+    try {
+      await completeMachineryOperation(id);
+      await loadData();
+      toast.success('Operation marked completed');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update operation.');
+    }
+  };
+
+  const toggleMaintenance = async (machine: Machinery) => {
+    try {
+      await updateMachineryRequest(machine.id, { status: machine.status === 'maintenance' ? 'available' : 'maintenance' });
+      await loadData();
+      toast.success(machine.status === 'maintenance' ? `${machine.name} is available again` : `${machine.name} set to maintenance`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update machinery.');
+    }
+  };
 
   useEffect(() => {
     const search = formData.memberName.trim() || formData.memberId.trim();
@@ -231,9 +159,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const updateRequestStatus = async (id: number, status: RentalRequest['status']) => {
     try {
       await reviewRentalRequest(id, status as 'approved' | 'declined');
-      const data = await fetchAdminMachinery();
-      setRentalRequests(data.requests);
-      setOperations(data.operations);
+      await loadData();
       toast.success(status === 'approved' ? 'Rental request approved' : 'Rental request declined');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to review rental request.');
@@ -267,9 +193,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     }
     try {
       await createRentalRequest({ machineryId: formData.machineryId, memberDatabaseId: selectedMemberId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' });
-      const data = await fetchAdminMachinery();
-      setRentalRequests(data.requests);
-      setOperations(data.operations);
+      await loadData();
       toast.success('Rental request created');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create rental.');
@@ -339,7 +263,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             </div>
             <div>
               <p className="text-sm text-gray-600">Ongoing Operations</p>
-              <p className="text-2xl font-bold text-gray-900">{mockOperations.filter(op => op.status === 'ongoing').length}</p>
+              <p className="text-2xl font-bold text-gray-900">{ongoingOperations}</p>
             </div>
           </div>
         </div>
@@ -379,7 +303,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     <span className={`rounded-full px-2 py-1 text-xs font-medium ${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : request.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{request.status}</span>
                   </div>
                   <p className="mt-1 text-sm text-gray-600">{request.memberName} · {request.memberId} · {request.purpose}</p>
-                  <p className="mt-1 text-xs text-gray-500">{request.startDate} to {request.endDate} · {request.duration} day(s) · ₱{request.rentalFee.toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(request.startDate)} to {formatDate(request.endDate)} · {request.duration} day(s) · ₱{request.rentalFee.toLocaleString()}</p>
                   {request.notes && <p className="mt-1 text-xs text-gray-500">Note: {request.notes}</p>}
                 </div>
                 {request.status === 'pending' && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => updateRequestStatus(request.id, 'approved')} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Check className="h-4 w-4" />Approve</button><button type="button" onClick={() => updateRequestStatus(request.id, 'declined')} className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><X className="h-4 w-4" />Decline</button></div>}
@@ -395,6 +319,34 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
           )}
         </div>
       )}
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
+          <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-4">
+          {machinery.map((machine) => (
+            <div key={machine.id} className="rounded-lg border border-gray-200 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-gray-900">{machine.name}</p>
+                  <p className="text-xs text-gray-500">{machine.id} · {machine.type}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${machine.status === 'available' ? 'bg-green-100 text-green-800' : machine.status === 'in-use' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>{machine.status}</span>
+              </div>
+              <p className="mt-2 text-sm text-gray-700">₱{machine.dailyFee.toLocaleString('en-PH', { minimumFractionDigits: 2 })} / day</p>
+              {machine.nextMaintenance && <p className="text-xs text-gray-500">Next maintenance: {formatDate(machine.nextMaintenance)}</p>}
+              {canEdit && machine.status !== 'in-use' && (
+                <button type="button" onClick={() => void toggleMaintenance(machine)} className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800">
+                  {machine.status === 'maintenance' ? 'Mark available' : 'Set to maintenance'}
+                </button>
+              )}
+            </div>
+          ))}
+          {machinery.length === 0 && <p className="text-sm text-gray-500">No machinery recorded.</p>}
+        </div>
+      </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-200">
@@ -427,6 +379,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                       }`}>
                         {operation.status}
                       </span>
+                      {canEdit && operation.status === 'ongoing' && (
+                        <button type="button" onClick={() => void completeOperation(operation.id)} className="rounded-lg border border-green-600 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50">Mark completed</button>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600 mb-3">Operation ID: {operation.id}</p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -448,8 +403,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-4 text-sm text-gray-600">
-                      <span>From: {operation.startDate}</span>
-                      <span>To: {operation.endDate}</span>
+                      <span>From: {formatDate(operation.startDate)}</span>
+                      <span>To: {formatDate(operation.endDate)}</span>
                     </div>
                   </div>
                 </div>
@@ -533,9 +488,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
                   >
                     <option value="">Select machinery</option>
-                    {mockMachinery.map(m => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
+                    {machinery.map(m => (
+                      <option key={m.id} value={m.id} disabled={m.status === 'maintenance'}>
+                        {m.name} — ₱{m.dailyFee.toLocaleString('en-PH')}/day{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
                       </option>
                     ))}
                   </select>

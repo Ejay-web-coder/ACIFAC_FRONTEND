@@ -1,8 +1,9 @@
 import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { UserRole } from '../../app/App';
-import { fetchMyMemberData, MyMemberData } from '../../app/services/authApi';
-import { dateOnlySortValue, formatDateTime } from '../../utils/dateTime';
+import { useMyMemberData } from '../../lib/useMyMemberData';
+import { sumMoney } from '../../utils/money';
+import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
 
 interface TransactionProps {
   userRole: UserRole;
@@ -22,18 +23,12 @@ interface Transaction {
 }
 
 export function Transaction({ userRole }: TransactionProps) {
-  const [memberData, setMemberData] = useState<MyMemberData | null>(null);
-  const [error, setError] = useState('');
+  const { memberData, error } = useMyMemberData();
   const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
   const [filterType, setFilterType] = useState<'all' | 'payment' | 'debt'>('all');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-  useEffect(() => {
-    fetchMyMemberData()
-      .then(setMemberData)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load transactions.'));
-  }, []);
 
   if (userRole !== 'member') {
     return <div className="p-8">Access restricted to members only</div>;
@@ -50,26 +45,25 @@ export function Transaction({ userRole }: TransactionProps) {
   const transactions: Transaction[] = [
     ...memberData.loans.map((loan) => ({
       id: `LOAN-${loan.id}`,
-      date: loan.date_approved,
+      date: loan.dateApproved,
       type: 'debt' as const,
       category: 'Loan Disbursement',
-      description: `Loan Disbursement - ${loan.loan_number}`,
+      description: `Loan Disbursement - ${loan.id}`,
       amount: Number(loan.amount),
       balance: Number(loan.balance),
       status: 'completed' as const,
       paymentMethod: 'Recorded by ACIFAC Admin',
-      reference: loan.loan_number,
+      reference: loan.id,
     })),
     ...memberData.payments.map((payment) => {
-      const loan = memberData.loans.find((candidate) => candidate.id === payment.loan_id);
       return {
         id: `PAY-${payment.id}`,
-        date: payment.payment_date,
+        date: payment.paymentDate,
         type: 'payment' as const,
         category: 'Loan Payment',
-        description: `Loan Payment - ${loan?.loan_number || `Loan #${payment.loan_id}`}`,
+        description: `Loan Payment - ${payment.loanNumber || `Loan #${payment.loanId}`}`,
         amount: Number(payment.amount),
-        balance: Number(payment.remaining_balance),
+        balance: Number(payment.remainingBalance),
         status: 'completed' as const,
         paymentMethod: 'Recorded by ACIFAC Admin',
         reference: `PAY-${payment.id}`,
@@ -90,13 +84,9 @@ export function Transaction({ userRole }: TransactionProps) {
     }
   });
 
-  const totalPayment = transactions
-    .filter(txn => txn.type === 'payment')
-    .reduce((sum, txn) => sum + txn.amount, 0);
+  const totalPayment = sumMoney(transactions.filter(txn => txn.type === 'payment').map(txn => txn.amount));
 
-  const totalDebt = transactions
-    .filter(txn => txn.type === 'debt')
-    .reduce((sum, txn) => sum + txn.amount, 0);
+  const totalDebt = sumMoney(transactions.filter(txn => txn.type === 'debt').map(txn => txn.amount));
 
   const netBalance = totalDebt - totalPayment;
 
@@ -152,7 +142,7 @@ export function Transaction({ userRole }: TransactionProps) {
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Date & Time:</span>
-              <span class="receipt-value">${txn.date}</span>
+              <span class="receipt-value">${formatDate(txn.date)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Type:</span>
@@ -300,7 +290,7 @@ export function Transaction({ userRole }: TransactionProps) {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Calendar className="w-4 h-4" />
-                      {txn.date}
+                      {formatDate(txn.date)}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -381,7 +371,7 @@ export function Transaction({ userRole }: TransactionProps) {
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-200">
                   <span className="font-semibold text-gray-700">Date & Time:</span>
-                  <span className="text-gray-900">{selectedTransaction.date}</span>
+                  <span className="text-gray-900">{formatDate(selectedTransaction.date)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-200">
                   <span className="font-semibold text-gray-700">Type:</span>

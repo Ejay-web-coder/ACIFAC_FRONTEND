@@ -1,64 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createAdminLoan, fetchAdminLoans, recordAdminLoanPayment, reviewAdminLoanRequest } from '../../app/services/authApi';
-import { fetchMembers } from '../services/membersApi';
-import type { Member } from './MembershipManagement';
+import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanSummary, type Pagination } from '../../app/services/authApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
+import { escapeHtml } from '../../utils/html';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 import { LoanApplicationWizard, type LoanApplicationPayload } from '../../app/components/LoanApplicationWizard';
 
-interface Loan {
-  databaseId: number;
-  id: string;
-  memberId: string;
-  memberName: string;
-  loanType: 'agricultural' | 'personal' | 'emergency';
-  amount: number;
-  totalAmount: number;
-  totalInterest: number;
-  balance: number;
-  interestRate: number;
-  term: number;
-  status: 'active' | 'paid' | 'overdue';
-  dateApproved: string;
-  dueDate: string;
-  nextPaymentDate: string;
-  monthlyPayment: number;
-}
+type Loan = AdminLoan;
+type Payment = AdminPayment;
+type LoanRequest = AdminLoanRequest;
 
-interface Payment {
-  id: number;
-  loanId: number;
-  memberName: string;
-  amount: number;
-  paymentDate: string;
-  principalPaid: number;
-  interestPaid: number;
-  remainingBalance: number;
-}
-
-interface LoanRequest {
-  id: number;
-  memberName: string;
-  memberId: string | number | null;
-  memberNumber?: string | null;
-  loanType: string;
-  amount: number;
-  term: number;
-  purpose: string;
-  monthlyIncome: number;
-  submittedAt: string;
-  status: 'pending' | 'approved' | 'declined';
-  farmArea?: number;
-  maximumEligibleAmount?: number;
-  interestRate?: number;
-  calculatedInterest?: number;
-  totalRepayment?: number;
-  loanMode?: string;
-  coMakerName?: string | null;
-  collateralType?: string | null;
-}
+const PAGE_SIZE = 50;
+const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 interface LoansPaymentsProps {
   userRole: UserRole;
@@ -80,141 +35,97 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     amount: '',
     paymentDate: dateOnlyToday()
   });
-  const [loanFormData, setLoanFormData] = useState({
-    memberName: '',
-    memberId: '',
-    loanType: 'agricultural' as 'agricultural' | 'personal' | 'emergency',
-    amount: '',
-    interestRate: '8',
-    term: '12'
-  });
-  const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
-  const [memberSuggestions, setMemberSuggestions] = useState<Member[]>([]);
-  const [isSearchingMembers, setIsSearchingMembers] = useState(false);
-  const [showMemberSuggestions, setShowMemberSuggestions] = useState(false);
-  const [highlightedMemberIndex, setHighlightedMemberIndex] = useState(-1);
-
-  const filteredLoans = loans.filter(loan => {
-    const matchesSearch = loan.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         loan.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || loan.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
-
-  const filteredPayments = payments.filter(payment =>
-    payment.memberName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const totalActive = loans.filter(l => l.status === 'active').length;
-  const totalDisbursed = loans.reduce((sum, l) => sum + l.totalAmount, 0);
-  const totalOutstanding = loans.reduce((sum, l) => sum + l.balance, 0);
-  const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
+  const [summary, setSummary] = useState<LoanSummary | null>(null);
+  const [loanPagination, setLoanPagination] = useState<Pagination | null>(null);
+  const [paymentPagination, setPaymentPagination] = useState<Pagination | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  // Search and status filters run on the server; totals come from the whole table.
+  const filteredLoans = loans;
+  const filteredPayments = payments;
+  const totalActive = summary?.activeLoans ?? 0;
+  const totalDisbursed = summary?.totalDisbursed ?? 0;
+  const totalOutstanding = summary?.totalOutstanding ?? 0;
+  const totalCollected = summary?.totalCollected ?? 0;
 
   const canEdit = userRole === 'admin';
 
-  useEffect(() => {
-    fetchAdminLoans().then(({ loans: loadedLoans, payments: loadedPayments, requests }) => {
-      setLoans(loadedLoans as Loan[]);
-      setPayments(loadedPayments as Payment[]);
-      setLoanRequests(requests as LoanRequest[]);
-    }).catch((error: Error) => toast.error('Unable to load loan data', { description: error.message }));
-  }, []);
-
-  useEffect(() => {
-    const search = loanFormData.memberName.trim();
-    if (!showAddLoanModal || !search || selectedMemberId !== null) {
-      setMemberSuggestions([]);
-      setIsSearchingMembers(false);
-      return;
+  const loadData = useCallback(async () => {
+    try {
+      const search = searchTerm.trim();
+      const [loanData, paymentData, requestData] = await Promise.all([
+        fetchAdminLoans({ limit: PAGE_SIZE, search, status: filterStatus === 'all' ? undefined : filterStatus }),
+        fetchAdminPayments({ limit: PAGE_SIZE, search }),
+        fetchAdminLoanRequests({ status: 'pending', limit: 100 }),
+      ]);
+      setLoans(loanData.loans);
+      setSummary(loanData.summary);
+      setLoanPagination(loanData.pagination);
+      setPayments(paymentData.payments);
+      setPaymentPagination(paymentData.pagination);
+      setLoanRequests(requestData.requests);
+    } catch (error) {
+      toast.error('Unable to load loan data', { description: (error as Error).message });
     }
+  }, [searchTerm, filterStatus]);
 
-    const timer = window.setTimeout(async () => {
-      setIsSearchingMembers(true);
-      try {
-        const response = await fetchMembers(search, 10);
-        setMemberSuggestions(response.data);
-        setHighlightedMemberIndex(-1);
-      } catch (error) {
-        setMemberSuggestions([]);
-        toast.error('Unable to search members', { description: (error as Error).message });
-      } finally {
-        setIsSearchingMembers(false);
-      }
-    }, 300);
-
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadData(); }, 250);
     return () => window.clearTimeout(timer);
-  }, [loanFormData.memberName, selectedMemberId, showAddLoanModal]);
+  }, [loadData]);
 
-  const selectMember = (member: Member) => {
-    setSelectedMemberId(member.id);
-    setLoanFormData((current) => ({
-      ...current,
-      memberName: member.name,
-      memberId: member.memberId,
-    }));
-    setMemberSuggestions([]);
-    setShowMemberSuggestions(false);
-    setHighlightedMemberIndex(-1);
-  };
+  useLiveRefresh(['loans', 'loan_payments', 'loan_requests'], () => { void loadData(); });
 
-  const clearMemberSelection = () => {
-    setSelectedMemberId(null);
-    setLoanFormData((current) => ({ ...current, memberName: '', memberId: '' }));
-    setMemberSuggestions([]);
-    setShowMemberSuggestions(false);
-    setHighlightedMemberIndex(-1);
+  const loadMore = async (kind: 'loans' | 'payments') => {
+    setLoadingMore(true);
+    try {
+      if (kind === 'loans' && loanPagination) {
+        const next = await fetchAdminLoans({ page: loanPagination.page + 1, limit: PAGE_SIZE, search: searchTerm.trim(), status: filterStatus === 'all' ? undefined : filterStatus });
+        setLoans((current) => [...current, ...next.loans]);
+        setLoanPagination(next.pagination);
+      } else if (kind === 'payments' && paymentPagination) {
+        const next = await fetchAdminPayments({ page: paymentPagination.page + 1, limit: PAGE_SIZE, search: searchTerm.trim() });
+        setPayments((current) => [...current, ...next.payments]);
+        setPaymentPagination(next.pagination);
+      }
+    } catch (error) {
+      toast.error('Unable to load more records', { description: (error as Error).message });
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined') => {
+    let reason: string | undefined;
+    if (status === 'declined') {
+      const answer = window.prompt(`Reason for declining ${request.memberName}'s request (optional):`, '');
+      if (answer === null) return;
+      reason = answer.trim() || undefined;
+    }
     try {
-      await reviewAdminLoanRequest(Number(request.id), status);
-      const refreshed = await fetchAdminLoans();
-      setLoans(refreshed.loans as Loan[]);
-      setPayments(refreshed.payments as Payment[]);
-      setLoanRequests(refreshed.requests as LoanRequest[]);
+      await reviewAdminLoanRequest(Number(request.id), status, reason);
+      await loadData();
       toast.success(status === 'approved' ? 'Loan request approved' : 'Loan request declined', {
-        description: `${request.memberName}'s request ${request.id} was ${status}.`
+        description: `${request.memberName}'s request #${request.id} was ${status}.`
       });
     } catch (error) {
       toast.error('Unable to review loan request', { description: (error as Error).message });
     }
   };
 
-  const handleAddLoan = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (selectedMemberId === null) {
-      toast.error('Please select a member from the suggestions.');
-      return;
-    }
-
-    const amount = Number(loanFormData.amount);
-    const interestRate = Number(loanFormData.interestRate);
-    const term = Number(loanFormData.term);
-    try {
-      const { loan } = await createAdminLoan({ ...loanFormData, memberId: selectedMemberId, amount, interestRate, term });
-      setLoans(currentLoans => [loan as Loan, ...currentLoans]);
-      setShowAddLoanModal(false);
-      setLoanFormData({ memberName: '', memberId: '', loanType: 'agricultural', amount: '', interestRate: '8', term: '12' });
-      setSelectedMemberId(null);
-      toast.success('Loan approved successfully!', { description: `${loan.id} for ₱${amount.toLocaleString()} has been disbursed` });
-    } catch (error) {
-      toast.error('Unable to create loan', { description: (error as Error).message });
-    }
-  };
-
   const handleAgriculturalApplication = async (application: LoanApplicationPayload) => {
     const { loan } = await createAdminLoan(application);
-    setLoans((currentLoans) => [loan as Loan, ...currentLoans]);
     setShowAddLoanModal(false);
-    clearMemberSelection();
+    await loadData();
     toast.success('Loan approved successfully', { description: `${loan.id} has been created using server-verified amounts.` });
   };
 
   const handleRecordPayment = (loan: Loan) => {
     setSelectedLoanForPayment(loan);
+    // Default to what is currently due on the next installment (never more than the balance).
+    const suggested = Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
     setPaymentData({
-      amount: loan.monthlyPayment.toString(),
+      amount: suggested.toFixed(2),
       paymentDate: dateOnlyToday()
     });
     setShowPaymentModal(true);
@@ -222,20 +133,21 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLoanForPayment) return;
+    if (!selectedLoanForPayment || isSubmittingPayment) return;
 
-    const paymentAmount = Number(paymentData.amount);
+    const paymentAmount = paymentData.amount.trim();
+    setIsSubmittingPayment(true);
     try {
-      await recordAdminLoanPayment(selectedLoanForPayment.databaseId, { amount: paymentAmount, paymentDate: paymentData.paymentDate });
-      const refreshed = await fetchAdminLoans();
-      setLoans(refreshed.loans as Loan[]);
-      setPayments(refreshed.payments as Payment[]);
+      const { payment } = await recordAdminLoanPayment(selectedLoanForPayment.databaseId, { amount: paymentAmount, paymentDate: paymentData.paymentDate });
+      await loadData();
       setShowPaymentModal(false);
       setSelectedLoanForPayment(null);
       setPaymentData({ amount: '', paymentDate: '' });
-      toast.success('Payment recorded successfully!', { description: `₱${paymentAmount.toLocaleString()} payment applied to ${selectedLoanForPayment.memberName}'s loan` });
+      toast.success('Payment recorded successfully!', { description: `${peso(payment.amount)} applied to ${selectedLoanForPayment.memberName}'s loan. Remaining balance: ${peso(payment.remainingBalance)}.` });
     } catch (error) {
       toast.error('Unable to record payment', { description: (error as Error).message });
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -298,11 +210,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Member Name:</span>
-              <span class="receipt-value">${payment.memberName}</span>
+              <span class="receipt-value">${escapeHtml(payment.memberName)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Loan ID:</span>
-              <span class="receipt-value">${payment.loanId}</span>
+              <span class="receipt-value">${escapeHtml(payment.loanNumber || String(payment.loanId))}</span>
             </div>
           </div>
 
@@ -520,15 +432,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                           <p className="text-sm font-medium text-gray-900">₱{loan.monthlyPayment.toLocaleString()}</p>
                         </div>
                       </div>
-                      {loan.status === 'active' && (
-                        <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-                          <p className="text-xs text-blue-600">
-                            Next payment of ₱{loan.monthlyPayment.toLocaleString()} due on {formatDate(loan.nextPaymentDate)}
+                      {loan.status !== 'paid' && loan.nextPaymentDate && (
+                        <div className={`mt-3 p-3 rounded-lg ${loan.status === 'overdue' ? 'bg-red-50' : 'bg-blue-50'}`}>
+                          <p className={`text-xs ${loan.status === 'overdue' ? 'text-red-700' : 'text-blue-600'}`}>
+                            {loan.status === 'overdue'
+                              ? `Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`
+                              : `Next payment of ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} due on ${formatDate(loan.nextPaymentDate)}`}
                           </p>
                         </div>
                       )}
                     </div>
-                    {canEdit && loan.status === 'active' && (
+                    {canEdit && loan.status !== 'paid' && (
                       <button
                         onClick={() => handleRecordPayment(loan)}
                           className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 sm:ml-4 sm:w-auto">
@@ -538,6 +452,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   </div>
                 </div>
               ))}
+              {filteredLoans.length === 0 && <p className="py-8 text-center text-sm text-gray-500">No loans found.</p>}
+              {loanPagination && loanPagination.page < loanPagination.totalPages && (
+                <div className="flex justify-center pt-2">
+                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('loans')} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                    {loadingMore ? 'Loading...' : `Load more (${loanPagination.total - loans.length} remaining)`}
+                  </button>
+                </div>
+              )}
             </div>
           ) : activeTab === 'payments' ? (
             <div className="overflow-x-auto">
@@ -584,6 +506,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   ))}
                 </tbody>
               </table>
+              {filteredPayments.length === 0 && <p className="py-8 text-center text-sm text-gray-500">No payments recorded yet.</p>}
+              {paymentPagination && paymentPagination.page < paymentPagination.totalPages && (
+                <div className="flex justify-center pt-2">
+                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('payments')} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                    {loadingMore ? 'Loading...' : `Load more (${paymentPagination.total - payments.length} remaining)`}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -643,204 +573,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
             <LoanApplicationWizard
               allowMemberLookup
               submitLabel="Submit approved loan"
-              onCancel={() => { setShowAddLoanModal(false); clearMemberSelection(); }}
+              onCancel={() => setShowAddLoanModal(false)}
               onSubmit={handleAgriculturalApplication}
             />
           </div>
         </div>
       )}
-      {false && showAddLoanModal && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white">
-            <div className="flex items-center justify-between border-b border-gray-200 p-4 sm:p-6">
-              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">New Loan Application</h2>
-              <button
-                onClick={() => {
-                  setShowAddLoanModal(false);
-                  clearMemberSelection();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleAddLoan}>
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Member Name *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={loanFormData.memberName}
-                        onFocus={() => setShowMemberSuggestions(true)}
-                        onChange={(e) => {
-                          setSelectedMemberId(null);
-                          setLoanFormData({ ...loanFormData, memberName: e.target.value, memberId: '' });
-                          setShowMemberSuggestions(true);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'ArrowDown') {
-                            e.preventDefault();
-                            setHighlightedMemberIndex((current) => Math.min(current + 1, memberSuggestions.length - 1));
-                          } else if (e.key === 'ArrowUp') {
-                            e.preventDefault();
-                            setHighlightedMemberIndex((current) => Math.max(current - 1, 0));
-                          } else if (e.key === 'Enter' && highlightedMemberIndex >= 0 && memberSuggestions[highlightedMemberIndex]) {
-                            e.preventDefault();
-                            selectMember(memberSuggestions[highlightedMemberIndex]);
-                          } else if (e.key === 'Escape') {
-                            setShowMemberSuggestions(false);
-                          }
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter member name"
-                        aria-autocomplete="list"
-                        aria-expanded={showMemberSuggestions}
-                      />
-                      {showMemberSuggestions && loanFormData.memberName.trim() && (
-                        <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg" role="listbox">
-                          {isSearchingMembers ? (
-                            <p className="px-3 py-3 text-sm text-gray-500">Searching members...</p>
-                          ) : memberSuggestions.length > 0 ? (
-                            memberSuggestions.map((member, index) => (
-                              <button
-                                key={member.id}
-                                type="button"
-                                role="option"
-                                aria-selected={index === highlightedMemberIndex}
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => selectMember(member)}
-                                className={`block w-full border-b border-gray-100 px-3 py-3 text-left last:border-b-0 hover:bg-gray-50 ${index === highlightedMemberIndex ? 'bg-gray-50' : ''}`}
-                              >
-                                <span className="block text-sm font-medium text-gray-900">{member.name}</span>
-                                <span className="block text-xs text-gray-500">Member ID: {member.memberId}</span>
-                              </button>
-                            ))
-                          ) : (
-                            <p className="px-3 py-3 text-sm text-gray-500">No members found</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Member ID *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={loanFormData.memberId}
-                      readOnly={selectedMemberId !== null}
-                      onChange={(e) => {
-                        setSelectedMemberId(null);
-                        setLoanFormData({ ...loanFormData, memberId: e.target.value, memberName: '' });
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="ACIFAC-XXXX-XXX"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Loan Type *
-                    </label>
-                    <select
-                      required
-                      value={loanFormData.loanType}
-                      onChange={(e) => setLoanFormData({ ...loanFormData, loanType: e.target.value as any })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="agricultural">Agricultural</option>
-                      <option value="personal">Personal</option>
-                      <option value="emergency">Emergency</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Loan Amount *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      min="1000"
-                      step="1000"
-                      value={loanFormData.amount}
-                      onChange={(e) => setLoanFormData({ ...loanFormData, amount: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Interest Rate (%) *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      max="20"
-                      step="0.5"
-                      value={loanFormData.interestRate}
-                      onChange={(e) => setLoanFormData({ ...loanFormData, interestRate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="8"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Term (months) *
-                    </label>
-                    <select
-                      required
-                      value={loanFormData.term}
-                      onChange={(e) => setLoanFormData({ ...loanFormData, term: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="6">6 months</option>
-                      <option value="12">12 months</option>
-                      <option value="18">18 months</option>
-                      <option value="24">24 months</option>
-                    </select>
-                  </div>
-                </div>
-                {loanFormData.amount && loanFormData.interestRate && loanFormData.term && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm text-blue-900">
-                      Estimated monthly payment:
-                      <span className="font-bold ml-2">
-                        ₱{Math.round((Number(loanFormData.amount) * (1 + Number(loanFormData.interestRate) / 100)) / Number(loanFormData.term)).toLocaleString()}
-                      </span>
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col-reverse gap-3 border-t border-gray-200 p-4 sm:flex-row sm:justify-end sm:p-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddLoanModal(false);
-                    clearMemberSelection();
-                  }}
-                  className="min-h-11 rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="min-h-11 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
-                >
-                  Approve Loan
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Payment Recording Modal */}
       {showPaymentModal && selectedLoanForPayment && (
         <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
@@ -892,7 +630,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 {paymentData.amount && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                     <p className="text-sm text-blue-900">
-                      New balance: <span className="font-bold">₱{Math.max(0, selectedLoanForPayment.balance - Number(paymentData.amount)).toLocaleString()}</span>
+                      New balance: <span className="font-bold">{peso(Math.max(0, Math.round(selectedLoanForPayment.balance * 100) - Math.round(Number(paymentData.amount) * 100)) / 100)}</span>
                     </p>
                   </div>
                 )}
@@ -910,9 +648,10 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  disabled={isSubmittingPayment}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-60"
                 >
-                  Record Payment
+                  {isSubmittingPayment ? 'Saving...' : 'Record Payment'}
                 </button>
               </div>
             </form>

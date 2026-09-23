@@ -1,53 +1,72 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { User, Bell, Shield, Database, Save, FileText, Upload, Eye, Trash2 } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { changePasswordRequest } from '../../app/services/authApi';
+import {
+  changePasswordRequest, deleteLegalDocumentRequest, fetchCurrentUser, fetchLegalDocuments, updateNotificationPreferencesRequest,
+  updateProfileRequest, uploadLegalDocumentRequest, type AuthUser, type LegalDocumentRecord,
+} from '../../app/services/authApi';
+import { openProtectedFile } from '../../lib/api';
+import { closeLiveUpdates } from '../../lib/liveUpdates';
+import { formatDate, formatDateTime } from '../../utils/dateTime';
 
 interface SettingsProps {
   userRole: UserRole;
+  mustChangePassword?: boolean;
 }
 
-interface LegalDocument {
-  id: string;
-  name: string;
-  category: string;
-  uploadedAt: string;
-  size: string;
-  file?: File;
-}
+const formatSize = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
-const initialLegalDocuments: LegalDocument[] = [
-  { id: 'DOC-001', name: 'ACIFAC Cooperative Registration', category: 'Registration', uploadedAt: 'April 12, 2026', size: '2.4 MB' },
-  { id: 'DOC-002', name: 'Articles of Cooperation', category: 'Governance', uploadedAt: 'April 10, 2026', size: '1.8 MB' },
-  { id: 'DOC-003', name: 'Bylaws and Amendments', category: 'Governance', uploadedAt: 'March 28, 2026', size: '980 KB' },
-];
-
-export function Settings({ userRole }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'system' | 'legal'>('profile');
-  const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>(initialLegalDocuments);
+export function Settings({ userRole, mustChangePassword = false }: SettingsProps) {
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'system' | 'legal'>(mustChangePassword ? 'security' : 'profile');
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocumentRecord[]>([]);
   const [documentCategory, setDocumentCategory] = useState('Registration');
-  const [profileData, setProfileData] = useState({
-    name: 'Ejay Allado',
-    email: 'alladoej@gmail.com',
-    phone: '09918206769',
-    position: 'System Administrator'
-  });
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    smsNotifications: false,
-    loanReminders: true
-  });
+  const [account, setAccount] = useState<AuthUser | null>(null);
+  const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
+  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const loadAccount = useCallback(() => {
+    fetchCurrentUser()
+      .then(({ user }) => {
+        if (!user) return;
+        setAccount(user);
+        setProfileData({ name: user.display_name || '', email: user.email || '', phone: user.phone || '', position: user.position || '' });
+        if (user.notification_preferences) setNotificationSettings(user.notification_preferences);
+      })
+      .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
+  }, []);
+
+  const loadDocuments = useCallback(() => {
+    fetchLegalDocuments()
+      .then(({ data }) => setLegalDocuments(data))
+      .catch(() => { /* the legal tab shows an empty state */ });
+  }, []);
+
+  useEffect(() => {
+    loadAccount();
+    if (!mustChangePassword) loadDocuments();
+  }, [loadAccount, loadDocuments, mustChangePassword]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Profile updated successfully!');
+    try {
+      await updateProfileRequest(profileData);
+      toast.success('Profile updated successfully!');
+      loadAccount();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update profile.');
+    }
   };
 
-  const handleSaveNotifications = () => {
-    toast.success('Notification settings saved!');
+  const handleSaveNotifications = async () => {
+    try {
+      await updateNotificationPreferencesRequest(notificationSettings);
+      toast.success('Notification settings saved!');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to save notification settings.');
+    }
   };
 
   const handleChangePassword = async (event: React.FormEvent) => {
@@ -60,39 +79,49 @@ export function Settings({ userRole }: SettingsProps) {
       await changePasswordRequest(passwordForm);
       toast.success('Password changed successfully. Please sign in again.');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      // The server ends every session after a password change.
+      closeLiveUpdates();
+      window.setTimeout(() => window.location.replace('/login'), 800);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to change password.');
     }
   };
 
   const handleBackup = () => {
-    toast.success('Database backup initiated!', {
-      description: 'Backup will be available in the downloads folder'
+    toast.info('Backups are managed by Supabase', {
+      description: 'The database is backed up automatically by the Supabase project (see Supabase dashboard → Database → Backups). This app does not create backup files.'
     });
   };
 
-  const handleDocumentUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-    const document: LegalDocument = {
-      id: `DOC-${Date.now()}`,
-      name: file.name.replace(/\.[^/.]+$/, ''),
-      category: documentCategory,
-      uploadedAt: new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }),
-      size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      file,
-    };
-    setLegalDocuments((current) => [document, ...current]);
     event.target.value = '';
-    toast.success('Legal document uploaded', { description: `${file.name} is available in this browser session.` });
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      await uploadLegalDocumentRequest(file, documentCategory);
+      toast.success('Legal document uploaded', { description: `${file.name} is stored privately.` });
+      loadDocuments();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to upload document.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
-  const handleDocumentView = (document: LegalDocument) => {
-    if (!document.file) {
-      toast.info('Mock document preview', { description: `${document.name} is sample cooperative data.` });
-      return;
+  const handleDocumentView = (document: LegalDocumentRecord) => {
+    openProtectedFile(`/api/legal-documents/${document.id}/file`).catch((error: Error) => toast.error(error.message));
+  };
+
+  const handleDocumentDelete = async (document: LegalDocumentRecord) => {
+    if (!window.confirm(`Delete "${document.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteLegalDocumentRequest(document.id);
+      toast.success('Document deleted');
+      loadDocuments();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to delete document.');
     }
-    window.open(URL.createObjectURL(document.file), '_blank', 'noopener,noreferrer');
   };
 
   // Only show admin settings
@@ -106,6 +135,7 @@ export function Settings({ userRole }: SettingsProps) {
       <div>
         
         <p className="text-gray-600 mt-1">Manage your account and system preferences</p>
+        {mustChangePassword && <p className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">You are using a temporary password. Change it below to continue using the system.</p>}
       </div>
 
       {/* Settings Container */}
@@ -261,7 +291,7 @@ export function Settings({ userRole }: SettingsProps) {
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
-                      <p className="text-sm text-gray-600">Receive updates via SMS</p>
+                      <p className="text-sm text-gray-600">Receive updates via SMS (saved as a preference; SMS delivery is not set up yet)</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -324,15 +354,16 @@ export function Settings({ userRole }: SettingsProps) {
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Two-Factor Authentication</h3>
                     <p className="text-sm text-gray-600 mb-4">Add an extra layer of security to your account</p>
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                      Enable 2FA
+                    <button type="button" disabled className="px-4 py-2 bg-gray-100 text-gray-500 rounded-lg cursor-not-allowed">
+                      Not available yet
                     </button>
                   </div>
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Active Sessions</h3>
                     <p className="text-sm text-gray-600 mb-4">Manage your active login sessions</p>
                     <div className="text-sm text-gray-700">
-                      <p>Current session: Desktop - Chrome (Active now)</p>
+                      <p>Signed in as {account?.username || '—'}. Previous sign-in: {account?.last_login ? formatDateTime(account.last_login) : '—'}.</p>
+                      <p className="mt-1 text-gray-500">Sessions expire after 8 hours. Changing your password signs out every device.</p>
                     </div>
                   </div>
                 </div>
@@ -360,16 +391,15 @@ export function Settings({ userRole }: SettingsProps) {
                     <h3 className="font-medium text-gray-900 mb-2">System Information</h3>
                     <div className="text-sm text-gray-700 space-y-2 mt-4">
                       <p>Version: 1.0.0</p>
-                      <p>Last Backup: April 27, 2026</p>
-                      <p>Database Size: 245 MB</p>
-                      <p>Active Users: 3</p>
+                      <p>Database: Supabase PostgreSQL (automatic backups managed by Supabase)</p>
+                      <p>Signed-in administrator: {account?.username || '—'}</p>
                     </div>
                   </div>
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Maintenance Mode</h3>
                     <p className="text-sm text-gray-600 mb-4">Enable maintenance mode for system updates</p>
-                    <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                      Enable Maintenance Mode
+                    <button type="button" disabled className="px-4 py-2 bg-gray-100 text-gray-500 rounded-lg cursor-not-allowed">
+                      Not available yet
                     </button>
                   </div>
                 </div>
@@ -391,11 +421,12 @@ export function Settings({ userRole }: SettingsProps) {
                     <option>Governance</option>
                     <option>Compliance</option>
                     <option>Financial</option>
+                    <option>Other</option>
                   </select>
                   <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
                     <Upload className="h-4 w-4" />
-                    Upload Document
-                    <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={handleDocumentUpload} className="sr-only" />
+                    {isUploading ? 'Uploading...' : 'Upload Document'}
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" disabled={isUploading} onChange={handleDocumentUpload} className="sr-only" />
                   </label>
                 </div>
               </div>
@@ -406,14 +437,14 @@ export function Settings({ userRole }: SettingsProps) {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <div className="rounded-lg bg-blue-50 p-3"><FileText className="h-5 w-5 text-blue-600" /></div>
-                        <div className="min-w-0"><h3 className="truncate font-medium text-gray-900">{document.name}</h3><p className="mt-1 text-xs text-gray-500">{document.category} · {document.size}</p></div>
+                        <div className="min-w-0"><h3 className="truncate font-medium text-gray-900">{document.name}</h3><p className="mt-1 text-xs text-gray-500">{document.category} · {formatSize(document.fileSize)}</p></div>
                       </div>
                       <span className="shrink-0 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Available</span>
                     </div>
-                    <p className="mt-4 text-xs text-gray-500">Uploaded {document.uploadedAt}</p>
+                    <p className="mt-4 text-xs text-gray-500">Uploaded {formatDate(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ''}</p>
                     <div className="mt-4 flex items-center gap-3 border-t border-gray-100 pt-3">
                       <button type="button" onClick={() => handleDocumentView(document)} className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"><Eye className="h-4 w-4" />View</button>
-                      <button type="button" onClick={() => setLegalDocuments((current) => current.filter((item) => item.id !== document.id))} className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-800"><Trash2 className="h-4 w-4" />Remove</button>
+                      <button type="button" onClick={() => void handleDocumentDelete(document)} className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-800"><Trash2 className="h-4 w-4" />Remove</button>
                     </div>
                   </div>
                 ))}
