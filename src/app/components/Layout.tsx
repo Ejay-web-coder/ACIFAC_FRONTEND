@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { lazy, Suspense } from 'react';
 import { toast } from 'sonner';
 import {
@@ -17,19 +17,20 @@ import {
   LogOut,
   FileText,
   ArrowRightLeft,
-  Eye,
-  EyeOff,
-  Trash2,
   Menu,
   Wallet,
   ClipboardPlus,
   Megaphone,
 } from 'lucide-react';
 import { UserRole } from '../App';
-import { fetchAdminAuditLogs, fetchAdminLoans, logoutRequest, type AuditLogEntry } from '../services/authApi';
+import {
+  createAnnouncementRequest, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
+  markNotificationRead, type AppNotification, type AuditLogEntry,
+} from '../services/authApi';
+import { closeLiveUpdates, useLiveRefresh } from '../../lib/liveUpdates';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from './ui/sheet';
 import { useIsMobile } from './ui/use-mobile';
-import { dateOnlyToday, formatDateTime } from '../../utils/dateTime';
+import { formatDateTime } from '../../utils/dateTime';
 
 const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 
@@ -37,14 +38,6 @@ interface LayoutProps {
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
   setIsAuthenticated: (value: boolean) => void;
-}
-
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  timestamp: string;
-  type: 'info' | 'success' | 'warning' | 'error';
 }
 
 interface AuditLog {
@@ -71,14 +64,6 @@ interface AuditLogRow {
   new_values?: Record<string, unknown> | null;
 }
 
-interface Member {
-  id: string;
-  memberId: string;
-  emailOrNumber: string;
-  password: string;
-  createdAt: string;
-}
-
 interface Announcement {
   id: string;
   title: string;
@@ -86,104 +71,6 @@ interface Announcement {
   audience: 'All Members' | 'Admins Only';
   postedAt: string;
 }
-
-const initialAnnouncements: Announcement[] = [
-  {
-    id: 'ANN-001',
-    title: 'Annual General Assembly',
-    message: 'The annual general assembly will be held on September 20, 2026.',
-    audience: 'All Members',
-    postedAt: 'Today, 9:30 AM'
-  },
-  {
-    id: 'ANN-002',
-    title: 'Office Schedule',
-    message: 'The cooperative office will be closed on September 15 for a holiday.',
-    audience: 'All Members',
-    postedAt: 'Yesterday, 2:15 PM'
-  }
-];
-
-const announcementsStorageKey = 'acifac-announcements';
-
-const adminNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Loan Application Received',
-    message: 'Juan Dela Cruz has submitted a new loan application for ₱50,000',
-    timestamp: '5 minutes ago',
-    type: 'info'
-  },
-  {
-    id: '2',
-    title: 'Payment Received',
-    message: 'Maria Santos has paid ₱5,000 for loan installment',
-    timestamp: '1 hour ago',
-    type: 'success'
-  },
-  {
-    id: '3',
-    title: 'Loan Approved',
-    message: 'Pedro Reyes\'s loan application for ₱30,000 has been approved',
-    timestamp: '2 hours ago',
-    type: 'success'
-  },
-  {
-    id: '4',
-    title: 'Payment Reminder',
-    message: 'Rosa Santos has an upcoming loan payment due in 3 days',
-    timestamp: '3 hours ago',
-    type: 'warning'
-  },
-];
-
-const memberNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'Loan Approved',
-    message: 'Your loan application for ₱30,000 has been approved',
-    timestamp: '2 hours ago',
-    type: 'success'
-  },
-  {
-    id: '2',
-    title: 'Payment Reminder',
-    message: 'Your loan payment is due in 3 days',
-    timestamp: '3 hours ago',
-    type: 'warning'
-  },
-  {
-    id: '3',
-    title: 'Payment Received',
-    message: 'Your payment of ₱5,000 has been received successfully',
-    timestamp: '5 hours ago',
-    type: 'success'
-  },
-];
-
-const mockMembers: Member[] = [
-  {
-    id: '1',
-    memberId: 'MEM-001',
-    emailOrNumber: 'juan@example.com',
-    password: 'pass123456',
-    createdAt: '2026-04-01'
-  },
-  {
-    id: '2',
-    memberId: 'MEM-002',
-    emailOrNumber: '09123456789',
-    password: 'secure789',
-    createdAt: '2026-04-05'
-  },
-  {
-    id: '3',
-    memberId: 'MEM-003',
-    emailOrNumber: 'maria@example.com',
-    password: 'pass456abc',
-    createdAt: '2026-04-10'
-  },
-];
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin'] },
@@ -213,106 +100,66 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAnnouncements, setShowAnnouncements] = useState(false);
-  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
-    const storedAnnouncements = localStorage.getItem(announcementsStorageKey);
-
-    if (!storedAnnouncements) return initialAnnouncements;
-
-    try {
-      const parsedAnnouncements = JSON.parse(storedAnnouncements) as Announcement[];
-      return Array.isArray(parsedAnnouncements) ? parsedAnnouncements : initialAnnouncements;
-    } catch {
-      return initialAnnouncements;
-    }
-  });
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', audience: 'All Members' as Announcement['audience'] });
-  const [notifications, setNotifications] = useState<Notification[]>(
-    userRole === 'admin' ? adminNotifications : memberNotifications
-  );
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showAuditLogs, setShowAuditLogs] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
-  const [showCreateMemberModal, setShowCreateMemberModal] = useState(false);
-  const [members, setMembers] = useState<Member[]>(mockMembers);
-  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
-  const [memberFormData, setMemberFormData] = useState({
-    memberId: '',
-    emailOrNumber: '',
-    password: '',
-    confirmPassword: ''
-  });
   const [auditLogsSearch, setAuditLogsSearch] = useState('');
   const [auditLogsFilter, setAuditLogsFilter] = useState<string>('all');
-  const [managedUsersSearch, setManagedUsersSearch] = useState('');
 
-  useEffect(() => {
-    if (userRole !== 'admin') return;
-
-    fetchAdminLoans()
-      .then(({ loans }) => {
-        const todayKey = dateOnlyToday();
-        const dueTodayNotifications: Notification[] = loans
-          .filter((loan) =>
-            (loan.status === 'active' || loan.status === 'overdue') &&
-            loan.balance > 0 &&
-            loan.dueDate.slice(0, 10) === todayKey
-          )
-          .map((loan) => ({
-            id: `loan-due-today-${loan.databaseId}`,
-            title: 'Loan payment due today',
-            message: `${loan.memberName}'s loan ${loan.id} is due for payment today.`,
-            timestamp: 'Today',
-            type: 'warning' as const,
-          }));
-
-        setNotifications((current) => [
-          ...dueTodayNotifications,
-          ...current.filter((notification) => !notification.id.startsWith('loan-due-today-')),
-        ]);
+  // Notifications and announcements are stored in PostgreSQL and refreshed
+  // through live updates, so they are the same on every device.
+  const loadNotifications = useCallback(() => {
+    fetchNotifications({ limit: 30 })
+      .then(({ data, unreadCount: unread }) => {
+        setNotifications(data);
+        setUnreadCount(unread);
       })
-      .catch(() => {
-        // Keep the existing notifications visible when loan data is unavailable.
-      });
+      .catch(() => { /* keep the last loaded list */ });
+  }, []);
+
+  const loadAnnouncements = useCallback(() => {
+    if (userRole !== 'admin') return;
+    fetchAnnouncements()
+      .then(({ data }) => setAnnouncements(data.map((announcement) => ({ ...announcement, id: String(announcement.id), postedAt: formatDateTime(announcement.postedAt) }))))
+      .catch(() => { /* keep the last loaded list */ });
   }, [userRole]);
 
-  const visibleNotifications = userRole === 'member'
-    ? [
-        ...announcements
-          .filter((announcement) => announcement.audience === 'All Members')
-          .map((announcement) => ({
-            id: `announcement-${announcement.id}`,
-            title: announcement.title,
-            message: announcement.message,
-            timestamp: announcement.postedAt,
-            type: 'info' as const,
-          })),
-        ...notifications,
-      ]
-    : notifications;
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
+  useEffect(() => { loadAnnouncements(); }, [loadAnnouncements]);
+  useLiveRefresh(['notifications'], loadNotifications);
+  useLiveRefresh(['announcements'], loadAnnouncements);
+
+  const visibleNotifications = notifications;
+
+  const openNotification = async (notification: AppNotification) => {
+    if (!notification.readAt) {
+      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item));
+      setUnreadCount((count) => Math.max(0, count - 1));
+      markNotificationRead(notification.id).catch(() => loadNotifications());
+    }
+    if (notification.link) {
+      setShowNotifications(false);
+      navigate(notification.link);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await markAllNotificationsRead();
+      loadNotifications();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update notifications.');
+    }
+  };
 
   useEffect(() => {
     if (!isMobile) setSidebarOpen(false);
   }, [isMobile]);
-
-  useEffect(() => {
-    localStorage.setItem(announcementsStorageKey, JSON.stringify(announcements));
-  }, [announcements]);
-
-  useEffect(() => {
-    const handleAnnouncementsUpdated = (event: StorageEvent) => {
-      if (event.key !== announcementsStorageKey || !event.newValue) return;
-
-      try {
-        const updatedAnnouncements = JSON.parse(event.newValue) as Announcement[];
-        if (Array.isArray(updatedAnnouncements)) setAnnouncements(updatedAnnouncements);
-      } catch {
-      }
-    };
-
-    window.addEventListener('storage', handleAnnouncementsUpdated);
-    return () => window.removeEventListener('storage', handleAnnouncementsUpdated);
-  }, []);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -348,80 +195,28 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     } catch {
       toast.error('Unable to contact the server, but this session was cleared locally.');
     } finally {
+      closeLiveUpdates();
       setUserRole('member');
       setIsAuthenticated(false);
-      localStorage.removeItem('acifac-user-role');
-      localStorage.removeItem('acifac-is-authenticated');
       setShowProfileMenu(false);
       window.location.replace('/login');
     }
   };
 
-  const handleAnnouncementSubmit = (event: React.FormEvent) => {
+  const handleAnnouncementSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!announcementForm.title.trim() || !announcementForm.message.trim()) {
       toast.error('Please complete the announcement title and message');
       return;
     }
-    setAnnouncements((current) => [{
-      id: `ANN-${Date.now()}`,
-      title: announcementForm.title.trim(),
-      message: announcementForm.message.trim(),
-      audience: announcementForm.audience,
-      postedAt: formatDateTime(new Date())
-    }, ...current]);
-    setAnnouncementForm({ title: '', message: '', audience: 'All Members' });
-    toast.success('Announcement posted successfully');
-  };
-
-  const handleMemberFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setMemberFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCreateMemberSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (memberFormData.password !== memberFormData.confirmPassword) {
-      alert('Passwords do not match!');
-      return;
+    try {
+      await createAnnouncementRequest({ title: announcementForm.title.trim(), message: announcementForm.message.trim(), audience: announcementForm.audience });
+      setAnnouncementForm({ title: '', message: '', audience: 'All Members' });
+      loadAnnouncements();
+      toast.success('Announcement posted successfully');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to post announcement.');
     }
-    if (!memberFormData.memberId || !memberFormData.emailOrNumber || !memberFormData.password) {
-      alert('Please fill in all fields!');
-      return;
-    }
-    // Add new member to the list
-    const newMember: Member = {
-      id: Date.now().toString(),
-      memberId: memberFormData.memberId,
-      emailOrNumber: memberFormData.emailOrNumber,
-      password: memberFormData.password,
-      createdAt: dateOnlyToday()
-    };
-    setMembers([...members, newMember]);
-    alert(`Member account created successfully for Member ID: ${memberFormData.memberId}!`);
-    setMemberFormData({
-      memberId: '',
-      emailOrNumber: '',
-      password: '',
-      confirmPassword: ''
-    });
-  };
-
-  const handleDeleteMember = (memberId: string) => {
-    if (confirm(`Are you sure you want to delete member ${memberId}?`)) {
-      setMembers(members.filter(m => m.id !== memberId));
-      alert(`Member ${memberId} has been deleted`);
-    }
-  };
-
-  const togglePasswordVisibility = (memberId: string) => {
-    const newSet = new Set(visiblePasswords);
-    if (newSet.has(memberId)) {
-      newSet.delete(memberId);
-    } else {
-      newSet.add(memberId);
-    }
-    setVisiblePasswords(newSet);
   };
 
   // Filter audit logs based on search and filter
@@ -444,7 +239,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             user: userName,
             action: row.action,
             resource,
-            timestamp: row.created_at ? new Date(row.created_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : 'Unknown',
+            timestamp: row.created_at ? formatDateTime(row.created_at) : 'Unknown',
             details: summary,
           };
         });
@@ -474,12 +269,6 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
 
     return matchesSearch && matchesFilter;
   });
-
-  // Filter members based on search
-  const filteredMembers = members.filter(member => 
-    member.memberId.toLowerCase().includes(managedUsersSearch.toLowerCase()) ||
-    member.emailOrNumber.toLowerCase().includes(managedUsersSearch.toLowerCase())
-  );
 
   return (
     <div className="min-h-screen bg-gray-50 md:flex md:h-screen md:overflow-hidden">
@@ -588,9 +377,9 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                     aria-label="Notifications"
                   >
                     <Bell className="h-5 w-5" />
-                    {visibleNotifications.length > 0 && (
+                    {unreadCount > 0 && (
                       <span className="absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
-                        {visibleNotifications.length}
+                        {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
                     )}
                   </button>
@@ -601,6 +390,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                       <div className="border-b border-gray-200 p-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-lg font-bold text-gray-900">Notifications</h3>
+                          {unreadCount > 0 && <button type="button" onClick={() => void markAllRead()} className="ml-auto mr-3 text-xs font-medium text-green-700 hover:text-green-800">Mark all read</button>}
                           <button
                             onClick={() => setShowNotifications(false)}
                             className="text-gray-400 hover:text-gray-600"
@@ -614,23 +404,23 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                         {visibleNotifications.length > 0 ? (
                           <div className="divide-y divide-gray-200">
                             {visibleNotifications.map((notification) => (
-                              <div key={notification.id} className={`border-l-4 p-4 transition-colors hover:bg-gray-50 ${
-                                notification.type === 'success' ? 'border-l-green-500' :
-                                notification.type === 'error' ? 'border-l-red-500' :
-                                notification.type === 'warning' ? 'border-l-yellow-500' :
+                              <div key={notification.id} role="button" tabIndex={0} onClick={() => void openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter') void openNotification(notification); }} className={`cursor-pointer border-l-4 p-4 transition-colors hover:bg-gray-50 ${notification.readAt ? 'opacity-70' : 'bg-green-50/40'} ${
+                                notification.severity === 'success' ? 'border-l-green-500' :
+                                notification.severity === 'error' ? 'border-l-red-500' :
+                                notification.severity === 'warning' ? 'border-l-yellow-500' :
                                 'border-l-blue-500'
                               }`}>
                                 <div className="flex items-start gap-3">
                                   <div className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
-                                    notification.type === 'success' ? 'bg-green-500' :
-                                    notification.type === 'error' ? 'bg-red-500' :
-                                    notification.type === 'warning' ? 'bg-yellow-500' :
+                                    notification.severity === 'success' ? 'bg-green-500' :
+                                    notification.severity === 'error' ? 'bg-red-500' :
+                                    notification.severity === 'warning' ? 'bg-yellow-500' :
                                     'bg-blue-500'
                                   }`}></div>
                                   <div className="min-w-0 flex-1">
                                     <h4 className="truncate text-sm font-semibold text-gray-900">{notification.title}</h4>
                                     <p className="mt-1 text-sm text-gray-600 line-clamp-2">{notification.message}</p>
-                                    <p className="mt-2 text-xs text-gray-500">{notification.timestamp}</p>
+                                    <p className="mt-2 text-xs text-gray-500">{formatDateTime(notification.createdAt)}</p>
                                   </div>
                                 </div>
                               </div>

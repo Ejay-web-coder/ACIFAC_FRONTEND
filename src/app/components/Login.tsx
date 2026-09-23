@@ -6,17 +6,20 @@ import { UserRole } from '../App';
 import { forgotPasswordRequest, loginRequest, resetPasswordRequest } from '../services/authApi';
 
 interface LoginProps {
-  setUserRole: (role: UserRole) => void;
-  setIsAuthenticated: (value: boolean) => void;
+  onLogin: (role: UserRole, mustChangePassword: boolean) => void;
 }
 
-export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
+export function Login({ onLogin }: LoginProps) {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState<'admin' | 'member' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [recoveryIdentifier, setRecoveryIdentifier] = useState('');
-  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get('resetToken') || '');
+  // Email links use /reset-password?token=...; ?resetToken= is accepted for older links.
+  const [resetToken, setResetToken] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token') || params.get('resetToken') || '';
+  });
   const [resetForm, setResetForm] = useState({ newPassword: '', confirmPassword: '' });
   const [adminForm, setAdminForm] = useState({
     username: '',
@@ -34,12 +37,8 @@ export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
     try {
       const response = await loginRequest({ usernameOrEmail: adminForm.username, password: adminForm.password });
       if (response.role !== 'ADMIN') throw new Error('This account is not an administrator.');
-      const role: UserRole = 'admin';
-      setUserRole(role);
-      setIsAuthenticated(true);
-      localStorage.setItem('acifac-user-role', role);
-      localStorage.setItem('acifac-is-authenticated', 'true');
-      toast.success('Login successful');
+      onLogin('admin', Boolean(response.mustChangePassword));
+      toast.success(response.mustChangePassword ? 'Please change your temporary password to continue.' : 'Login successful');
       navigate(response.mustChangePassword ? '/settings' : '/admin-dashboard');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to sign in.');
@@ -55,12 +54,8 @@ export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
     try {
       const response = await loginRequest({ usernameOrEmail: memberForm.email, password: memberForm.password });
       if (response.role !== 'MEMBER') throw new Error('This account is not a member account.');
-      const role: UserRole = 'member';
-      setUserRole(role);
-      setIsAuthenticated(true);
-      localStorage.setItem('acifac-user-role', role);
-      localStorage.setItem('acifac-is-authenticated', 'true');
-      toast.success('Login successful');
+      onLogin('member', Boolean(response.mustChangePassword));
+      toast.success(response.mustChangePassword ? 'Please change your temporary password to continue.' : 'Login successful');
       navigate(response.mustChangePassword ? '/settings' : '/member-dashboard');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to sign in.');
@@ -91,6 +86,7 @@ export function Login({ setUserRole, setIsAuthenticated }: LoginProps) {
       await resetPasswordRequest({ token: resetToken, ...resetForm });
       toast.success('Password reset successfully. You can now sign in.');
       setResetToken('');
+      window.history.replaceState(null, '', '/login');
       setResetForm({ newPassword: '', confirmPassword: '' });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to reset password.');

@@ -1,5 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
+import { PASSWORD_CHANGE_EVENT, SESSION_ENDED_EVENT } from '../lib/api';
+import { closeLiveUpdates } from '../lib/liveUpdates';
 import { lazy, Suspense } from 'react';
 import { Layout } from './components/Layout';
 import { Toaster } from './components/ui/Toaster';
@@ -29,22 +32,56 @@ function RoleRoute({ userRole, allowedRole, children }: { userRole: UserRole; al
   return userRole === allowedRole ? children : <Navigate to={allowedRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />;
 }
 
+// While the server requires a password change, only Settings is reachable
+// (the backend enforces the same rule on every API request).
+function PasswordChangeGate({ required, children }: { required: boolean; children: ReactNode }) {
+  const location = useLocation();
+  if (required && location.pathname !== '/settings') return <Navigate to="/settings" replace />;
+  return children;
+}
+
 export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('member');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
     fetchCurrentUser()
       .then(({ user }) => {
         if (user?.role) {
           setUserRole(user.role === 'ADMIN' ? 'admin' : 'member');
+          setMustChangePassword(Boolean(user.must_change_password));
           setIsAuthenticated(true);
         }
       })
       .catch(() => setIsAuthenticated(false))
       .finally(() => setIsAuthReady(true));
   }, []);
+
+  useEffect(() => {
+    const onSessionEnded = (event: Event) => {
+      closeLiveUpdates();
+      setIsAuthenticated((wasAuthenticated) => {
+        if (wasAuthenticated) toast.error((event as CustomEvent<string>).detail || 'Your session has ended. Please sign in again.');
+        return false;
+      });
+      setMustChangePassword(false);
+    };
+    const onPasswordChangeRequired = () => setMustChangePassword(true);
+    window.addEventListener(SESSION_ENDED_EVENT, onSessionEnded);
+    window.addEventListener(PASSWORD_CHANGE_EVENT, onPasswordChangeRequired);
+    return () => {
+      window.removeEventListener(SESSION_ENDED_EVENT, onSessionEnded);
+      window.removeEventListener(PASSWORD_CHANGE_EVENT, onPasswordChangeRequired);
+    };
+  }, []);
+
+  const handleLogin = (role: UserRole, requiresPasswordChange: boolean) => {
+    setUserRole(role);
+    setMustChangePassword(requiresPasswordChange);
+    setIsAuthenticated(true);
+  };
 
   if (!isAuthReady) return null;
 
@@ -59,21 +96,22 @@ export default function App() {
             isAuthenticated ? (
               <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
             ) : (
-              <Login setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} />
+              <Login onLogin={handleLogin} />
             )
           }
         />
+        <Route path="/reset-password" element={<Login onLogin={handleLogin} />} />
         <Route
           path="/login"
           element={
             isAuthenticated ? (
               <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
             ) : (
-              <Login setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} />
+              <Login onLogin={handleLogin} />
             )
           }
         />
-        <Route element={isAuthenticated ? <Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /> : <Navigate to="/login" replace />}>
+        <Route element={isAuthenticated ? <PasswordChangeGate required={mustChangePassword}><Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /></PasswordChangeGate> : <Navigate to="/login" replace />}>
           <Route path="/admin-dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/accounts" element={<RoleRoute userRole={userRole} allowedRole="admin"><AccountManagement /></RoleRoute>} />
@@ -102,8 +140,8 @@ export default function App() {
           <Route path="/member/loans" element={<RoleRoute userRole={userRole} allowedRole="member"><LoanStatus userRole={userRole} /></RoleRoute>} />
           <Route path="/member/transactions" element={<RoleRoute userRole={userRole} allowedRole="member"><Transaction userRole={userRole} /></RoleRoute>} />
           <Route path="/member/rental-booking" element={<RoleRoute userRole={userRole} allowedRole="member"><RentalBooking userRole={userRole} /></RoleRoute>} />
-          <Route path="/member/settings" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberSettings /></RoleRoute>} />
-          <Route path="/settings" element={userRole === 'admin' ? <Settings userRole={userRole} /> : <MemberSettings />} />
+          <Route path="/member/settings" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberSettings mustChangePassword={mustChangePassword} /></RoleRoute>} />
+          <Route path="/settings" element={userRole === 'admin' ? <Settings userRole={userRole} mustChangePassword={mustChangePassword} /> : <MemberSettings mustChangePassword={mustChangePassword} />} />
         </Route>
         <Route path="*" element={<Navigate to={isAuthenticated ? (userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard') : '/login'} replace />} />
         </Routes>

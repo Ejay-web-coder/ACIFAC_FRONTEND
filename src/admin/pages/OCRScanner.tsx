@@ -42,17 +42,10 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       return;
     }
     try {
-      setProcessingStage('Uploading document...');
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      setProcessingStage('Reading document...');
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      setProcessingStage('Identifying document type...');
+      setProcessingStage('Uploading and reading document (this can take up to a minute)...');
       const { data } = await analyzeDocument(file);
-      setProcessingStage('Extracting information...');
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      setProcessingStage('Preparing fields...');
       setActiveScan(data);
-      setScans((current) => [data, ...current]);
+      setScans((current) => [data, ...current.filter((scan) => scan.id !== data.id)]);
       if (data.processingStatus === 'failed') {
         toast.error('AI recognition failed', { description: data.processingError || 'Review the document or retry the upload.' });
       } else {

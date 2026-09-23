@@ -13,7 +13,7 @@ dist-ssr
 *.local
 .env
 .env.*
-.env.example
+!.env.example
 
 # Local database / session / private files
 acifacdb.session.sql

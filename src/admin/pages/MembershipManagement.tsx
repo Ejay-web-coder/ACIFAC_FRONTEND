@@ -3,7 +3,9 @@ import { Search, Plus, Edit, Archive, RotateCcw, Eye, Filter, X } from 'lucide-r
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { AddMemberModal, type MemberDraftData } from '../components/AddMemberModal';
-import { addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
+import { openProtectedFile, errorMessage } from '../../lib/api';
+import { useLiveRefresh } from '../../lib/liveUpdates';
+import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
 export interface Member {
@@ -21,6 +23,7 @@ export interface Member {
   idDocumentName?: string | null;
   idDocumentType?: string | null;
   idDocumentSize?: number | null;
+  hasIdDocument?: boolean;
   createdAt?: string;
   updatedAt?: string;
   shareDetails?: {
@@ -202,6 +205,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     const timeout = window.setTimeout(() => { void loadMembers(); }, 300);
     return () => window.clearTimeout(timeout);
   }, [searchTerm, showArchivedMembers]);
+
+  // Another admin's changes (new members, archive/restore, contributions) appear without reloading.
+  useLiveRefresh(['members', 'share_contributions'], () => { void loadMembers(); }, 800);
 
   const filteredMembers = showArchivedMembers ? archivedMembers : members;
 
@@ -727,9 +733,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
                     <h3 className="text-lg font-bold text-gray-900 mb-4 pb-3 border-b-2 border-gray-300">Required Documents</h3>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document</label><p className="mt-1 break-all text-sm font-medium text-gray-900">{selectedMember.idDocumentName || '—'}</p></div>
+                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document</label><p className="mt-1 break-all text-sm font-medium text-gray-900">{selectedMember.idDocumentName || '—'}</p>{selectedMember.hasIdDocument && <button type="button" onClick={() => openProtectedFile(memberDocumentPath(selectedMember.id, 'id-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.')))} className="mt-1 text-sm font-medium text-blue-600 hover:text-blue-800">View document</button>}</div>
                       <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentType || '—'}</p></div>
-                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentSize ? `${selectedMember.idDocumentSize} bytes` : '—'}</p></div>
+                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentSize ? `${(selectedMember.idDocumentSize / 1024).toFixed(1)} KB` : '—'}</p></div>
                     </div>
                   </div>
                   <div className="bg-gradient-to-br from-purple-50 to-purple-50 border border-purple-200 rounded-lg p-5">

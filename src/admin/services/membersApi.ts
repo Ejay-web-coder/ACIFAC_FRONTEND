@@ -1,12 +1,12 @@
 import type { Member } from '../pages/MembershipManagement';
+import { apiFetch, apiGet, apiPatch, apiPost, apiPut } from '../../lib/api';
+import type { Pagination } from '../../app/services/authApi';
 
 interface ApiResponse<T> {
   success: boolean;
   data: T;
   message?: string;
 }
-
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 export interface MemberStatistics {
   totalMembers: number;
@@ -56,6 +56,7 @@ function mapMember(record: Record<string, unknown>): Member {
     idDocumentName: record.id_document_name ? String(record.id_document_name) : null,
     idDocumentType: record.id_document_type ? String(record.id_document_type) : null,
     idDocumentSize: record.id_document_size ? Number(record.id_document_size) : null,
+    hasIdDocument: Boolean(record.has_id_document ?? record.id_document_name),
     createdAt: String(record.created_at || ''),
     updatedAt: String(record.updated_at || ''),
     shareDetails: record.shareDetails as Member['shareDetails'],
@@ -89,21 +90,11 @@ function mapMember(record: Record<string, unknown>): Member {
   };
 }
 
-async function memberFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  const response = await fetch(`${API_URL}${path}`, { ...options, credentials: 'include', headers });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || 'Request failed');
-  return payload as T;
-}
-
-export function fetchMembers(search = '', limit = 100) {
-  const params = new URLSearchParams({ page: '1', limit: String(limit) });
+export function fetchMembers(search = '', limit = 100, options: { page?: number; status?: string } = {}) {
+  const params = new URLSearchParams({ page: String(options.page || 1), limit: String(limit) });
   if (search.trim()) params.set('search', search.trim());
-  return memberFetch<{ data: Record<string, unknown>[]; pagination: MembersResponse['pagination'] }>(`/api/members?${params.toString()}`).then((response) => ({
+  if (options.status) params.set('status', options.status);
+  return apiGet<{ data: Record<string, unknown>[]; pagination: MembersResponse['pagination'] }>(`/api/members?${params.toString()}`).then((response) => ({
     ...response,
     data: response.data.map(mapMember),
   }));
@@ -112,14 +103,14 @@ export function fetchMembers(search = '', limit = 100) {
 export function fetchArchivedMembers(search = '') {
   const params = new URLSearchParams({ page: '1', limit: '100' });
   if (search.trim()) params.set('search', search.trim());
-  return memberFetch<{ data: Record<string, unknown>[]; pagination: MembersResponse['pagination'] }>(`/api/members/archived?${params.toString()}`).then((response) => ({
+  return apiGet<{ data: Record<string, unknown>[]; pagination: MembersResponse['pagination'] }>(`/api/members/archived?${params.toString()}`).then((response) => ({
     ...response,
     data: response.data.map(mapMember),
   }));
 }
 
 export function fetchMemberStatistics() {
-  return memberFetch<ApiResponse<MemberStatistics>>('/api/members/statistics');
+  return apiGet<ApiResponse<MemberStatistics>>('/api/members/statistics');
 }
 
 export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null) {
@@ -129,27 +120,27 @@ export function createMemberRequest(payload: Record<string, unknown>, document: 
   });
   if (document) form.append('idDocument', document);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
-  return memberFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
+  return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
 export function updateMemberRequest(id: number, payload: Record<string, unknown>) {
-  return memberFetch<ApiResponse<Record<string, unknown>>>(`/api/members/${id}`, { method: 'PUT', body: JSON.stringify(payload) }).then((response) => ({ ...response, data: mapMember(response.data) }));
+  return apiPut<ApiResponse<Record<string, unknown>>>(`/api/members/${id}`, payload).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
 export function archiveMemberRequest(id: number) {
-  return memberFetch<{ success: boolean; message: string }>(`/api/members/${id}/archive`, { method: 'PATCH' });
+  return apiPatch<{ success: boolean; message: string }>(`/api/members/${id}/archive`);
 }
 
 export function restoreMemberRequest(id: number) {
-  return memberFetch<{ success: boolean; message: string }>(`/api/members/${id}/restore`, { method: 'PATCH' });
+  return apiPatch<{ success: boolean; message: string }>(`/api/members/${id}/restore`);
 }
 
 export function fetchMemberRequest(id: number) {
-  return memberFetch<ApiResponse<Record<string, unknown>>>(`/api/members/${id}`).then((response) => ({ ...response, data: mapMember(response.data) }));
+  return apiGet<ApiResponse<Record<string, unknown>>>(`/api/members/${id}`).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
 export function addShareContributionRequest(id: number, payload: { amount: number; contributionDate: string; paymentMethod?: string; referenceNumber?: string; notes?: string }) {
-  return memberFetch<ApiResponse<ShareDetails> & { contribution: { id: number; memberId: number; amount: number; date: string; paymentMethod: string | null; reference: string | null; notes: string } }>(`/api/members/${id}/share-contributions`, { method: 'POST', body: JSON.stringify(payload) });
+  return apiPost<ApiResponse<ShareDetails> & { contribution: { id: number; memberId: number; amount: number; date: string; paymentMethod: string | null; reference: string | null; notes: string } }>(`/api/members/${id}/share-contributions`, payload);
 }
 
 export interface SavingsRecord {
@@ -160,12 +151,23 @@ export interface SavingsRecord {
   date: string;
   amount: number;
   type: 'Deposit' | 'Savings Contribution';
+  createdAt?: string;
   paymentMethod: string;
   reference: string;
   notes: string;
   status: 'Completed' | 'Pending';
 }
 
-export function fetchSavingsRecords() {
-  return memberFetch<ApiResponse<SavingsRecord[]>>('/api/members/savings');
+export interface SavingsSummary { totalAmount: number; totalRecords: number; members: number; today: number; thisMonth: number }
+
+export function fetchSavingsRecords(params: { page?: number; limit?: number; search?: string; memberId?: number; date?: string } = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '' && value !== null) search.set(key, String(value));
+  return apiGet<ApiResponse<SavingsRecord[]> & { summary: SavingsSummary; pagination: Pagination }>(`/api/members/savings${search.toString() ? `?${search}` : ''}`);
 }
+
+export function createSavingsRequest(payload: { memberId: number; amount: string; date: string; paymentMethod?: string; reference?: string; notes?: string }) {
+  return apiPost<ApiResponse<SavingsRecord> & { memberTotal: number }>('/api/members/savings', payload);
+}
+
+export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'photo') => `/api/members/${memberId}/documents/${kind}`;

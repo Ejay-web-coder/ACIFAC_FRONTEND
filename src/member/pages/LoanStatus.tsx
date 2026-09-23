@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authApi';
 import { toast } from 'sonner';
-import { formatDate } from '../../utils/dateTime';
+import { formatDate, formatDateTime } from '../../utils/dateTime';
 import { LoanApplicationWizard, type LoanApplicationPayload } from '../../app/components/LoanApplicationWizard';
 import type { Member } from '../../admin/pages/MembershipManagement';
+import { useLiveRefresh } from '../../lib/liveUpdates';
+import { sumMoney } from '../../utils/money';
 
 interface LoanStatusProps {
   userRole: UserRole;
@@ -27,6 +29,9 @@ interface Loan {
   status: 'active' | 'paid' | 'overdue';
   paymentsMade: number;
   paymentsRemaining: number;
+  totalPaid: number;
+  overdueAmount: number;
+  nextAmountDue: number | null;
 }
 
 interface Payment {
@@ -48,6 +53,8 @@ interface LoanRequest {
   monthlyIncome: number;
   submittedAt: string;
   status: 'pending' | 'approved' | 'declined';
+  reviewNotes?: string | null;
+  totalRepayment?: number;
 }
 
 export function LoanStatus({ userRole }: LoanStatusProps) {
@@ -57,16 +64,9 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
   const [applicationMember, setApplicationMember] = useState<Member | null>(null);
   const [showApplyLoanForm, setShowApplyLoanForm] = useState(false);
   const [activeSection, setActiveSection] = useState<'loans' | 'applications' | 'payments'>('loans');
-  const [loanApplication, setLoanApplication] = useState({
-    loanType: 'Agricultural',
-    amount: 25000,
-    term: 12,
-    purpose: '',
-    monthlyIncome: 20000
-  });
 
-  useEffect(() => {
-    const loadLoanData = () => fetchMyMemberData().then((data) => {
+
+  const loadLoanData = useCallback(() => fetchMyMemberData().then((data) => {
       setApplicationMember({
         id: data.member.id,
         name: data.member.full_name,
@@ -88,77 +88,57 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         },
       } as Member);
       setLoans(data.loans.map((loan) => ({
-        id: loan.loan_number,
-        loanType: loan.loan_type,
-        amount: Number(loan.amount),
-        totalAmount: Number((Number(loan.amount) * (1 + Number(loan.interest_rate) / 100)).toFixed(2)),
-        totalInterest: Number((Number(loan.amount) * Number(loan.interest_rate) / 100).toFixed(2)),
-        balance: Number(loan.balance),
-        interestRate: Number(loan.interest_rate),
+        id: loan.id,
+        loanType: loan.loanType,
+        amount: loan.amount,
+        totalAmount: loan.totalAmount,
+        totalInterest: loan.totalInterest,
+        balance: loan.balance,
+        interestRate: loan.interestRate,
         term: Number(loan.term),
-        monthlyPayment: Number(loan.monthly_payment),
-        dateApproved: loan.date_approved,
-        dueDate: loan.due_date,
-        nextPaymentDate: loan.next_payment_date || '',
+        monthlyPayment: loan.monthlyPayment,
+        dateApproved: loan.dateApproved,
+        dueDate: loan.dueDate,
+        nextPaymentDate: loan.nextPaymentDate || '',
         status: loan.status,
-        paymentsMade: data.payments.filter((payment) => payment.loan_id === loan.id).length,
-        paymentsRemaining: Math.max(0, Number(loan.term) - data.payments.filter((payment) => payment.loan_id === loan.id).length),
+        paymentsMade: loan.paidInstallments,
+        paymentsRemaining: Math.max(0, Number(loan.term) - loan.paidInstallments),
+        totalPaid: loan.totalPaid,
+        overdueAmount: loan.overdueAmount,
+        nextAmountDue: loan.nextAmountDue,
       })));
       setPayments(data.payments.map((payment) => ({
         id: String(payment.id),
-        loanId: String(payment.loan_id),
-        amount: Number(payment.amount),
-        paymentDate: payment.payment_date,
-        principalPaid: Number(payment.principal_paid),
-        interestPaid: Number(payment.interest_paid),
-        remainingBalance: Number(payment.remaining_balance),
+        loanId: payment.loanNumber || String(payment.loanId),
+        amount: payment.amount,
+        paymentDate: payment.paymentDate,
+        principalPaid: payment.principalPaid,
+        interestPaid: payment.interestPaid,
+        remainingBalance: payment.remainingBalance,
       })));
       setLoanRequests((data.loanRequests ?? []).map((request) => ({
         id: request.id,
-        loanType: request.loan_type,
-        amount: Number(request.amount),
+        loanType: request.loanType,
+        amount: request.amount,
         term: request.term,
         purpose: request.purpose,
-        monthlyIncome: Number(request.monthly_income),
-        submittedAt: request.submitted_at,
+        monthlyIncome: request.monthlyIncome,
+        submittedAt: request.submittedAt,
         status: request.status,
+        reviewNotes: request.reviewNotes,
+        totalRepayment: request.totalRepayment,
       })));
-    }).catch((error: Error) => toast.error('Unable to load loan status', { description: error.message }));
+    }).catch((error: Error) => toast.error('Unable to load loan status', { description: error.message })), []);
 
-    loadLoanData();
-    window.addEventListener('focus', loadLoanData);
-    const refreshTimer = window.setInterval(loadLoanData, 30000);
-    return () => {
-      window.removeEventListener('focus', loadLoanData);
-      window.clearInterval(refreshTimer);
-    };
-  }, []);
+  useEffect(() => { void loadLoanData(); }, [loadLoanData]);
+  // Refreshes when an admin approves, declines or records a payment (no polling).
+  useLiveRefresh(['loans', 'loan_payments', 'loan_requests'], () => { void loadLoanData(); });
 
   if (userRole !== 'member') {
     return <div className="p-8">Access restricted to members only</div>;
   }
 
-  const handleApplicationChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setLoanApplication(prev => ({
-      ...prev,
-      [name]: name === 'amount' || name === 'term' || name === 'monthlyIncome' ? Number(value) : value
-    }));
-  };
 
-  const handleApplyLoanSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { request } = await createMyLoanRequest(loanApplication);
-      const submittedRequest = request as { id: number; loanType: string; amount: number; term: number; purpose: string; monthlyIncome: number; submittedAt: string; status: 'pending' | 'approved' | 'declined' };
-      setLoanRequests((current) => [{ ...submittedRequest }, ...current]);
-      setShowApplyLoanForm(false);
-      setLoanApplication({ loanType: 'Agricultural', amount: 25000, term: 12, purpose: '', monthlyIncome: 20000 });
-      toast.success('Loan application submitted', { description: 'The cooperative team will review your request.' });
-    } catch (error) {
-      toast.error('Unable to submit loan application', { description: (error as Error).message });
-    }
-  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -192,7 +172,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             <div>
               <p className="text-sm text-gray-600">Total Repayment (with interest)</p>
               <p className="text-2xl font-bold text-gray-900">
-                ₱{loans.reduce((sum, l) => sum + l.totalAmount, 0).toLocaleString()}
+                ₱{sumMoney(loans.map((l) => l.totalAmount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -206,7 +186,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             <div>
               <p className="text-sm text-gray-600">Outstanding Balance</p>
               <p className="text-2xl font-bold text-gray-900">
-                ₱{loans.reduce((sum, l) => sum + l.balance, 0).toLocaleString()}
+                ₱{sumMoney(loans.map((l) => l.balance)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -220,7 +200,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             <div>
               <p className="text-sm text-gray-600">Total Paid</p>
               <p className="text-2xl font-bold text-gray-900">
-                ₱{payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString()}
+                ₱{sumMoney(payments.map((p) => p.amount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -281,11 +261,11 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                         {loan.status}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">Approved on {loan.dateApproved}</p>
+                    <p className="text-sm text-gray-600">Approved on {formatDate(loan.dateApproved)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">Maturity Date</p>
-                    <p className="font-bold text-gray-900">{loan.dueDate}</p>
+                    <p className="font-bold text-gray-900">{formatDate(loan.dueDate)}</p>
                   </div>
                 </div>
 
@@ -304,7 +284,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Interest Rate</p>
-                    <p className="text-sm font-medium text-gray-900">{loan.interestRate}% per annum</p>
+                    <p className="text-sm font-medium text-gray-900">{loan.interestRate}% flat (whole term)</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Monthly Payment</p>
@@ -350,7 +330,8 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                 <div key={request.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 rounded-lg p-4">
                   <div>
                     <p className="font-medium text-gray-900">{request.loanType} loan - ₱{request.amount.toLocaleString()}</p>
-                    <p className="text-sm text-gray-600">Submitted on {request.submittedAt}</p>
+                    <p className="text-sm text-gray-600">Submitted on {formatDateTime(request.submittedAt)}</p>
+                    {request.status === 'declined' && request.reviewNotes && <p className="text-sm text-red-700">Reason: {request.reviewNotes}</p>}
                   </div>
                   <span className={`px-3 py-1 text-xs rounded-full capitalize w-fit ${
                     request.status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -389,7 +370,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                 {payments.map((payment) => (
                   <tr key={payment.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-900">{payment.id}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{payment.paymentDate}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
                       ₱{payment.amount.toLocaleString()}
                     </td>
@@ -429,115 +410,12 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
               submitLabel="Submit application"
               onCancel={() => setShowApplyLoanForm(false)}
               onSubmit={async (application: LoanApplicationPayload) => {
-                const { request } = await createMyLoanRequest(application);
-                setLoanRequests((current) => [{ ...(request as LoanRequest) }, ...current]);
+                await createMyLoanRequest(application);
                 setShowApplyLoanForm(false);
+                await loadLoanData();
                 toast.success('Loan application submitted', { description: 'The cooperative team will review your request.' });
               }}
             />}
-          </div>
-        </div>
-      )}
-      {false && showApplyLoanForm && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-xl font-bold text-gray-900">Apply for a Loan</h2>
-              <button
-                type="button"
-                onClick={() => setShowApplyLoanForm(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleApplyLoanSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Loan Type</label>
-                <select
-                  name="loanType"
-                  value={loanApplication.loanType}
-                  onChange={handleApplicationChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                >
-                  <option value="Agricultural">Agricultural</option>
-                  <option value="Personal">Personal</option>
-                  <option value="Emergency">Emergency</option>
-                  <option value="Business">Business</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount</label>
-                  <input
-                    type="number"
-                    name="amount"
-                    value={loanApplication.amount}
-                    onChange={handleApplicationChange}
-                    min="1000"
-                    step="1000"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Term (months)</label>
-                  <input
-                    type="number"
-                    name="term"
-                    value={loanApplication.term}
-                    onChange={handleApplicationChange}
-                    min="1"
-                    max="60"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Income</label>
-                <input
-                  type="number"
-                  name="monthlyIncome"
-                  value={loanApplication.monthlyIncome}
-                  onChange={handleApplicationChange}
-                  min="0"
-                  step="1000"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Purpose</label>
-                <textarea
-                  name="purpose"
-                  value={loanApplication.purpose}
-                  onChange={handleApplicationChange}
-                  rows={4}
-                  required
-                  placeholder="Describe why you need the loan"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-                >
-                  Submit Application
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowApplyLoanForm(false)}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

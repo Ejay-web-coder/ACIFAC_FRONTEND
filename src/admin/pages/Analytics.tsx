@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Download, TrendingUp, AlertTriangle, X } from 'lucide-react';
 import { UserRole } from '../../app/App';
@@ -65,6 +66,9 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
   const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // Re-runs the analytics query only when underlying records change (no polling).
+  useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'share_contributions', 'machinery_operations', 'kadiwa_sales'], () => setRefreshKey((key) => key + 1), 2000);
   const [loading, setLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<AnalyticsData['memberAnalytics'][number] | null>(null);
   const [section, setSection] = useState<'system' | 'member'>('system');
@@ -93,14 +97,12 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
         });
     };
 
-    loadAnalytics(true);
-    const refreshTimer = window.setInterval(() => loadAnalytics(false), 30000);
+    loadAnalytics(refreshKey === 0);
 
     return () => {
       active = false;
-      window.clearInterval(refreshTimer);
     };
-  }, [period.from, period.to]);
+  }, [period.from, period.to, refreshKey]);
 
   const summary = data?.summary;
   const empty = loading ? 'Loading...' : '₱0';
@@ -161,7 +163,7 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <ChartPanel title="Loan Repayment Performance"><BarChart data={data?.repaymentRatings || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="rating" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#2563eb" /></BarChart></ChartPanel>
           <ChartPanel title="Largest Share Holders"><BarChart data={(data?.memberAnalytics || []).slice(0, 5)} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis type="category" dataKey="memberName" width={90} /><Tooltip formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="shareCapital" name="Share capital" fill="#059669" /></BarChart></ChartPanel>
-          <ChartPanel title="AI Loan Capacity Recommendation"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="assessment" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
+          <ChartPanel title="Loan Capacity Recommendation (rule-based)"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="assessment" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
         </div>
         <AnalyticsMembers members={data?.memberAnalytics || []} loading={loading} onSelect={setSelectedMember} />
       </>}
@@ -174,7 +176,7 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <ChartPanel title="Loan Repayment Performance"><BarChart data={data?.repaymentRatings || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="rating" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#2563eb" /></BarChart></ChartPanel>
         <ChartPanel title="Largest Share Holders"><BarChart data={(data?.memberAnalytics || []).slice(0, 5)} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis type="category" dataKey="memberName" width={90} /><Tooltip formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="shareCapital" name="Share capital" fill="#059669" /></BarChart></ChartPanel>
-        <ChartPanel title="AI Loan Capacity Recommendation"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="assessment" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
+        <ChartPanel title="Loan Capacity Recommendation (rule-based)"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="assessment" /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
       </div>
 
       <AnalyticsMembers members={data?.memberAnalytics || []} loading={loading} onSelect={setSelectedMember} />
@@ -195,7 +197,7 @@ function AnalyticsMembers({ members, loading, onSelect }: { members: AnalyticsDa
 }
 
 function MemberDetail({ member, onClose }: { member: AnalyticsData['memberAnalytics'][number]; onClose: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-label="Member analytics details"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-xl font-bold text-gray-900">{member.memberName}</h2><p className="text-sm text-gray-500">Member ID: {member.memberId || '—'}</p></div><button onClick={onClose} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close member details"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4"><Detail label="Share Capital" value={formatCurrency(member.shareCapital)} /><Detail label="Savings" value={formatCurrency(member.savings)} /><Detail label="Completed Loans" value={String(member.completedLoans)} /><Detail label="Active Loans" value={String(member.activeLoans)} /><Detail label="Total Borrowed" value={formatCurrency(member.totalBorrowed)} /><Detail label="Total Paid" value={formatCurrency(member.totalPaid)} /><Detail label="Outstanding" value={formatCurrency(member.outstandingBalance)} /><Detail label="On-Time Rate" value={member.paymentCount ? `${member.onTimePaymentRate}%` : 'Insufficient data'} /></div><div className="mt-6 rounded-lg border border-gray-200 p-4"><h3 className="font-semibold text-gray-900">AI Loan Capacity Recommendation</h3><p className="mt-2 text-sm"><strong>Assessment:</strong> {member.assessment}</p><p className="mt-1 text-sm"><strong>Recommendation:</strong> {member.recommendation}</p>{member.reasons.length > 0 && <><p className="mt-3 text-sm font-semibold">Why this member was recommended:</p><ul className="mt-1 list-disc pl-5 text-sm text-gray-600">{member.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></>}</div><div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Loan History</h3>{member.loanHistory.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-2">Loan</th><th className="pb-2">Status</th><th className="pb-2">Borrowed</th><th className="pb-2">Paid</th><th className="pb-2">Balance</th></tr></thead><tbody>{member.loanHistory.map((loan) => <tr key={loan.id} className="border-b last:border-0"><td className="py-2">{loan.loanNumber}</td><td className="py-2">{loan.status}</td><td className="py-2">{formatCurrency(Number(loan.amount))}</td><td className="py-2">{formatCurrency(Number(loan.totalPaid))}</td><td className="py-2">{formatCurrency(Number(loan.balance))}</td></tr>)}</tbody></table></div> : <p className="text-sm text-gray-500">Insufficient data</p>}</div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-label="Member analytics details"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-xl font-bold text-gray-900">{member.memberName}</h2><p className="text-sm text-gray-500">Member ID: {member.memberId || '—'}</p></div><button onClick={onClose} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close member details"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4"><Detail label="Share Capital" value={formatCurrency(member.shareCapital)} /><Detail label="Savings" value={formatCurrency(member.savings)} /><Detail label="Completed Loans" value={String(member.completedLoans)} /><Detail label="Active Loans" value={String(member.activeLoans)} /><Detail label="Total Borrowed" value={formatCurrency(member.totalBorrowed)} /><Detail label="Total Paid" value={formatCurrency(member.totalPaid)} /><Detail label="Outstanding" value={formatCurrency(member.outstandingBalance)} /><Detail label="On-Time Rate" value={member.paymentCount ? `${member.onTimePaymentRate}%` : 'Insufficient data'} /></div><div className="mt-6 rounded-lg border border-gray-200 p-4"><h3 className="font-semibold text-gray-900">Loan Capacity Recommendation (rule-based)</h3><p className="mt-2 text-sm"><strong>Assessment:</strong> {member.assessment}</p><p className="mt-1 text-sm"><strong>Recommendation:</strong> {member.recommendation}</p>{member.reasons.length > 0 && <><p className="mt-3 text-sm font-semibold">Why this member was recommended:</p><ul className="mt-1 list-disc pl-5 text-sm text-gray-600">{member.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></>}</div><div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Loan History</h3>{member.loanHistory.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-2">Loan</th><th className="pb-2">Status</th><th className="pb-2">Borrowed</th><th className="pb-2">Paid</th><th className="pb-2">Balance</th></tr></thead><tbody>{member.loanHistory.map((loan) => <tr key={loan.id} className="border-b last:border-0"><td className="py-2">{loan.loanNumber}</td><td className="py-2">{loan.status}</td><td className="py-2">{formatCurrency(Number(loan.amount))}</td><td className="py-2">{formatCurrency(Number(loan.totalPaid))}</td><td className="py-2">{formatCurrency(Number(loan.balance))}</td></tr>)}</tbody></table></div> : <p className="text-sm text-gray-500">Insufficient data</p>}</div></div></div>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-gray-500">{label}</p><p className="mt-1 font-semibold text-gray-900">{value}</p></div>; }
