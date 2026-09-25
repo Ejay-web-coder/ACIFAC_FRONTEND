@@ -2,6 +2,26 @@ import type { Member } from '../pages/MembershipManagement';
 import { apiFetch, apiGet, apiPatch, apiPost, apiPut } from '../../lib/api';
 import type { Pagination } from '../../app/services/authApi';
 
+// Children were first saved as text: "Ana (7); Ben (Age not provided)".
+function parseChildrenText(text: string) {
+  return text.split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const match = /^(.*?)\s*\(([^)]*)\)$/.exec(part);
+    const age = match ? match[2].trim() : '';
+    return { name: (match ? match[1] : part).trim(), age: /^age not provided$/i.test(age) ? '' : age };
+  });
+}
+
+function readAdditionalInfo(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === 'string' && value.trim()) {
+    try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; }
+  }
+  return {};
+}
+
+const rowList = <T extends Record<string, string>>(value: unknown, keys: Array<keyof T>): T[] => (Array.isArray(value) ? value : [])
+  .map((item) => Object.fromEntries(keys.map((key) => [key, String((item as Record<string, unknown>)?.[key as string] ?? '')])) as T);
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -86,6 +106,28 @@ function mapMember(record: Record<string, unknown>): Member {
       spouseContact: String(record.spouse_contact || ''),
       children: String(record.children ?? ''),
       emergencyContact: String(record.emergency_contact || ''),
+      ...(() => {
+        const info = readAdditionalInfo(record.additional_info);
+        const text = (key: string) => String(info[key] ?? '');
+        const childrenList = rowList<{ name: string; age: string }>(info.children, ['name', 'age']);
+        return {
+          motherMaidenName: text('motherMaidenName'),
+          motherLastName: text('motherLastName'),
+          motherFirstName: text('motherFirstName'),
+          motherMiddleName: text('motherMiddleName'),
+          childrenList: childrenList.length ? childrenList : parseChildrenText(String(record.children ?? '')),
+          incomeSources: rowList<{ source: string; amount: string }>(info.incomeSources, ['source', 'amount']),
+          membershipType: text('membershipType'),
+          separationDate: text('separationDate'),
+          bodResolution: text('bodResolution'),
+          membershipFee: text('membershipFee'),
+          dateReceived: text('dateReceived'),
+          preMembershipSeminar: text('preMembershipSeminar'),
+          paymentOfMembershipFee: text('paymentOfMembershipFee'),
+          orNumber: text('orNumber'),
+          initialPaidUpCapital: text('initialPaidUpCapital'),
+        };
+      })(),
     },
   };
 }
@@ -137,7 +179,7 @@ export function importMembersRequest(rows: MemberImportRow[]) {
 export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
-    if (value !== null && value !== undefined) form.append(key, String(value));
+    if (value !== null && value !== undefined) form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
   });
   if (document) form.append('idDocument', document);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);

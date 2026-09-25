@@ -125,10 +125,12 @@ const sectionMeta = [
   { title: 'Review and Submit', description: 'Confirm and save member record' },
 ] as const;
 
-const idTypeOptions = ['National ID', 'Driver\'s License', 'Passport', 'UMID', 'Voter\'s ID', 'Other'];
-const genderOptions = ['Male', 'Female', 'Prefer not to say'];
-const civilStatusOptions = ['Single', 'Married', 'Widowed', 'Separated', 'Divorced'];
-const educationOptions = ['Elementary', 'High School', 'Vocational', 'College', 'Graduate Studies'];
+// Shared with the member view and edit windows so all three use the same choices.
+export const idTypeOptions = ['National ID', 'Driver\'s License', 'Passport', 'UMID', 'Voter\'s ID', 'Other'];
+export const genderOptions = ['Male', 'Female', 'Prefer not to say'];
+export const civilStatusOptions = ['Single', 'Married', 'Widowed', 'Separated', 'Divorced'];
+export const educationOptions = ['Elementary', 'High School', 'Vocational', 'College', 'Graduate Studies'];
+export const membershipTypeOptions = ['Regular', 'Associate', 'Lifetime'];
 
 function clampStep(next: number) {
   return Math.min(Math.max(next, 0), sectionMeta.length - 1);

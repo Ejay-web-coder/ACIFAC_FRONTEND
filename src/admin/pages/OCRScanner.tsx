@@ -8,7 +8,7 @@ import { Pagination, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { DocumentScannerModal } from '../components/DocumentScannerModal';
 import {
-  analyzeDocument, fetchDocumentScans, fetchFormDefinitions, OcrFormDefinition, OcrScan, postDocument, saveDocumentReview, verifyDocument, type CheckStatus,
+  analyzeDocument, fetchDocumentScans, fetchFormDefinitions, OcrFormDefinition, OcrScan, postDocument, retryDocumentReading, saveDocumentReview, verifyDocument, type CheckStatus,
 } from '../services/ocrApi';
 
 const UNRECOGNIZED = 'Document Type Not Recognized';
@@ -46,7 +46,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const [dragActive, setDragActive] = useState(false);
   const [processingStage, setProcessingStage] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject'>('');
+  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry'>('');
   const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
@@ -127,6 +127,22 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       toast.success(reject ? 'Document rejected. It will not be saved to any module.' : 'Corrections saved and checked again.');
     } catch (error) {
       toast.error('Unable to save the document', { description: errorText(error, 'Please try again.') });
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const retryReading = async () => {
+    if (!activeScan) return;
+    setBusy('retry');
+    try {
+      const { data, message } = await retryDocumentReading(activeScan.id);
+      storeScan(data);
+      if (data.posted) toast.success('Document saved to records', { description: message });
+      else toast.success(`Document read: ${data.documentType}`, { description: 'Review the checks below.' });
+    } catch (error) {
+      toast.error('AI still could not read the document', { description: errorText(error, 'Please try again in a minute.') });
+      await refreshScan(activeScan.id).catch(() => undefined);
     } finally {
       setBusy('');
     }
@@ -234,7 +250,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
         </div>
 
         {activeScan.posted && <div className="mt-4 flex gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800"><Database className="h-5 w-5 shrink-0" /><p>{activeScan.posted.automatically ? 'AI verified this document and saved it automatically' : 'This document was verified and saved'} to <strong>{activeScan.targetModule || activeScan.posted.module}</strong> as record <strong>{activeScan.posted.recordId}</strong> on {new Date(activeScan.posted.at).toLocaleString()}.</p></div>}
-        {activeScan.processingStatus === 'failed' && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">AI could not read this document: {activeScan.processingError || 'unknown error'}. Upload or scan it again.</div>}
+        {activeScan.processingStatus === 'failed' && <div className="mt-4 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><p>AI could not read this document: {activeScan.processingError || 'unknown error'}</p>{canEdit && <button type="button" onClick={() => void retryReading()} disabled={Boolean(busy)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${busy === 'retry' ? 'animate-spin' : ''}`} />{busy === 'retry' ? 'Reading again...' : 'Retry AI reading'}</button>}</div>}
         {activeScan.documentType === UNRECOGNIZED && activeScan.processingStatus !== 'failed' && <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">The document type could not be identified confidently. Choose the correct type below.</div>}
 
         {activeScan.processingStatus !== 'failed' && <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">

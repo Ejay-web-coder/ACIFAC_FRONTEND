@@ -58,6 +58,11 @@ export function saveDocumentReview(id: number, documentType: string, extractedDa
   return apiPatch<ScanResponse>(`/api/ocr/${id}/review`, { documentType, extractedData, reviewStatus });
 }
 
+// Runs the AI again on the saved file of a scan whose reading failed.
+export function retryDocumentReading(id: number) {
+  return apiPost<ScanResponse>(`/api/ocr/${id}/retry`);
+}
+
 export function verifyDocument(id: number) {
   return apiPost<ScanResponse>(`/api/ocr/${id}/verify`);
 }
