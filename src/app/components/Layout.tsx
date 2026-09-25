@@ -36,6 +36,7 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from './ui/sheet';
 import { useIsMobile } from './ui/use-mobile';
 import { formatDateTime } from '../../utils/dateTime';
 import { EmptyState, ListSkeleton } from './common/UiKit';
+import { InstallAppButton } from './common/InstallAppButton';
 
 const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 
@@ -396,6 +397,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             </div>
 
             <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+              <InstallAppButton />
               {userRole === 'admin' && (
                 <button
                   type="button"
