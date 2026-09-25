@@ -3,7 +3,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, Archive, Ban, CalendarClock, CheckCircle2, CircleDashed, CircleDot, Clock3, Inbox, PauseCircle, XCircle,
+  AlertTriangle, Archive, Ban, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CircleDashed, CircleDot, Clock3, Inbox, PauseCircle, XCircle,
 } from 'lucide-react';
 
 type IconType = ComponentType<{ className?: string }>;
@@ -134,5 +134,62 @@ export function SectionCard({ title, description, actions, children, className =
       )}
       <div className={bodyClassName || 'p-4 sm:p-5'}>{children}</div>
     </section>
+  );
+}
+
+// Page numbers shown around the current page, with gaps as "…":
+// 1 … 4 5 6 … 12
+function pageWindow(page: number, totalPages: number): Array<number | 'gap'> {
+  const pages = new Set([1, totalPages, page - 1, page, page + 1].filter((value) => value >= 1 && value <= totalPages));
+  const sorted = [...pages].sort((a, b) => a - b);
+  const result: Array<number | 'gap'> = [];
+  sorted.forEach((value, index) => {
+    if (index > 0 && value - sorted[index - 1] > 1) result.push('gap');
+    result.push(value);
+  });
+  return result;
+}
+
+const PAGE_SIZES = [10, 25, 50];
+
+// Pager for tables and lists. Hidden when everything fits on one page and the
+// page size cannot make a difference.
+export function Pagination({ page, totalPages, total, pageSize, onPageChange, onPageSizeChange, label = 'records', className = '' }: {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  label?: string;
+  className?: string;
+}) {
+  if (total <= PAGE_SIZES[0] && totalPages <= 1) return null;
+  const first = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const last = Math.min(total, page * pageSize);
+  const sizes = [...new Set([pageSize, ...PAGE_SIZES])].sort((a, b) => a - b);
+  const button = 'inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-sm font-medium disabled:opacity-40';
+  return (
+    <nav aria-label={`${label} pages`} className={`flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between ${className}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span>Showing <span className="font-semibold text-gray-900">{first}–{last}</span> of <span className="font-semibold text-gray-900">{total}</span> {label}</span>
+        {onPageSizeChange && (
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">Rows
+            <select value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))} className="rounded-md border border-gray-300 bg-white px-1.5 py-1 text-xs text-gray-700">
+              {sizes.map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1 self-center sm:self-auto">
+          <button type="button" onClick={() => onPageChange(page - 1)} disabled={page <= 1} aria-label="Previous page" className={`${button} text-gray-600 hover:bg-gray-100`}><ChevronLeft className="h-4 w-4" /></button>
+          {pageWindow(page, totalPages).map((item, index) => item === 'gap'
+            ? <span key={`gap-${index}`} className="px-1 text-gray-400">…</span>
+            : <button key={item} type="button" onClick={() => onPageChange(item)} aria-current={item === page ? 'page' : undefined} className={`${button} ${item === page ? 'bg-green-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>{item}</button>)}
+          <button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} aria-label="Next page" className={`${button} text-gray-600 hover:bg-gray-100`}><ChevronRight className="h-4 w-4" /></button>
+        </div>
+      )}
+    </nav>
   );
 }

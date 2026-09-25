@@ -12,6 +12,8 @@ import {
   updateAccountStatusRequest,
 } from '../../app/services/authApi';
 import { formatDateTime } from '../../utils/dateTime';
+import { Pagination } from '../../app/components/common/UiKit';
+import { usePagination } from '../../app/components/common/usePagination';
 
 export function AccountManagement() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -61,7 +63,7 @@ export function AccountManagement() {
       setForm({ memberId: '', username: '', password: '', confirmPassword: '' });
       setMemberSearch('');
       setShowCreate(false);
-      await loadData();
+      void loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create account.');
     } finally {
@@ -74,7 +76,7 @@ export function AccountManagement() {
     try {
       await updateAccountStatusRequest(account.user_id, status);
       toast.success(`Account ${status.toLowerCase()}.`);
-      await loadData();
+      void loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update account status.');
     }
@@ -88,6 +90,8 @@ export function AccountManagement() {
       toast.error(error instanceof Error ? error.message : 'Unable to reset password.');
     }
   };
+
+  const accountPages = usePagination(accounts);
 
   return (
     <div className="space-y-6">
@@ -139,11 +143,12 @@ export function AccountManagement() {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+      <div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50"><tr>{['Member', 'Username', 'Role', 'Status', 'Created', 'Actions'].map((heading) => <th key={heading} className="px-4 py-3 text-left font-semibold text-gray-600">{heading}</th>)}</tr></thead>
           <tbody className="divide-y divide-gray-100">
-            {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading accounts...</td></tr> : accounts.map((account) => (
+            {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading accounts...</td></tr> : accountPages.pageItems.map((account) => (
               <tr key={account.user_id}>
                 <td className="px-4 py-3"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number || 'Admin'}</span></div></td>
                 <td className="px-4 py-3 text-gray-700">{account.username}</td>
@@ -156,6 +161,8 @@ export function AccountManagement() {
             {!isLoading && accounts.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No login accounts found.</td></tr>}
           </tbody>
         </table>
+        </div>
+        <Pagination page={accountPages.page} totalPages={accountPages.totalPages} total={accountPages.total} pageSize={accountPages.pageSize} onPageChange={accountPages.setPage} onPageSizeChange={accountPages.setPageSize} label="accounts" />
       </div>
     </div>
   );

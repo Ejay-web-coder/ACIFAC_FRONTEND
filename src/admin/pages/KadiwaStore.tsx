@@ -5,6 +5,8 @@ import { UserRole } from '../../app/App';
 import { createKadiwaInventory, createKadiwaSale, fetchKadiwaData, restockKadiwaInventory, type KadiwaSaleItem, type KadiwaSummary } from '../../app/services/authApi';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { formatDateTime } from '../../utils/dateTime';
+import { Pagination } from '../../app/components/common/UiKit';
+import { usePagination } from '../../app/components/common/usePagination';
 
 interface Sale {
   id: string;
@@ -81,6 +83,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
     sale.encoder.toLowerCase().includes(searchTerm.toLowerCase()) ||
     sale.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const salePages = usePagination(filteredSales, { resetKey: searchTerm });
+  const inventoryPages = usePagination(inventory);
 
   // Totals are calculated by the server in the cooperative's time zone.
   const todaySales = summary?.todaySales ?? 0;
@@ -297,7 +301,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
               </tr>
             </thead>
             <tbody>
-              {inventory.map(item => {
+              {inventoryPages.pageItems.map(item => {
                 const isLowStock = item.stock <= item.reorderLevel;
 
                 return (
@@ -352,6 +356,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
             </tbody>
           </table>
         </div>
+        <Pagination page={inventoryPages.page} totalPages={inventoryPages.totalPages} total={inventoryPages.total} pageSize={inventoryPages.pageSize} onPageChange={inventoryPages.setPage} onPageSizeChange={inventoryPages.setPageSize} label="items" />
       </div>}
 
       {activeSection === 'sales' && <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
@@ -373,7 +378,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
 
         <div className="p-6">
           <div className="space-y-4">
-            {filteredSales.map((sale) => (
+            {salePages.pageItems.map((sale) => (
               <div key={sale.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -434,6 +439,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
             ))}
           </div>
         </div>
+        <Pagination page={salePages.page} totalPages={salePages.totalPages} total={salePages.total} pageSize={salePages.pageSize} onPageChange={salePages.setPage} onPageSizeChange={salePages.setPageSize} label="sales" />
       </div>}
 
       {showForm && (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Search, Plus, Edit, Archive, RotateCcw, Eye, X, Users, UserPlus, PiggyBank, ChevronDown } from 'lucide-react';
-import { EmptyState, ListSkeleton, StatCard, StatusBadge } from '../../app/components/common/UiKit';
+import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
+import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { AddMemberModal, type MemberDraftData } from '../components/AddMemberModal';
@@ -213,6 +214,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   useLiveRefresh(['members', 'share_contributions'], () => { void loadMembers(); }, 800);
 
   const filteredMembers = showArchivedMembers ? archivedMembers : members;
+  const memberPages = usePagination(filteredMembers, { resetKey: `${searchTerm}|${showArchivedMembers}` });
 
   const canEdit = userRole === 'admin';
 
@@ -223,7 +225,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       const amount = Number(shareContributionForm.amount);
       const response = await addShareContributionRequest(selectedMember.id, { amount, contributionDate: shareContributionForm.contributionDate, notes: shareContributionForm.notes });
       setSelectedMember((current) => current ? { ...current, shareCapital: response.data.total, shareDetails: response.data } : current);
-      await loadMembers();
+      void loadMembers();
       setShareContributionForm({ amount: '', contributionDate: dateOnlyToday(), notes: '' });
       setShowShareContributionModal(false);
       toast.success('Share contribution recorded.');
@@ -238,7 +240,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     try {
       const { data: newMember } = await createMemberRequest(payload, uploadFiles.idDocument);
       setMembers((current) => [newMember, ...current]);
-      await loadMembers();
+      void loadMembers();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to add member.');
       return;
@@ -334,7 +336,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     try {
       const { data: newMember } = await createMemberRequest(payload, idDocumentFile, photoFile);
       setMembers((current) => [newMember, ...current]);
-      await loadMembers();
+      void loadMembers();
       setShowAddModal(false);
       toast.success('Member added successfully.');
     } catch (error) {
@@ -393,7 +395,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     if (!editingMember) return;
     try {
       await updateMemberRequest(editingMember.id, buildMemberPayload(formData, fillout, editingMember.status, editingMember.dateJoined));
-      await loadMembers();
+      void loadMembers();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update member.');
       return;
@@ -449,7 +451,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     if (memberToArchive) {
       try {
         await archiveMemberRequest(memberToArchive.id);
-        await loadMembers();
+        void loadMembers();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Unable to archive member.');
         return;
@@ -469,7 +471,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     if (memberToRestore) {
       try {
         await restoreMemberRequest(memberToRestore.id);
-        await loadMembers();
+        void loadMembers();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Unable to restore member.');
         return;
@@ -554,7 +556,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           <>
             {/* Phones and small tablets: expandable member cards */}
             <ul className="divide-y divide-gray-100 lg:hidden">
-              {filteredMembers.map((member) => (
+              {memberPages.pageItems.map((member) => (
                 <li key={member.id}>
                   <details className="group">
                     <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
@@ -620,7 +622,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredMembers.map((member) => (
+                  {memberPages.pageItems.map((member) => (
                     <tr key={member.id} className="hover:bg-green-50/40">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
@@ -670,6 +672,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                 </tbody>
               </table>
             </div>
+            <Pagination page={memberPages.page} totalPages={memberPages.totalPages} total={memberPages.total} pageSize={memberPages.pageSize} onPageChange={memberPages.setPage} onPageSizeChange={memberPages.setPageSize} label="members" />
           </>
         )}
       </div>
@@ -742,8 +745,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-green-100"><div className="h-full rounded-full bg-green-600" style={{ width: `${Math.min(100, (selectedMember.shareDetails.total / selectedMember.shareDetails.maximum) * 100)}%` }} /></div>
                     <p className="mt-2 text-xs text-green-800">{Math.min(100, (selectedMember.shareDetails.total / selectedMember.shareDetails.maximum) * 100).toFixed(1)}% of maximum share contribution</p>
                     <h4 className="mt-5 font-semibold text-gray-900">Contribution History</h4>
-                    <div className="mt-2 overflow-x-auto rounded-lg border border-green-100 bg-white">
-                      <table className="min-w-full text-sm"><thead className="bg-green-100"><tr><th className="px-3 py-2 text-left font-semibold text-gray-700">Date</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Amount</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Payment Method</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Reference</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Recorded By</th></tr></thead><tbody className="divide-y divide-gray-100">{selectedMember.shareDetails.contributions.map((contribution) => <tr key={contribution.id}><td className="px-3 py-2 whitespace-nowrap">{formatDate(contribution.contributionDate)}</td><td className="px-3 py-2 font-medium text-green-700">₱{contribution.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-3 py-2">{contribution.paymentMethod || '—'}</td><td className="px-3 py-2">{contribution.referenceNumber || '—'}</td><td className="px-3 py-2">{contribution.recordedByName || '—'}</td></tr>)}{selectedMember.shareDetails.contributions.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No share contributions recorded.</td></tr>}</tbody></table>
+                    <div className="mt-2 max-h-72 overflow-auto rounded-lg border border-green-100 bg-white">
+                      <table className="min-w-full text-sm"><thead className="sticky top-0 bg-green-100"><tr><th className="px-3 py-2 text-left font-semibold text-gray-700">Date</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Amount</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Payment Method</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Reference</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Recorded By</th></tr></thead><tbody className="divide-y divide-gray-100">{selectedMember.shareDetails.contributions.map((contribution) => <tr key={contribution.id}><td className="px-3 py-2 whitespace-nowrap">{formatDate(contribution.contributionDate)}</td><td className="px-3 py-2 font-medium text-green-700">₱{contribution.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-3 py-2">{contribution.paymentMethod || '—'}</td><td className="px-3 py-2">{contribution.referenceNumber || '—'}</td><td className="px-3 py-2">{contribution.recordedByName || '—'}</td></tr>)}{selectedMember.shareDetails.contributions.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No share contributions recorded.</td></tr>}</tbody></table>
                     </div>
                   </>
                 ) : <p className="mt-4 text-sm text-gray-500">Share contribution history is unavailable.</p>}
@@ -938,7 +941,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           onClose={() => setShowImportModal(false)}
           onImported={async (imported) => {
             toast.success(`${imported} member(s) imported.`);
-            await loadMembers();
+            void loadMembers();
           }}
         />
       )}

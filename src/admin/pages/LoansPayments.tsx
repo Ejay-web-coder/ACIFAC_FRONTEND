@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList } from 'lucide-react';
-import { EmptyState, StatCard, StatusBadge } from '../../app/components/common/UiKit';
+import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanSummary, type Pagination } from '../../app/services/authApi';
@@ -13,7 +13,6 @@ type Loan = AdminLoan;
 type Payment = AdminPayment;
 type LoanRequest = AdminLoanRequest;
 
-const PAGE_SIZE = 50;
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 interface LoansPaymentsProps {
@@ -39,7 +38,10 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const [summary, setSummary] = useState<LoanSummary | null>(null);
   const [loanPagination, setLoanPagination] = useState<Pagination | null>(null);
   const [paymentPagination, setPaymentPagination] = useState<Pagination | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // Loans and payments are paged on the server; each page replaces the last.
+  const [loanPage, setLoanPage] = useState(1);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   // Search and status filters run on the server; totals come from the whole table.
   const filteredLoans = loans;
@@ -55,8 +57,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     try {
       const search = searchTerm.trim();
       const [loanData, paymentData, requestData] = await Promise.all([
-        fetchAdminLoans({ limit: PAGE_SIZE, search, status: filterStatus === 'all' ? undefined : filterStatus }),
-        fetchAdminPayments({ limit: PAGE_SIZE, search }),
+        fetchAdminLoans({ page: loanPage, limit: pageSize, search, status: filterStatus === 'all' ? undefined : filterStatus }),
+        fetchAdminPayments({ page: paymentPage, limit: pageSize, search }),
         fetchAdminLoanRequests({ status: 'pending', limit: 100 }),
       ]);
       setLoans(loanData.loans);
@@ -68,7 +70,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     } catch (error) {
       toast.error('Unable to load loan data', { description: (error as Error).message });
     }
-  }, [searchTerm, filterStatus]);
+  }, [searchTerm, filterStatus, loanPage, paymentPage, pageSize]);
+
+  useEffect(() => { setLoanPage(1); setPaymentPage(1); }, [searchTerm, filterStatus, pageSize]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadData(); }, 250);
@@ -76,25 +80,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   }, [loadData]);
 
   useLiveRefresh(['loans', 'loan_payments', 'loan_requests'], () => { void loadData(); });
-
-  const loadMore = async (kind: 'loans' | 'payments') => {
-    setLoadingMore(true);
-    try {
-      if (kind === 'loans' && loanPagination) {
-        const next = await fetchAdminLoans({ page: loanPagination.page + 1, limit: PAGE_SIZE, search: searchTerm.trim(), status: filterStatus === 'all' ? undefined : filterStatus });
-        setLoans((current) => [...current, ...next.loans]);
-        setLoanPagination(next.pagination);
-      } else if (kind === 'payments' && paymentPagination) {
-        const next = await fetchAdminPayments({ page: paymentPagination.page + 1, limit: PAGE_SIZE, search: searchTerm.trim() });
-        setPayments((current) => [...current, ...next.payments]);
-        setPaymentPagination(next.pagination);
-      }
-    } catch (error) {
-      toast.error('Unable to load more records', { description: (error as Error).message });
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined') => {
     let reason: string | undefined;
@@ -105,7 +90,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     }
     try {
       await reviewAdminLoanRequest(Number(request.id), status, reason);
-      await loadData();
+      void loadData();
       toast.success(status === 'approved' ? 'Loan request approved' : 'Loan request declined', {
         description: `${request.memberName}'s request #${request.id} was ${status}.`
       });
@@ -117,7 +102,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const handleAgriculturalApplication = async (application: LoanApplicationPayload) => {
     const { loan } = await createAdminLoan(application);
     setShowAddLoanModal(false);
-    await loadData();
+    void loadData();
     toast.success('Loan approved successfully', { description: `${loan.id} has been created using server-verified amounts.` });
   };
 
@@ -140,7 +125,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     setIsSubmittingPayment(true);
     try {
       const { payment } = await recordAdminLoanPayment(selectedLoanForPayment.databaseId, { amount: paymentAmount, paymentDate: paymentData.paymentDate });
-      await loadData();
+      void loadData();
       setShowPaymentModal(false);
       setSelectedLoanForPayment(null);
       setPaymentData({ amount: '', paymentDate: '' });
@@ -417,13 +402,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 </div>
               ))}
               {filteredLoans.length === 0 && <EmptyState icon={PhilippinePeso} title={searchTerm || filterStatus !== 'all' ? 'No loans match your filters' : 'No loans yet'} message={searchTerm || filterStatus !== 'all' ? 'Try a different search or status.' : 'Loans will appear here once they are released to members.'} />}
-              {loanPagination && loanPagination.page < loanPagination.totalPages && (
-                <div className="flex justify-center pt-2">
-                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('loans')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
-                    {loadingMore ? 'Loading...' : `Load more (${loanPagination.total - loans.length} remaining)`}
-                  </button>
-                </div>
-              )}
+              {loanPagination && <Pager page={loanPagination.page} totalPages={loanPagination.totalPages} total={loanPagination.total} pageSize={pageSize} onPageChange={setLoanPage} onPageSizeChange={setPageSize} label="loans" />}
             </div>
           ) : activeTab === 'payments' ? (
             <div>
@@ -497,13 +476,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
               </table>
             </div>
               {filteredPayments.length === 0 && <EmptyState icon={Receipt} title="No payments recorded yet" message="Recorded loan payments and their receipts will appear here." />}
-              {paymentPagination && paymentPagination.page < paymentPagination.totalPages && (
-                <div className="flex justify-center pt-2">
-                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('payments')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
-                    {loadingMore ? 'Loading...' : `Load more (${paymentPagination.total - payments.length} remaining)`}
-                  </button>
-                </div>
-              )}
+              {paymentPagination && <Pager page={paymentPagination.page} totalPages={paymentPagination.totalPages} total={paymentPagination.total} pageSize={pageSize} onPageChange={setPaymentPage} onPageSizeChange={setPageSize} label="payments" />}
             </div>
           ) : (
             <div className="space-y-4">

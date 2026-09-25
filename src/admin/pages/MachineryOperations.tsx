@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer, Tractor, PhilippinePeso } from 'lucide-react';
-import { StatCard } from '../../app/components/common/UiKit';
+import { Pagination, StatCard } from '../../app/components/common/UiKit';
+import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
@@ -41,6 +42,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     op.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     op.machineryName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const operationPages = usePagination(filteredOperations, { resetKey: searchTerm });
+  const machineryPages = usePagination(machinery, { pageSize: 8 });
+  // Only requests awaiting a decision are listed. Approved ones continue as
+  // operations below; the records are kept for members' booking history.
+  const pendingRequests = rentalRequests.filter((request) => request.status === 'pending');
+  const requestPages = usePagination(pendingRequests, { pageSize: 5 });
   const reportOperations = operations.filter((operation) => operation.startDate.slice(0, 7) === reportMonth);
   const reportRevenue = reportOperations.reduce((sum, operation) => sum + operation.rentalFee, 0);
   const reportMonthLabel = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'long' }).format(new Date(`${reportMonth}-01T00:00:00+08:00`));
@@ -112,7 +119,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const completeOperation = async (id: number) => {
     try {
       await completeMachineryOperation(id);
-      await loadData();
+      void loadData();
       toast.success('Operation marked completed');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update operation.');
@@ -122,7 +129,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const toggleMaintenance = async (machine: Machinery) => {
     try {
       await updateMachineryRequest(machine.id, { status: machine.status === 'maintenance' ? 'available' : 'maintenance' });
-      await loadData();
+      void loadData();
       toast.success(machine.status === 'maintenance' ? `${machine.name} is available again` : `${machine.name} set to maintenance`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update machinery.');
@@ -160,7 +167,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const updateRequestStatus = async (id: number, status: RentalRequest['status']) => {
     try {
       await reviewRentalRequest(id, status as 'approved' | 'declined');
-      await loadData();
+      // Leaves the pending list immediately; the reload brings the new operation.
+      setRentalRequests((current) => current.map((request) => request.id === id ? { ...request, status } : request));
+      void loadData();
       toast.success(status === 'approved' ? 'Rental request approved' : 'Rental request declined');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to review rental request.');
@@ -194,7 +203,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     }
     try {
       await createRentalRequest({ machineryId: formData.machineryId, memberDatabaseId: selectedMemberId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' });
-      await loadData();
+      void loadData();
       toast.success('Rental request created');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create rental.');
@@ -260,14 +269,14 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-bold text-gray-900">Rental Requests from Members</h2>
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{rentalRequests.filter(request => request.status === 'pending').length} pending</span>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{pendingRequests.length} pending</span>
               </div>
               <p className="text-sm text-gray-600">Review booking requests submitted from the member portal.</p>
             </div>
           </div>
-          {rentalRequests.length > 0 ? (
+          {pendingRequests.length > 0 ? (
             <div className="divide-y divide-gray-100">
-              {rentalRequests.map(request => (
+              {requestPages.pageItems.map(request => (
               <div key={request.id} className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -281,12 +290,13 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                 {request.status === 'pending' && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => updateRequestStatus(request.id, 'approved')} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Check className="h-4 w-4" />Approve</button><button type="button" onClick={() => updateRequestStatus(request.id, 'declined')} className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><X className="h-4 w-4" />Decline</button></div>}
               </div>
               ))}
+              <Pagination page={requestPages.page} totalPages={requestPages.totalPages} total={requestPages.total} pageSize={requestPages.pageSize} onPageChange={requestPages.setPage} onPageSizeChange={requestPages.setPageSize} label="requests" />
             </div>
           ) : (
             <div className="px-6 py-10 text-center">
               <ClipboardList className="mx-auto h-10 w-10 text-gray-300" />
-              <p className="mt-3 text-sm font-medium text-gray-700">No rental requests yet</p>
-              <p className="mt-1 text-sm text-gray-500">Member booking requests will appear here for review.</p>
+              <p className="mt-3 text-sm font-medium text-gray-700">No pending rental requests</p>
+              <p className="mt-1 text-sm text-gray-500">New member booking requests will appear here for review. Approved requests move to the operations list.</p>
             </div>
           )}
         </div>
@@ -298,7 +308,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
           <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
         </div>
         <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-4">
-          {machinery.map((machine) => (
+          {machineryPages.pageItems.map((machine) => (
             <div key={machine.id} className="rounded-lg border border-gray-200 p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -318,6 +328,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
           ))}
           {machinery.length === 0 && <p className="text-sm text-gray-500">No machinery recorded.</p>}
         </div>
+        <Pagination page={machineryPages.page} totalPages={machineryPages.totalPages} total={machineryPages.total} pageSize={machineryPages.pageSize} onPageChange={machineryPages.setPage} onPageSizeChange={machineryPages.setPageSize} label="machines" />
       </div>
 
       <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
@@ -338,7 +349,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
         <div className="p-6">
           <div className="space-y-4">
-            {filteredOperations.map((operation) => (
+            {operationPages.pageItems.map((operation) => (
               <div key={operation.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -384,6 +395,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             ))}
           </div>
         </div>
+        <Pagination page={operationPages.page} totalPages={operationPages.totalPages} total={operationPages.total} pageSize={operationPages.pageSize} onPageChange={operationPages.setPage} onPageSizeChange={operationPages.setPageSize} label="operations" />
       </div>
 
       {showReport && (

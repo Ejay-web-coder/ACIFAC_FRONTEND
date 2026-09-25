@@ -1,31 +1,60 @@
-import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye, PiggyBank, Tractor } from 'lucide-react';
 import { useState } from 'react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
+import { PagedList } from '../../app/components/common/PagedList';
 import { sumMoney } from '../../utils/money';
 import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
+import { escapeHtml } from '../../utils/html';
 
 interface TransactionProps {
   userRole: UserRole;
 }
 
+type TransactionType = 'savings' | 'payment' | 'debt' | 'rental';
+type TransactionStatus = 'completed' | 'pending' | 'approved' | 'declined' | 'scheduled' | 'ongoing';
+
 interface Transaction {
   id: string;
   date: string;
-  type: 'payment' | 'debt';
+  type: TransactionType;
   category: string;
   description: string;
+  // Extra line under the description, e.g. a rental's booking period.
+  detail?: string;
   amount: number;
-  balance: number;
-  status: 'completed' | 'pending' | 'failed';
+  // Balance after this entry (savings total or loan balance); null for rentals.
+  balance: number | null;
+  balanceLabel: string;
+  status: TransactionStatus;
   paymentMethod: string;
   reference: string;
 }
 
+// How each kind of entry looks. `sign` is what it means for the member.
+const TYPE_STYLE: Record<TransactionType, { label: string; icon: typeof ArrowUpRight; chip: string; text: string; amount: string; sign: string }> = {
+  savings: { label: 'Savings', icon: PiggyBank, chip: 'bg-green-100', text: 'text-green-800', amount: 'text-green-600', sign: '+' },
+  payment: { label: 'Loan Payment', icon: ArrowUpRight, chip: 'bg-red-100', text: 'text-red-800', amount: 'text-red-600', sign: '-' },
+  debt: { label: 'Loan', icon: ArrowDownLeft, chip: 'bg-orange-100', text: 'text-orange-800', amount: 'text-orange-600', sign: '+' },
+  rental: { label: 'Rental', icon: Tractor, chip: 'bg-blue-100', text: 'text-blue-800', amount: 'text-blue-600', sign: '' },
+};
+
+const STATUS_STYLE: Record<TransactionStatus, string> = {
+  completed: 'bg-green-100 text-green-800',
+  approved: 'bg-green-100 text-green-800',
+  scheduled: 'bg-blue-100 text-blue-800',
+  ongoing: 'bg-blue-100 text-blue-800',
+  pending: 'bg-yellow-100 text-yellow-800',
+  declined: 'bg-red-100 text-red-800',
+};
+
+const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function Transaction({ userRole }: TransactionProps) {
   const { memberData, error } = useMyMemberData();
   const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
-  const [filterType, setFilterType] = useState<'all' | 'payment' | 'debt'>('all');
+  const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
@@ -42,7 +71,46 @@ export function Transaction({ userRole }: TransactionProps) {
     return <div className="p-4 md:p-8 text-sm text-gray-500">Loading your transactions...</div>;
   }
 
+  // Savings deposits carry the running savings total after each deposit.
+  let savingsRunning = 0;
+  const savingsRows: Transaction[] = [...memberData.savings.transactions]
+    .sort((a, b) => dateOnlySortValue(a.date) - dateOnlySortValue(b.date) || a.id - b.id)
+    .map((deposit) => {
+      savingsRunning += Number(deposit.amount);
+      return {
+        id: `SAV-${deposit.id}`,
+        date: deposit.date,
+        type: 'savings' as const,
+        category: 'Savings Deposit',
+        description: deposit.notes ? `Savings Deposit - ${deposit.notes}` : 'Savings Deposit',
+        amount: Number(deposit.amount),
+        balance: savingsRunning,
+        balanceLabel: 'Savings Balance',
+        status: 'completed' as const,
+        paymentMethod: deposit.paymentMethod || 'Recorded by ACIFAC Admin',
+        reference: deposit.reference || `SAV-${deposit.id}`,
+      };
+    });
+
+  const rentalRows: Transaction[] = memberData.rentalRequests.map((rental) => ({
+    id: `RENT-${rental.id}`,
+    date: rental.startDate,
+    type: 'rental' as const,
+    category: 'Machinery Rental',
+    description: `${rental.machineryName} rental`,
+    detail: `${formatDate(rental.startDate)} to ${formatDate(rental.endDate)} · ${rental.duration} day${rental.duration === 1 ? '' : 's'}`,
+    amount: Number(rental.rentalFee),
+    balance: null,
+    balanceLabel: '',
+    // An approved booking follows its operation: scheduled, ongoing, completed.
+    status: rental.status === 'approved' ? (rental.operationStatus || 'approved') : rental.status,
+    paymentMethod: 'Rental fee payable to ACIFAC',
+    reference: `RENT-${rental.id}`,
+  }));
+
   const transactions: Transaction[] = [
+    ...savingsRows,
+    ...rentalRows,
     ...memberData.loans.map((loan) => ({
       id: `LOAN-${loan.id}`,
       date: loan.dateApproved,
@@ -51,24 +119,24 @@ export function Transaction({ userRole }: TransactionProps) {
       description: `Loan Disbursement - ${loan.id}`,
       amount: Number(loan.amount),
       balance: Number(loan.balance),
+      balanceLabel: 'Loan Balance',
       status: 'completed' as const,
       paymentMethod: 'Recorded by ACIFAC Admin',
       reference: loan.id,
     })),
-    ...memberData.payments.map((payment) => {
-      return {
-        id: `PAY-${payment.id}`,
-        date: payment.paymentDate,
-        type: 'payment' as const,
-        category: 'Loan Payment',
-        description: `Loan Payment - ${payment.loanNumber || `Loan #${payment.loanId}`}`,
-        amount: Number(payment.amount),
-        balance: Number(payment.remainingBalance),
-        status: 'completed' as const,
-        paymentMethod: 'Recorded by ACIFAC Admin',
-        reference: `PAY-${payment.id}`,
-      };
-    }),
+    ...memberData.payments.map((payment) => ({
+      id: `PAY-${payment.id}`,
+      date: payment.paymentDate,
+      type: 'payment' as const,
+      category: 'Loan Payment',
+      description: `Loan Payment - ${payment.loanNumber || `Loan #${payment.loanId}`}`,
+      amount: Number(payment.amount),
+      balance: Number(payment.remainingBalance),
+      balanceLabel: 'Remaining Loan Balance',
+      status: 'completed' as const,
+      paymentMethod: 'Recorded by ACIFAC Admin',
+      reference: `PAY-${payment.id}`,
+    })),
   ];
 
   const filteredTransactions = transactions.filter(txn => {
@@ -85,10 +153,11 @@ export function Transaction({ userRole }: TransactionProps) {
   });
 
   const totalPayment = sumMoney(transactions.filter(txn => txn.type === 'payment').map(txn => txn.amount));
-
   const totalDebt = sumMoney(transactions.filter(txn => txn.type === 'debt').map(txn => txn.amount));
-
   const netBalance = totalDebt - totalPayment;
+  const totalSavings = Number(memberData.savings.total);
+  // Fees of bookings the cooperative accepted (pending and declined ones are not owed).
+  const totalRentalFees = sumMoney(transactions.filter(txn => txn.type === 'rental' && txn.status !== 'pending' && txn.status !== 'declined').map(txn => txn.amount));
 
   const handleViewReceipt = (txn: Transaction) => {
     setSelectedTransaction(txn);
@@ -111,7 +180,7 @@ export function Transaction({ userRole }: TransactionProps) {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Transaction Receipt - ${txn.id}</title>
+        <title>Transaction Receipt - ${escapeHtml(txn.id)}</title>
         <style>
           body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
           .receipt-container { border: 1px solid #ddd; border-radius: 8px; padding: 30px; background: white; }
@@ -138,7 +207,7 @@ export function Transaction({ userRole }: TransactionProps) {
           <div class="receipt-section">
             <div class="receipt-row">
               <span class="receipt-label">Receipt Number:</span>
-              <span class="receipt-value">${txn.id}</span>
+              <span class="receipt-value">${escapeHtml(txn.id)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Date & Time:</span>
@@ -146,18 +215,18 @@ export function Transaction({ userRole }: TransactionProps) {
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Type:</span>
-              <span class="receipt-value">${txn.type.charAt(0).toUpperCase() + txn.type.slice(1)}</span>
+              <span class="receipt-value">${escapeHtml(TYPE_STYLE[txn.type].label)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Category:</span>
-              <span class="receipt-value">${txn.category}</span>
+              <span class="receipt-value">${escapeHtml(txn.category)}</span>
             </div>
           </div>
 
           <div class="receipt-section">
             <div class="receipt-row">
               <span class="receipt-label">Description:</span>
-              <span class="receipt-value">${txn.description}</span>
+              <span class="receipt-value">${escapeHtml(txn.detail ? `${txn.description} (${txn.detail})` : txn.description)}</span>
             </div>
           </div>
 
@@ -165,24 +234,24 @@ export function Transaction({ userRole }: TransactionProps) {
             <h3 style="margin-top: 0;">Transaction Details</h3>
             <div class="receipt-row">
               <span class="receipt-label">Amount:</span>
-              <span class="receipt-value amount">₱${txn.amount.toLocaleString()}</span>
+              <span class="receipt-value amount">${peso(txn.amount)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Payment Method:</span>
-              <span class="receipt-value">${txn.paymentMethod}</span>
+              <span class="receipt-value">${escapeHtml(txn.paymentMethod)}</span>
             </div>
             <div class="receipt-row">
               <span class="receipt-label">Reference:</span>
-              <span class="receipt-value">${txn.reference}</span>
+              <span class="receipt-value">${escapeHtml(txn.reference)}</span>
             </div>
             <div class="receipt-row" style="border-bottom: 2px solid #333; font-weight: bold;">
               <span class="receipt-label">Status:</span>
-              <span class="receipt-value">${txn.status.charAt(0).toUpperCase() + txn.status.slice(1)}</span>
+              <span class="receipt-value">${capitalize(txn.status)}</span>
             </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Current Balance:</span>
-              <span class="receipt-value amount">₱${txn.balance.toLocaleString()}</span>
-            </div>
+            ${txn.balance === null ? '' : `<div class="receipt-row">
+              <span class="receipt-label">${escapeHtml(txn.balanceLabel)}:</span>
+              <span class="receipt-value amount">${peso(txn.balance)}</span>
+            </div>`}
           </div>
 
           <div class="receipt-footer">
@@ -200,23 +269,21 @@ export function Transaction({ userRole }: TransactionProps) {
     <div className="space-y-6">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-green-500">
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Savings</p>
+          <p className="break-words text-xl font-bold tabular-nums text-green-600 sm:text-2xl">{peso(totalSavings)}</p>
+        </div>
         <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-red-500">
           <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Loan Payments</p>
-          <p className="text-2xl font-bold text-red-600">₱{totalPayment.toLocaleString()}</p>
+          <p className="break-words text-xl font-bold tabular-nums text-red-600 sm:text-2xl">{peso(totalPayment)}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-orange-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Loan Disbursement</p>
-          <p className="text-2xl font-bold text-orange-600">₱{totalDebt.toLocaleString()}</p>
-        </div>
-        <div className={`bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6 border-l-4 ${netBalance >= 0 ? 'border-l-green-500' : 'border-l-blue-500'}`}>
           <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Net Loan Balance</p>
-          <p className={`text-2xl font-bold ${netBalance >= 0 ? 'text-green-600' : 'text-blue-600'}`}>
-            ₱{netBalance.toLocaleString()}
-          </p>
+          <p className="break-words text-xl font-bold tabular-nums text-orange-600 sm:text-2xl">{peso(netBalance)}</p>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-purple-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Transactions</p>
-            <p className="break-words text-xl font-bold tabular-nums text-purple-600 sm:text-3xl">{transactions.length}</p>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-blue-500">
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Machinery Rental Fees</p>
+          <p className="break-words text-xl font-bold tabular-nums text-blue-600 sm:text-2xl">{peso(totalRentalFees)}</p>
         </div>
       </div>
 
@@ -231,9 +298,11 @@ export function Transaction({ userRole }: TransactionProps) {
                 onChange={(e) => setFilterType(e.target.value as any)}
                 className="h-11 w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-56"
               >
-                <option value="all">All Loan Transactions</option>
-                <option value="payment">Loan Payments Only</option>
-                <option value="debt">Loan Disbursements Only</option>
+                <option value="all">All Transactions</option>
+                <option value="savings">Savings Deposits</option>
+                <option value="rental">Machinery Rentals</option>
+                <option value="payment">Loan Payments</option>
+                <option value="debt">Loan Disbursements</option>
               </select>
             </div>
             <div className="min-w-0">
@@ -253,6 +322,7 @@ export function Transaction({ userRole }: TransactionProps) {
 
       {/* Transactions Table */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] overflow-hidden">
+        <PagedList items={sortedTransactions} resetKey={`${filterType}|${sortBy}`} label="transactions">{(pageItems) => (
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -267,49 +337,46 @@ export function Transaction({ userRole }: TransactionProps) {
               </tr>
             </thead>
             <tbody>
-              {sortedTransactions.map((txn) => (
+              {pageItems.map((txn) => (
                 <tr key={txn.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
                   <td className="px-6 py-4">
-                    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg ${txn.type === 'payment' ? 'bg-red-100' : 'bg-orange-100'}`}>
-                      {txn.type === 'payment' ? (
-                        <ArrowUpRight className={`w-5 h-5 text-red-600`} />
-                      ) : (
-                        <ArrowDownLeft className={`w-5 h-5 text-orange-600`} />
-                      )}
-                      <span className={`text-sm font-medium ${txn.type === 'payment' ? 'text-red-800' : 'text-orange-800'}`}>
-                        {txn.type.charAt(0).toUpperCase() + txn.type.slice(1)}
-                      </span>
-                    </div>
+                    {(() => {
+                      const style = TYPE_STYLE[txn.type];
+                      const Icon = style.icon;
+                      return (
+                        <div className={`inline-flex items-center gap-2 whitespace-nowrap px-3 py-1 rounded-lg ${style.chip}`}>
+                          <Icon className={`w-5 h-5 ${style.amount}`} />
+                          <span className={`text-sm font-medium ${style.text}`}>{style.label}</span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4">
-                    <div>
+                    <div className="min-w-[14rem]">
                       <p className="font-medium text-gray-900">{txn.description}</p>
+                      {txn.detail && <p className="text-xs text-gray-600 mt-0.5">{txn.detail}</p>}
                       <p className="text-xs text-gray-600 mt-1">Ref: {txn.reference}</p>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">
                       <Calendar className="w-4 h-4" />
                       {formatDate(txn.date)}
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                    <span className="whitespace-nowrap px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
                       {txn.category}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <p className={`text-lg font-bold ${txn.type === 'payment' ? 'text-red-600' : 'text-orange-600'}`}>
-                      {txn.type === 'payment' ? '-' : '+'}₱{txn.amount.toLocaleString()}
+                    <p className={`whitespace-nowrap text-lg font-bold ${TYPE_STYLE[txn.type].amount}`}>
+                      {TYPE_STYLE[txn.type].sign}{peso(txn.amount)}
                     </p>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      txn.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      txn.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {txn.status.charAt(0).toUpperCase() + txn.status.slice(1)}
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${STATUS_STYLE[txn.status]}`}>
+                      {capitalize(txn.status)}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -337,6 +404,7 @@ export function Transaction({ userRole }: TransactionProps) {
             </tbody>
           </table>
         </div>
+        )}</PagedList>
         {sortedTransactions.length === 0 && (
           <div className="p-8 text-center">
             <p className="text-gray-500">No transactions found</p>
@@ -375,7 +443,7 @@ export function Transaction({ userRole }: TransactionProps) {
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-200">
                   <span className="font-semibold text-gray-700">Type:</span>
-                  <span className="text-gray-900">{selectedTransaction.type.charAt(0).toUpperCase() + selectedTransaction.type.slice(1)}</span>
+                  <span className="text-gray-900">{TYPE_STYLE[selectedTransaction.type].label}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-200">
                   <span className="font-semibold text-gray-700">Category:</span>
@@ -386,7 +454,7 @@ export function Transaction({ userRole }: TransactionProps) {
               <div className="space-y-2 mb-6">
                 <div className="flex justify-between py-2">
                   <span className="font-semibold text-gray-700">Description:</span>
-                  <span className="text-gray-900">{selectedTransaction.description}</span>
+                  <span className="text-right text-gray-900">{selectedTransaction.description}{selectedTransaction.detail && <span className="block text-sm text-gray-600">{selectedTransaction.detail}</span>}</span>
                 </div>
               </div>
 
@@ -395,7 +463,7 @@ export function Transaction({ userRole }: TransactionProps) {
                 <div className="space-y-3">
                   <div className="flex justify-between py-2">
                     <span className="text-gray-700">Amount:</span>
-                    <span className="font-medium text-gray-900">₱{selectedTransaction.amount.toLocaleString()}</span>
+                    <span className="font-medium text-gray-900">{peso(selectedTransaction.amount)}</span>
                   </div>
                   <div className="flex justify-between py-2">
                     <span className="text-gray-700">Payment Method:</span>
@@ -407,12 +475,14 @@ export function Transaction({ userRole }: TransactionProps) {
                   </div>
                   <div className="flex justify-between py-2 border-t-2 border-b-2 border-gray-300 my-3">
                     <span className="text-lg font-bold text-gray-900">Status:</span>
-                    <span className="text-lg font-bold text-green-600">{selectedTransaction.status.charAt(0).toUpperCase() + selectedTransaction.status.slice(1)}</span>
+                    <span className="text-lg font-bold text-gray-900">{capitalize(selectedTransaction.status)}</span>
                   </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-700">Current Balance:</span>
-                    <span className="font-medium text-gray-900">₱{selectedTransaction.balance.toLocaleString()}</span>
-                  </div>
+                  {selectedTransaction.balance !== null && (
+                    <div className="flex justify-between py-2">
+                      <span className="text-gray-700">{selectedTransaction.balanceLabel}:</span>
+                      <span className="font-medium text-gray-900">{peso(selectedTransaction.balance)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -447,9 +517,9 @@ export function Transaction({ userRole }: TransactionProps) {
         <div className="flex items-start gap-4">
           <FileText className="w-5 h-5 text-blue-600 mt-1" />
           <div>
-            <h4 className="font-semibold text-gray-900 mb-2">Loan Transaction Details</h4>
+            <h4 className="font-semibold text-gray-900 mb-2">Transaction Details</h4>
             <p className="text-sm text-gray-600">
-              All loan transactions including loan payments and disbursements are recorded and can be used for record-keeping, reconciliation, and audit purposes. 
+              Your savings deposits, machinery rental bookings, loan disbursements and loan payments are all listed here for record-keeping, reconciliation, and audit purposes. 
               You can download a receipt for any transaction to keep for your records.
             </p>
           </div>

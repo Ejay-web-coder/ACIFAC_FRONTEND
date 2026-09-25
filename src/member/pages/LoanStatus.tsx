@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus } from 'lucide-react';
 import { EmptyState, StatCard } from '../../app/components/common/UiKit';
+import { PagedList } from '../../app/components/common/PagedList';
 import { UserRole } from '../../app/App';
 import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authApi';
 import { toast } from 'sonner';
@@ -278,8 +279,9 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         loanRequests.length > 0 ? (
           <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Loan Applications</h2>
+            <PagedList items={loanRequests} pageSize={5} label="applications" pagerClassName="-mx-6 -mb-6 mt-4">{(pageItems) => (
             <div className="space-y-3">
-              {loanRequests.map((request) => (
+              {pageItems.map((request) => (
                 <div key={request.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 rounded-lg p-4">
                   <div>
                     <p className="font-medium text-gray-900">{request.loanType} loan - ₱{request.amount.toLocaleString()}</p>
@@ -295,6 +297,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                 </div>
               ))}
             </div>
+            )}</PagedList>
           </div>
         ) : (
           <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
@@ -307,6 +310,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
       {activeSection === 'payments' && (
         <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Payment History</h2>
+          <PagedList items={payments} label="payments" pagerClassName="-mx-6 -mb-6 mt-4">{(pageItems) => (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
@@ -320,7 +324,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {payments.map((payment) => (
+                {pageItems.map((payment) => (
                   <tr key={payment.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-900">{payment.id}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td>
@@ -341,6 +345,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
               </tbody>
             </table>
           </div>
+          )}</PagedList>
         </div>
       )}
 
@@ -366,7 +371,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
               onSubmit={async (application: LoanApplicationPayload) => {
                 await createMyLoanRequest(application);
                 setShowApplyLoanForm(false);
-                await loadLoanData();
+                void loadLoanData().catch(() => undefined);
                 toast.success('Loan application submitted', { description: 'The cooperative team will review your request.' });
               }}
             />}
