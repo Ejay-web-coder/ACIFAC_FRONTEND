@@ -15,6 +15,11 @@ const UNRECOGNIZED = 'Document Type Not Recognized';
 const REFERENCE_TYPES = ['Payment Receipt', 'ID Document', 'Cooperative Form'];
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
+// Loan form fields named <row><Column> are shown as the paper's in-kind table.
+const TABLE_COLUMNS = ['Description', 'Quantity', 'Unit', 'UnitPrice', 'Total'] as const;
+const TABLE_COLUMN_LABELS: Record<(typeof TABLE_COLUMNS)[number], string> = { Description: 'Description', Quantity: 'Quantity', Unit: 'Unit', UnitPrice: 'Unit Price', Total: 'Total Amount' };
+const TABLE_FIELD = new RegExp(`^(.+)(${TABLE_COLUMNS.join('|')})$`);
+
 interface OCRScannerProps { userRole: UserRole; }
 
 function titleCase(value: string) {
@@ -184,6 +189,16 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     return (keys.length ? keys : ['Document Notes']).map((key) => ({ key, label: titleCase(key), kind: 'text' as const, required: false }));
   }, [activeScan, definition]);
 
+  const tableRows = useMemo(() => {
+    const rows: Array<{ key: string; label: string }> = [];
+    for (const field of fields) {
+      const match = TABLE_FIELD.exec(field.key);
+      if (!match || match[2] !== 'Description') continue;
+      if (TABLE_COLUMNS.every((column) => fields.some((other) => other.key === `${match[1]}${column}`))) rows.push({ key: match[1], label: field.label.replace(/\s*-\s*Description$/, '') });
+    }
+    return rows;
+  }, [fields]);
+
   const canEdit = userRole === 'admin';
   const locked = Boolean(activeScan?.posted) || activeScan?.reviewStatus === 'rejected';
   const verification = activeScan?.verification || {};
@@ -281,7 +296,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
 
         {fields.length > 0 && activeScan.processingStatus !== 'failed' && <div className="mt-5">
           <p className="text-sm font-medium text-gray-700 mb-3">Extracted information {!locked && <span className="font-normal text-gray-500">— compare each value with the paper form</span>}</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.map((field) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.filter((field) => !tableRows.some((row) => field.key.startsWith(row.key) && TABLE_FIELD.test(field.key))).map((field) => (
             <label key={field.key} className="text-sm text-gray-700">{field.label}{field.required && <span className="text-red-600"> *</span>}
               <input
                 type={field.kind === 'date' ? 'date' : 'text'}
@@ -293,6 +308,17 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
               />
             </label>
           ))}</div>
+          {tableRows.length > 0 && <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="px-3 py-2 font-semibold">Item</th>{TABLE_COLUMNS.map((column) => <th key={column} className="px-3 py-2 font-semibold">{TABLE_COLUMN_LABELS[column]}</th>)}</tr></thead>
+              <tbody className="divide-y divide-gray-100">{tableRows.map((row) => (
+                <tr key={row.key}>
+                  <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{row.label}</td>
+                  {TABLE_COLUMNS.map((column) => <td key={column} className="px-2 py-1.5"><input aria-label={`${row.label} ${TABLE_COLUMN_LABELS[column]}`} value={activeScan.extractedData[`${row.key}${column}`] || ''} onChange={(event) => updateField(`${row.key}${column}`, event.target.value)} disabled={locked || !canEdit} inputMode={column === 'Description' || column === 'Unit' ? undefined : 'decimal'} className="w-full rounded-lg border border-gray-300 p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600" /></td>)}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>}
 
           {canEdit && !locked && <div className="mt-5 space-y-3">
             {definition && hasWarnings && !dirty && <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5" />I compared the flagged items with the original paper form and confirm the document is genuine.</label>}
