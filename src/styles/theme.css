@@ -8,37 +8,151 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
+  /* ACIFAC palette — the only accent colours in the app. */
+  --acf-900: #276221;
+  --acf-800: #3b8132;
+  --acf-700: #46923c;
+  --acf-600: #52a447;
+  --acf-500: #5bb450;
+  --acf-400: #72bf6a;
+  --acf-300: #8bca84;
+  --acf-200: #acd8a7;
+  --acf-100: #cce7c9;
+  --acf-50: #f3f9f2;
+
+  --primary: #3b8132;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f9f2;
+  --secondary-foreground: #276221;
+  --muted: #f4f5f4;
+  --muted-foreground: #5f6660;
+  --accent: #f3f9f2;
+  --accent-foreground: #276221;
+  --destructive: #c62828;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
+  --border: #e4e7e4;
+  --input: #d5d9d5;
+  --input-background: #ffffff;
   --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --ring: #46923c;
+  --chart-1: #276221;
+  --chart-2: #52a447;
+  --chart-3: #8bca84;
+  --chart-4: #3b8132;
+  --chart-5: #acd8a7;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2a1e;
+  --sidebar-primary: #3b8132;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3f9f2;
+  --sidebar-accent-foreground: #276221;
+  --sidebar-border: #e4e7e4;
+  --sidebar-ring: #46923c;
+  --shadow-card: 0 1px 2px rgba(16, 24, 16, 0.04), 0 1px 3px rgba(16, 24, 16, 0.06);
+  --shadow-raised: 0 4px 12px -2px rgba(16, 24, 16, 0.08), 0 2px 4px -2px rgba(16, 24, 16, 0.05);
+}
+
+/*
+ * Every Tailwind accent hue used across the pages (green, emerald, blue, sky,
+ * indigo, violet, purple, pink, teal, cyan, lime) resolves to the ACIFAC green
+ * palette, so existing classes such as bg-blue-600 or text-purple-600 render in
+ * brand green without touching page logic. Red, amber, yellow and orange are
+ * kept for warnings, errors and overdue states, where colour carries meaning.
+ */
+@theme {
+  --color-green-50: #f3f9f2;
+  --color-green-100: #cce7c9;
+  --color-green-200: #acd8a7;
+  --color-green-300: #8bca84;
+  --color-green-400: #72bf6a;
+  --color-green-500: #52a447;
+  --color-green-600: #3b8132;
+  --color-green-700: #276221;
+  --color-green-800: #214f1c;
+  --color-green-900: #1a3f16;
+  --color-green-950: #10290e;
+
+  --color-emerald-50: #f3f9f2;
+  --color-emerald-100: #cce7c9;
+  --color-emerald-200: #acd8a7;
+  --color-emerald-300: #8bca84;
+  --color-emerald-400: #72bf6a;
+  --color-emerald-500: #5bb450;
+  --color-emerald-600: #46923c;
+  --color-emerald-700: #3b8132;
+  --color-emerald-800: #276221;
+  --color-emerald-900: #1a3f16;
+  --color-emerald-950: #10290e;
+
+  --color-blue-50: #f3f9f2;
+  --color-blue-100: #cce7c9;
+  --color-blue-200: #acd8a7;
+  --color-blue-300: #8bca84;
+  --color-blue-400: #72bf6a;
+  --color-blue-500: #46923c;
+  --color-blue-600: #3b8132;
+  --color-blue-700: #276221;
+  --color-blue-800: #214f1c;
+  --color-blue-900: #1a3f16;
+  --color-blue-950: #10290e;
+
+  --color-sky-50: #f3f9f2;
+  --color-sky-100: #cce7c9;
+  --color-sky-200: #acd8a7;
+  --color-sky-500: #5bb450;
+  --color-sky-600: #46923c;
+  --color-sky-700: #276221;
+
+  --color-indigo-50: #f3f9f2;
+  --color-indigo-100: #cce7c9;
+  --color-indigo-200: #acd8a7;
+  --color-indigo-500: #46923c;
+  --color-indigo-600: #3b8132;
+  --color-indigo-700: #276221;
+  --color-indigo-800: #214f1c;
+
+  --color-violet-50: #f3f9f2;
+  --color-violet-100: #cce7c9;
+  --color-violet-500: #52a447;
+  --color-violet-600: #3b8132;
+  --color-violet-700: #276221;
+
+  --color-purple-50: #f3f9f2;
+  --color-purple-100: #cce7c9;
+  --color-purple-200: #acd8a7;
+  --color-purple-500: #52a447;
+  --color-purple-600: #46923c;
+  --color-purple-700: #276221;
+  --color-purple-800: #214f1c;
+  --color-purple-900: #1a3f16;
+
+  --color-pink-50: #f3f9f2;
+  --color-pink-100: #cce7c9;
+  --color-pink-500: #72bf6a;
+  --color-pink-600: #52a447;
+  --color-pink-700: #276221;
+  --color-pink-800: #214f1c;
+
+  --color-teal-50: #f3f9f2;
+  --color-teal-100: #cce7c9;
+  --color-teal-500: #5bb450;
+  --color-teal-600: #46923c;
+  --color-teal-700: #276221;
+
+  --color-cyan-50: #f3f9f2;
+  --color-cyan-100: #cce7c9;
+  --color-cyan-500: #5bb450;
+  --color-cyan-600: #46923c;
+  --color-cyan-700: #276221;
+
+  --color-lime-50: #f3f9f2;
+  --color-lime-100: #cce7c9;
+  --color-lime-500: #72bf6a;
+  --color-lime-600: #52a447;
+  --color-lime-700: #276221;
 }
 
 .dark {

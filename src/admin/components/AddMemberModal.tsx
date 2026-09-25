@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { dateOnlyToday } from '../../utils/dateTime';
-import { Camera, Check, ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, ChevronRight, FileSpreadsheet, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 
 export interface MemberDraftChild {
   id: number;
@@ -176,9 +176,12 @@ export function AddMemberModal({
   onClose,
   onSubmit,
   isSubmitting,
+  onImport,
 }: {
   open: boolean;
   onClose: () => void;
+  /** Opens the Excel bulk import; the button is hidden when omitted. */
+  onImport?: () => void;
   onSubmit: (payload: MemberDraftData, photoFile: File | null, idDocumentFile: File | null) => Promise<void> | void;
   isSubmitting: boolean;
 }) {
@@ -372,7 +375,7 @@ export function AddMemberModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-6">
+    <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-6">
       <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-3">
@@ -381,9 +384,18 @@ export function AddMemberModal({
               <h2 className="mt-1 text-lg font-bold text-slate-900 sm:text-xl">Add Member</h2>
               <p className="text-sm text-slate-500">Step {step + 1} of {sectionMeta.length} — {sectionMeta[step].title}</p>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close add member modal" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {onImport && (
+                <button type="button" onClick={onImport} title="Import members from an Excel file" className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50">
+                  <Plus className="h-4 w-4" />
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Import</span>
+                </button>
+              )}
+              <button type="button" onClick={onClose} aria-label="Close add member modal" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           <ol className="mt-4 grid grid-cols-9 gap-1" aria-label="Member form progress">

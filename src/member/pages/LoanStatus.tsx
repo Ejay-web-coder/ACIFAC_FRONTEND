@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus } from 'lucide-react';
+import { EmptyState, StatCard } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authApi';
 import { toast } from 'sonner';
@@ -155,73 +156,22 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             setActiveSection('applications');
             setShowApplyLoanForm(true);
           }}
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="h-4 w-4" />
           Apply Loan
         </button>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <PhilippinePeso className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Repayment (with interest)</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ₱{sumMoney(loans.map((l) => l.totalAmount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-50 rounded-lg">
-              <TrendingDown className="w-6 h-6 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Outstanding Balance</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ₱{sumMoney(loans.map((l) => l.balance)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-50 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Paid</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ₱{sumMoney(payments.map((p) => p.amount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-50 rounded-lg">
-              <Calendar className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Next Payment</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ₱{loans.find((loan) => loan.status === 'active')?.monthlyPayment.toLocaleString() || '0'}
-              </p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <StatCard label="Total Repayment (with interest)" value={`₱${sumMoney(loans.map((l) => l.totalAmount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={PhilippinePeso} tone="dark" />
+        <StatCard label="Outstanding Balance" value={`₱${sumMoney(loans.map((l) => l.balance)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={TrendingDown} tone="soft" />
+        <StatCard label="Total Paid" value={`₱${sumMoney(payments.map((p) => p.amount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={CheckCircle} />
+        <StatCard label="Next Payment" value={`₱${loans.find((loan) => loan.status === 'active')?.monthlyPayment.toLocaleString() || '0'}`} icon={Calendar} />
       </div>
 
-      <div className="grid grid-cols-1 gap-2 rounded-2xl border border-gray-200 bg-gray-100 p-2 shadow-sm sm:grid-cols-3">
+      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 sm:grid sm:grid-cols-3" role="tablist" aria-label="Loan sections">
         {[
           { key: 'loans', label: 'Active Loans' },
           { key: 'applications', label: 'Loan Applications' },
@@ -231,9 +181,11 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             key={tab.key}
             type="button"
             onClick={() => setActiveSection(tab.key as 'loans' | 'applications' | 'payments')}
-            className={`rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+            role="tab"
+            aria-selected={activeSection === tab.key}
+            className={`inline-flex min-h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-all duration-200 ${
               activeSection === tab.key
-                ? 'bg-white text-blue-700 shadow-sm ring-1 ring-blue-200'
+                ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
                 : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
             }`}
           >
@@ -243,9 +195,10 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
       </div>
 
       {activeSection === 'loans' && (
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+        <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Active Loans</h2>
           <div className="space-y-4">
+            {loans.filter(l => l.status === 'active' || l.status === 'overdue').length === 0 && <EmptyState icon={PhilippinePeso} title="No active loans" message="Loans released to you will appear here with their balance and next due date." compact />}
             {loans.filter(l => l.status === 'active' || l.status === 'overdue').map((loan) => (
               <div key={loan.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-4">
@@ -323,7 +276,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
 
       {activeSection === 'applications' && (
         loanRequests.length > 0 ? (
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+          <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Loan Applications</h2>
             <div className="space-y-3">
               {loanRequests.map((request) => (
@@ -344,7 +297,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
             </div>
           </div>
         ) : (
-          <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+          <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-2">Loan Applications</h2>
             <p className="text-sm text-gray-600">There are no loan applications yet.</p>
           </div>
@@ -352,7 +305,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
       )}
 
       {activeSection === 'payments' && (
-        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+        <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Payment History</h2>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -403,10 +356,11 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
       </div>
 
       {showApplyLoanForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
+        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
           <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             {applicationMember && <LoanApplicationWizard
               initialMember={applicationMember}
+              hideEmail
               submitLabel="Submit application"
               onCancel={() => setShowApplyLoanForm(false)}
               onSubmit={async (application: LoanApplicationPayload) => {

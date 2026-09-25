@@ -1,4 +1,4 @@
-import { User, Mail, Phone, MapPin, Calendar, CreditCard } from 'lucide-react';
+import { User, Phone, MapPin, Calendar, CreditCard } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { sumMoney } from '../../utils/money';
@@ -30,7 +30,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
       </div>
 
       {/* Profile Overview */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
         <div className="flex items-start gap-6">
           <div className="p-6 bg-blue-50 rounded-full">
             <User className="w-16 h-16 text-blue-600" />
@@ -43,19 +43,9 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
       </div>
 
       {/* Personal Information */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
         <h2 className="text-lg font-bold text-gray-900 mb-4">Personal Information</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Mail className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Email Address</p>
-              <p className="font-medium text-gray-900">{member.email || 'Not provided'}</p>
-            </div>
-          </div>
-
           <div className="flex items-start gap-3">
             <div className="p-2 bg-gray-100 rounded-lg">
               <Phone className="w-5 h-5 text-gray-600" />
@@ -89,7 +79,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
       </div>
 
       {/* Financial Summary */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
         <h2 className="text-lg font-bold text-gray-900 mb-4">Financial Summary</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="p-4 bg-blue-50 rounded-lg">

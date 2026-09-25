@@ -60,6 +60,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   const [activeSection, setActiveSection] = useState<'inventory' | 'sales'>('inventory');
   const [summary, setSummary] = useState<KadiwaSummary | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [restockQuantities, setRestockQuantities] = useState<Record<string, string>>({});
+  const [restockingId, setRestockingId] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     fetchKadiwaData({ limit: 100 })
@@ -163,77 +165,85 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
     setShowStockForm(false);
   };
 
-  const handleRestock = async (itemId: string, quantity: number) => {
+  const handleRestock = async (itemId: string) => {
+    const quantity = Number(restockQuantities[itemId]);
+    if (!Number.isFinite(quantity) || quantity <= 0 || restockingId) return;
+    setRestockingId(itemId);
     try {
       const response = await restockKadiwaInventory(itemId, quantity);
       setInventory(prev => prev.map(item => item.id === itemId ? response.item : item));
+      setRestockQuantities(prev => ({ ...prev, [itemId]: '' }));
       toast.success(`${response.item.name} restocked`, { description: `New stock: ${response.item.stock} ${response.item.unit}` });
     } catch (restockError) {
       setError(restockError instanceof Error ? restockError.message : 'Unable to restock item.');
+    } finally {
+      setRestockingId(null);
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-gray-600 mt-1">Manage sales and store stock</p>
+          <p className="text-sm text-gray-600">Manage sales and store stock</p>
           {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </div>
         {canEdit && (
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex">
             <button
+              type="button"
               onClick={() => setShowStockForm(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"
             >
-              <Package className="w-5 h-5" />
+              <Package className="h-4 w-4" />
               Add Inventory
             </button>
             <button
+              type="button"
               onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="h-4 w-4" />
               New Sale
             </button>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-50 rounded-lg">
-              <ShoppingCart className="w-6 h-6 text-green-600" />
+      <div className="grid grid-cols-2 gap-3 md:gap-4">
+        <div className="bg-white rounded-2xl p-3.5 shadow-[var(--shadow-card)] border border-gray-200 sm:p-4">
+          <div className="flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-3">
+            <div className="w-fit rounded-xl bg-green-50 p-2.5 ring-1 ring-green-100">
+              <ShoppingCart className="h-5 w-5 text-green-700" />
             </div>
             <div>
               <p className="text-sm text-gray-600">Today's Sales</p>
-              <p className="text-2xl font-bold text-gray-900">{todaySales}</p>
+              <p className="text-xl font-bold tabular-nums text-gray-900 sm:text-2xl">{todaySales}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-50 rounded-lg">
-              <ShoppingCart className="w-6 h-6 text-purple-600" />
+        <div className="bg-white rounded-2xl p-3.5 shadow-[var(--shadow-card)] border border-gray-200 sm:p-4">
+          <div className="flex flex-col gap-2 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-3">
+            <div className="w-fit rounded-xl bg-green-700 p-2.5">
+              <ShoppingCart className="h-5 w-5 text-white" />
             </div>
             <div>
               <p className="text-sm text-gray-600">Today's Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">₱{todayRevenue.toLocaleString()}</p>
+              <p className="text-xl font-bold tabular-nums text-gray-900 sm:text-2xl">₱{todayRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 border-b border-gray-200">
+      <div className="no-scrollbar flex w-full gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 sm:w-fit" role="tablist" aria-label="Kadiwa views">
         <button
           type="button"
           onClick={() => setActiveSection('inventory')}
           aria-pressed={activeSection === 'inventory'}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+          className={`inline-flex min-h-10 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-colors sm:flex-none ${
             activeSection === 'inventory'
-              ? 'border-blue-600 text-blue-700'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
+              ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+              : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           <Package className="h-4 w-4" />
@@ -243,10 +253,10 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
           type="button"
           onClick={() => setActiveSection('sales')}
           aria-pressed={activeSection === 'sales'}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+          className={`inline-flex min-h-10 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-colors sm:flex-none ${
             activeSection === 'sales'
-              ? 'border-green-600 text-green-700'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
+              ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+              : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           <ShoppingCart className="h-4 w-4" />
@@ -254,24 +264,23 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
         </button>
       </div>
 
-      {activeSection === 'inventory' && <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
+      {activeSection === 'inventory' && <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200 p-6">
+        <div className="mb-4">
           <h2 className="text-lg font-bold text-gray-900">Store Inventory</h2>
-          <span className="text-sm text-gray-500">Front-end only</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
-            <p className="text-sm text-blue-700">Total Stock</p>
-            <p className="text-2xl font-bold text-blue-900">{totalInventoryUnits}</p>
+        <div className="mb-5 grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 sm:p-4">
+            <p className="text-xs text-blue-700 sm:text-sm">Total Stock</p>
+            <p className="break-words text-lg font-bold tabular-nums text-blue-900 sm:text-2xl">{totalInventoryUnits}</p>
           </div>
-          <div className="bg-amber-50 border border-amber-100 rounded-lg p-4">
-            <p className="text-sm text-amber-700">Low Stock</p>
-            <p className="text-2xl font-bold text-amber-900">{lowStockItems}</p>
+          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 sm:p-4">
+            <p className="text-xs text-amber-700 sm:text-sm">Low Stock</p>
+            <p className="break-words text-lg font-bold tabular-nums text-amber-900 sm:text-2xl">{lowStockItems}</p>
           </div>
-          <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4">
-            <p className="text-sm text-emerald-700">Inventory Value</p>
-            <p className="text-2xl font-bold text-emerald-900">₱{inventoryValue.toLocaleString()}</p>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 sm:p-4">
+            <p className="text-xs text-emerald-700 sm:text-sm">Inventory Value</p>
+            <p className="break-words text-lg font-bold tabular-nums text-emerald-900 sm:text-2xl">₱{inventoryValue.toLocaleString()}</p>
           </div>
         </div>
 
@@ -311,13 +320,30 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     <td className="py-3 pr-4 text-gray-700">{item.reorderLevel}</td>
                     <td className="py-3">
                       {canEdit && (
-                        <button
-                          type="button"
-                          onClick={() => handleRestock(item.id, 10)}
-                          className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-medium"
+                        <form
+                          onSubmit={(e) => { e.preventDefault(); void handleRestock(item.id); }}
+                          className="flex items-center gap-2"
                         >
-                          +10 Stock
-                        </button>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            inputMode="decimal"
+                            required
+                            placeholder="Qty"
+                            aria-label={`Quantity to add to ${item.name}`}
+                            value={restockQuantities[item.id] ?? ''}
+                            onChange={(e) => setRestockQuantities(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            className="w-20 px-2 py-1.5 border border-gray-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={restockingId === item.id}
+                            className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-medium disabled:opacity-60"
+                          >
+                            {restockingId === item.id ? 'Adding...' : 'Add'}
+                          </button>
+                        </form>
                       )}
                     </td>
                   </tr>
@@ -328,7 +354,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
         </div>
       </div>}
 
-      {activeSection === 'sales' && <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      {activeSection === 'sales' && <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Sales History</h2>
           <div className="flex flex-col md:flex-row gap-4">
@@ -339,7 +365,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                 placeholder="Search sales..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl"
               />
             </div>
           </div>
@@ -411,7 +437,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
       </div>}
 
       {showForm && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Add New Sale</h2>
@@ -435,7 +461,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     value={formData.encoderName}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="Enter encoder name"
                   />
                 </div>
@@ -453,13 +479,13 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     return (
                       <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_auto] sm:items-end">
                         <label className="block text-sm font-medium text-gray-700">Product
-                          <select value={item.inventoryId} onChange={(e) => updateSaleItem(index, 'inventoryId', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600">
+                          <select value={item.inventoryId} onChange={(e) => updateSaleItem(index, 'inventoryId', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600">
                             <option value="">Select product</option>
                             {inventory.map((option) => <option key={option.id} value={option.id} disabled={option.stock <= 0}>{option.name} — ₱{option.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}/{option.unit} ({option.stock} in stock)</option>)}
                           </select>
                         </label>
                         <label className="block text-sm font-medium text-gray-700">Quantity
-                          <input type="number" min="0.01" step="0.01" max={product?.stock} value={item.quantity} onChange={(e) => updateSaleItem(index, 'quantity', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600" />
+                          <input type="number" min="0.01" step="0.01" max={product?.stock} value={item.quantity} onChange={(e) => updateSaleItem(index, 'quantity', e.target.value)} required className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600" />
                         </label>
                         <div className="flex items-center gap-3 pb-2 text-sm text-gray-700">
                           <span>₱{itemEstimate(item.inventoryId, item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
@@ -486,7 +512,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                       onChange={handleFormChange}
                       min="0"
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                       placeholder="0"
                     />
                   </div>
@@ -501,7 +527,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                       onChange={handleFormChange}
                       min="0"
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                       placeholder="0"
                     />
                   </div>
@@ -516,7 +542,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                       onChange={handleFormChange}
                       min="0"
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                       placeholder="0"
                     />
                   </div>
@@ -531,7 +557,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                       onChange={handleFormChange}
                       min="0"
                       step="0.01"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                       placeholder="0"
                     />
                   </div>
@@ -576,7 +602,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
       )}
 
       {showStockForm && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-xl">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Add Inventory Item</h2>
@@ -600,7 +626,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                   value={stockFormData.name}
                   onChange={handleStockFormChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   placeholder="e.g. Rice"
                 />
               </div>
@@ -614,7 +640,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     name="category"
                     value={stockFormData.category}
                     onChange={handleStockFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   >
                     <option value="Groceries">Groceries</option>
                     <option value="Vegetables">Vegetables</option>
@@ -631,7 +657,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     name="unit"
                     value={stockFormData.unit}
                     onChange={handleStockFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                     placeholder="kg"
                   />
                 </div>
@@ -648,7 +674,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     value={stockFormData.stock}
                     onChange={handleStockFormChange}
                     min="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
                 <div>
@@ -662,7 +688,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     onChange={handleStockFormChange}
                     min="0"
                     step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
                 <div>
@@ -675,7 +701,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                     value={stockFormData.reorderLevel}
                     onChange={handleStockFormChange}
                     min="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
               </div>
@@ -683,7 +709,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-green-700"
                 >
                   Save Inventory
                 </button>

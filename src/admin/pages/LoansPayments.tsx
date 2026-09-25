@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList } from 'lucide-react';
+import { EmptyState, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanSummary, type Pagination } from '../../app/services/authApi';
@@ -253,105 +254,71 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          
-          <p className="text-gray-600 mt-1">Track loan disbursements and payment collections</p>
-        </div>
+        <p className="text-sm text-gray-600">Track loan disbursements and payment collections</p>
         {canEdit && (
           <button
             onClick={() => setShowAddLoanModal(true)}
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700 sm:w-auto"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="h-4 w-4" />
             New Loan
           </button>
         )}
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <PhilippinePeso className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Active Loans</p>
-              <p className="text-2xl font-bold text-gray-900">{totalActive}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-50 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Loans (with interest)</p>
-              <p className="text-2xl font-bold text-gray-900">₱{totalDisbursed.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-50 rounded-lg">
-              <Clock className="w-6 h-6 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Balance</p>
-              <p className="text-2xl font-bold text-gray-900">₱{totalOutstanding.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-50 rounded-lg">
-              <PhilippinePeso className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Collected (This Month)</p>
-              <p className="text-2xl font-bold text-gray-900">₱{totalCollected.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <StatCard label="Active Loans" value={totalActive} icon={PhilippinePeso} tone="dark" />
+        <StatCard label="Total Loans (with interest)" value={`₱${totalDisbursed.toLocaleString()}`} icon={CheckCircle} />
+        <StatCard label="Total Balance" value={`₱${totalOutstanding.toLocaleString()}`} icon={Clock} tone="soft" />
+        <StatCard label="Collected (This Month)" value={`₱${totalCollected.toLocaleString()}`} icon={PhilippinePeso} />
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <div className="flex overflow-x-auto">
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+        <div className="border-b border-gray-100 p-3 sm:p-4">
+          <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1" role="tablist" aria-label="Loan views">
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'loans'}
               onClick={() => setActiveTab('loans')}
-              className={`min-h-11 shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors sm:px-6 ${
+              className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors ${
                 activeTab === 'loans'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Loans
             </button>
             <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'payments'}
               onClick={() => setActiveTab('payments')}
-              className={`min-h-11 shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors sm:px-6 ${
+              className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors ${
                 activeTab === 'payments'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+                  : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Payment History
             </button>
             {canEdit && (
               <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'requests'}
                 onClick={() => setActiveTab('requests')}
-                className={`min-h-11 shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors sm:px-6 ${
-                  activeTab === 'requests'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors ${
+                activeTab === 'requests'
+                  ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
               >
                 Loan Requests
                 {loanRequests.some(request => request.status === 'pending') && (
-                  <span className="ml-2 rounded-full bg-orange-100 px-2 py-1 text-xs text-orange-800">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
                     {loanRequests.filter(request => request.status === 'pending').length}
                   </span>
                 )}
@@ -361,23 +328,25 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         </div>
 
         {/* Filters */}
-        <div className="border-b border-gray-200 p-4 sm:p-6">
-          <div className="flex flex-col gap-3 sm:gap-4 md:flex-row">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <div className="border-b border-gray-100 px-3 pb-3 sm:px-4 sm:pb-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+            <label className="relative block flex-1">
+              <span className="sr-only">Search loans</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
               <input
-                type="text"
+                type="search"
                 placeholder="Search by name or loan ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 text-sm"
               />
-            </div>
+            </label>
             {activeTab === 'loans' && (
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
-                className="min-h-11 w-full rounded-lg border border-gray-300 px-4 py-2 md:w-auto"
+                aria-label="Filter loans by status"
+                className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-44"
               >
                 <option value="all">All Status</option>
                 <option value="active">Active</option>
@@ -389,28 +358,22 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         </div>
 
         {/* Content */}
-        <div className="p-4 sm:p-6">
+        <div className="p-3 sm:p-4 lg:p-5">
           {activeTab === 'loans' ? (
             <div className="space-y-4">
               {filteredLoans.map((loan) => (
-                <div key={loan.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div key={loan.id} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
                         <h3 className="break-words font-bold text-gray-900">{loan.memberName}</h3>
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          loan.status === 'active' ? 'bg-green-100 text-green-800' :
-                          loan.status === 'paid' ? 'bg-gray-100 text-gray-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {loan.status}
-                        </span>
-                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full capitalize">
+                        <StatusBadge status={loan.status} />
+                        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">
                           {loan.loanType}
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}</p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                         <div>
                           <p className="text-xs text-gray-500">Loan Amount</p>
                           <p className="text-sm font-medium text-gray-900">₱{loan.amount.toLocaleString()}</p>
@@ -433,8 +396,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         </div>
                       </div>
                       {loan.status !== 'paid' && loan.nextPaymentDate && (
-                        <div className={`mt-3 p-3 rounded-lg ${loan.status === 'overdue' ? 'bg-red-50' : 'bg-blue-50'}`}>
-                          <p className={`text-xs ${loan.status === 'overdue' ? 'text-red-700' : 'text-blue-600'}`}>
+                        <div className={`mt-3 flex items-start gap-2 rounded-xl p-3 ${loan.status === 'overdue' ? 'bg-red-50 ring-1 ring-red-100' : 'bg-green-50 ring-1 ring-green-100'}`}>
+                          {loan.status === 'overdue' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : <Clock className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />}
+                          <p className={`text-sm ${loan.status === 'overdue' ? 'text-red-800' : 'text-green-800'}`}>
                             {loan.status === 'overdue'
                               ? `Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`
                               : `Next payment of ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} due on ${formatDate(loan.nextPaymentDate)}`}
@@ -445,40 +409,63 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     {canEdit && loan.status !== 'paid' && (
                       <button
                         onClick={() => handleRecordPayment(loan)}
-                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 sm:ml-4 sm:w-auto">
+                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:ml-4 sm:w-auto">
                         Record Payment
                       </button>
                     )}
                   </div>
                 </div>
               ))}
-              {filteredLoans.length === 0 && <p className="py-8 text-center text-sm text-gray-500">No loans found.</p>}
+              {filteredLoans.length === 0 && <EmptyState icon={PhilippinePeso} title={searchTerm || filterStatus !== 'all' ? 'No loans match your filters' : 'No loans yet'} message={searchTerm || filterStatus !== 'all' ? 'Try a different search or status.' : 'Loans will appear here once they are released to members.'} />}
               {loanPagination && loanPagination.page < loanPagination.totalPages && (
                 <div className="flex justify-center pt-2">
-                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('loans')} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('loans')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                     {loadingMore ? 'Loading...' : `Load more (${loanPagination.total - loans.length} remaining)`}
                   </button>
                 </div>
               )}
             </div>
           ) : activeTab === 'payments' ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px]">
-                <thead className="bg-gray-50">
+            <div>
+              <ul className="space-y-3 md:hidden">
+                {filteredPayments.map((payment) => (
+                  <li key={payment.id} className="rounded-2xl border border-gray-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">{payment.memberName}</p>
+                        <p className="text-xs text-gray-500">{payment.id} · {formatDate(payment.paymentDate)}</p>
+                      </div>
+                      <p className="shrink-0 text-lg font-bold tabular-nums text-gray-900">₱{payment.amount.toLocaleString()}</p>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-gray-50 p-3 text-xs">
+                      <div><dt className="text-gray-500">Principal</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.principalPaid.toLocaleString()}</dd></div>
+                      <div><dt className="text-gray-500">Interest</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.interestPaid.toLocaleString()}</dd></div>
+                      <div><dt className="text-gray-500">Balance</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
+                    </dl>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => handleViewReceipt(payment)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"><Eye className="h-4 w-4" />View</button>
+                      <button type="button" onClick={() => handleDownloadReceipt(payment)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 text-sm font-semibold text-white hover:bg-green-700"><Download className="h-4 w-4" />Download</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-gray-50/80">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Member</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Principal</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interest</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Payment ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Principal</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Interest</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Balance</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100">
                   {filteredPayments.map((payment) => (
-                    <tr key={payment.id} className="hover:bg-gray-50">
+                    <tr key={payment.id} className="hover:bg-green-50/40">
                       <td className="px-4 py-3 text-sm text-gray-900">{payment.id}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{payment.memberName}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td>
@@ -488,15 +475,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <td className="px-4 py-3 text-sm text-gray-900">₱{payment.remainingBalance.toLocaleString()}</td>
                       <td className="flex gap-2 px-4 py-3 text-sm">
                         <button
+                          type="button"
                           onClick={() => handleViewReceipt(payment)}
-                          className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium"
+                          className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                         >
                           <Eye className="w-4 h-4" />
                           View
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDownloadReceipt(payment)}
-                          className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 text-xs font-medium"
+                          className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-green-600 px-3 text-xs font-semibold text-white hover:bg-green-700"
                         >
                           <Download className="w-4 h-4" />
                           Download
@@ -506,10 +495,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   ))}
                 </tbody>
               </table>
-              {filteredPayments.length === 0 && <p className="py-8 text-center text-sm text-gray-500">No payments recorded yet.</p>}
+            </div>
+              {filteredPayments.length === 0 && <EmptyState icon={Receipt} title="No payments recorded yet" message="Recorded loan payments and their receipts will appear here." />}
               {paymentPagination && paymentPagination.page < paymentPagination.totalPages && (
                 <div className="flex justify-center pt-2">
-                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('payments')} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+                  <button type="button" disabled={loadingMore} onClick={() => void loadMore('payments')} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">
                     {loadingMore ? 'Loading...' : `Load more (${paymentPagination.total - payments.length} remaining)`}
                   </button>
                 </div>
@@ -522,22 +512,22 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   <h2 className="text-lg font-bold text-gray-900">Pending Loan Requests</h2>
                   <p className="text-sm text-gray-600 mt-1">Review applications submitted by members.</p>
                 </div>
-                <span className="px-3 py-1 text-sm font-medium rounded-full bg-orange-100 text-orange-800">
+                <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">
                   {loanRequests.filter(request => request.status === 'pending').length} pending
                 </span>
               </div>
               {loanRequests.filter(request => request.status === 'pending').map(request => (
-                <div key={request.id} className="border border-gray-200 rounded-lg p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div key={request.id} className="flex flex-col gap-4 rounded-2xl border border-gray-200 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-bold text-gray-900">{request.memberName}</h3>
-                      <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">{request.loanType}</span>
+                      <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{request.loanType}</span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">Application {request.id} · Member ID: {request.memberNumber || request.memberId || '—'} · Submitted {formatDateTime(request.submittedAt)}</p>
                     <p className="text-sm text-gray-700 mt-2">₱{request.amount.toLocaleString()} for {request.term} months · {request.purpose}</p>
                     <p className="text-xs text-gray-500 mt-1">Monthly income: ₱{request.monthlyIncome.toLocaleString()}</p>
                     {request.farmArea !== undefined && (
-                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 sm:grid-cols-4">
+                      <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 rounded-xl bg-gray-50 p-3 text-xs text-gray-600 min-[420px]:grid-cols-2 sm:grid-cols-4">
                         <span>Farm area: <strong>{Number(request.farmArea).toFixed(2)} ha</strong></span>
                         <span>Eligible: <strong>₱{Number(request.maximumEligibleAmount || 0).toLocaleString()}</strong></span>
                         <span>Interest: <strong>{request.interestRate}% / ₱{Number(request.calculatedInterest || 0).toLocaleString()}</strong></span>
@@ -549,17 +539,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     )}
                   </div>
                   <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
-                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'declined')} className="min-h-11 flex-1 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200 sm:flex-none">
+                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'declined')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 sm:flex-none"><XCircle className="h-4 w-4" />
                       Decline
                     </button>
-                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'approved')} className="min-h-11 flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 sm:flex-none">
+                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'approved')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 sm:flex-none"><CheckCircle className="h-4 w-4" />
                       Approve
                     </button>
                   </div>
                 </div>
               ))}
               {loanRequests.filter(request => request.status === 'pending').length === 0 && (
-                <p className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">No pending loan requests.</p>
+                <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={ClipboardList} title="No pending loan requests" message="Loan applications will appear here when members submit them." compact /></div>
               )}
             </div>
           )}
@@ -568,7 +558,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
       {/* Add Loan Modal */}
       {showAddLoanModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
+        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
           <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <LoanApplicationWizard
               allowMemberLookup
@@ -581,7 +571,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       )}
       {/* Payment Recording Modal */}
       {showPaymentModal && selectedLoanForPayment && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">Record Payment</h2>
@@ -611,7 +601,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     step="0.01"
                     value={paymentData.amount}
                     onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="0"
                   />
                 </div>
@@ -624,7 +614,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     required
                     value={paymentData.paymentDate}
                     onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
                 </div>
                 {paymentData.amount && (
@@ -649,7 +639,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <button
                   type="submit"
                   disabled={isSubmittingPayment}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-60"
+                  className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium disabled:opacity-60"
                 >
                   {isSubmittingPayment ? 'Saving...' : 'Record Payment'}
                 </button>
@@ -661,7 +651,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
       {/* Receipt View Modal */}
       {showReceiptModal && selectedPaymentForReceipt && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h2 className="text-xl font-bold text-gray-900">Payment Receipt</h2>
@@ -733,7 +723,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => handleDownloadReceipt(selectedPaymentForReceipt)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
               >
                 <Download className="w-5 h-5" />
                 Download

@@ -26,7 +26,7 @@ export function Login({ onLogin }: LoginProps) {
     password: ''
   });
   const [memberForm, setMemberForm] = useState({
-    email: '',
+    identifier: '',
     password: ''
   });
 
@@ -52,7 +52,7 @@ export function Login({ onLogin }: LoginProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await loginRequest({ usernameOrEmail: memberForm.email, password: memberForm.password });
+      const response = await loginRequest({ usernameOrEmail: memberForm.identifier, password: memberForm.password });
       if (response.role !== 'MEMBER') throw new Error('This account is not a member account.');
       onLogin('member', Boolean(response.mustChangePassword));
       toast.success(response.mustChangePassword ? 'Please change your temporary password to continue.' : 'Login successful');
@@ -160,7 +160,8 @@ export function Login({ onLogin }: LoginProps) {
               onClick={() => {
                 setSelectedRole(null);
                 setAdminForm({ username: '', password: '' });
-                setMemberForm({ email: '', password: '' });
+                setMemberForm({ identifier: '', password: '' });
+                setShowForgotPassword(false);
               }}
               className="mb-4 flex items-center gap-1 text-sm text-gray-500 transition hover:text-gray-700"
             >
@@ -196,7 +197,7 @@ export function Login({ onLogin }: LoginProps) {
                       value={adminForm.username}
                       onChange={handleAdminChange}
                       placeholder="admin"
-                      className="w-full rounded-lg border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full rounded-xl border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -211,7 +212,7 @@ export function Login({ onLogin }: LoginProps) {
                       value={adminForm.password}
                       onChange={handleAdminChange}
                       placeholder="••••••••"
-                      className="w-full rounded-lg border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full rounded-xl border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -219,7 +220,7 @@ export function Login({ onLogin }: LoginProps) {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 font-medium text-white transition hover:bg-blue-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-2.5 font-medium text-white transition hover:bg-green-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <Shield className="h-4 w-4 sm:h-5 sm:w-5" />
                   {isSubmitting ? 'Signing in...' : 'Login as Admin'}
@@ -228,16 +229,17 @@ export function Login({ onLogin }: LoginProps) {
             ) : (
               <form onSubmit={handleMemberLogin} className="space-y-4 sm:space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">Email/Number</label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">Username/Number</label>
                   <div className="relative">
                     <User className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 sm:h-4 sm:w-4 sm:left-3" />
                     <input
                       type="text"
-                      name="email"
-                      value={memberForm.email}
+                      name="identifier"
+                      value={memberForm.identifier}
                       onChange={handleMemberChange}
-                      placeholder="member@example.com or 123456"
-                      className="w-full rounded-lg border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
+                      autoComplete="username"
+                      placeholder="Username or member number"
+                      className="w-full rounded-xl border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </div>
                 </div>
@@ -252,7 +254,7 @@ export function Login({ onLogin }: LoginProps) {
                       value={memberForm.password}
                       onChange={handleMemberChange}
                       placeholder="••••••••"
-                      className="w-full rounded-lg border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className="w-full rounded-xl border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </div>
                 </div>
@@ -260,7 +262,7 @@ export function Login({ onLogin }: LoginProps) {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 py-2.5 font-medium text-white transition hover:bg-green-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-2.5 font-medium text-white transition hover:bg-green-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                   {isSubmitting ? 'Signing in...' : 'Login as Member'}
@@ -271,20 +273,25 @@ export function Login({ onLogin }: LoginProps) {
             <div className="mt-6 text-center">
               <button type="button" onClick={() => setShowForgotPassword((current) => !current)} className="text-xs text-gray-500 underline hover:text-gray-700">Forgot password?</button>
             </div>
-            {showForgotPassword && (
+            {showForgotPassword && selectedRole === 'member' && (
+              <p className="mt-4 border-t border-gray-100 pt-4 text-center text-sm text-gray-600">
+                Please visit or contact the ACIFAC office to reset your password.
+              </p>
+            )}
+            {showForgotPassword && selectedRole === 'admin' && (
               <form onSubmit={handleForgotPassword} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
                 <label className="block text-sm font-medium text-gray-700">Username or email
-                  <input required value={recoveryIdentifier} onChange={(e) => setRecoveryIdentifier(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" />
+                  <input required value={recoveryIdentifier} onChange={(e) => setRecoveryIdentifier(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
                 </label>
-                <button disabled={isSubmitting} className="w-full rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">Request reset</button>
+                <button disabled={isSubmitting} className="w-full rounded-xl border border-gray-300 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">Request reset</button>
               </form>
             )}
             {resetToken && (
               <form onSubmit={handleResetPassword} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
                 <p className="text-xs text-gray-600">Enter a new password for the reset token returned by the development server.</p>
-                <input required type="password" placeholder="New password" value={resetForm.newPassword} onChange={(e) => setResetForm({ ...resetForm, newPassword: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2" />
-                <input required type="password" placeholder="Confirm new password" value={resetForm.confirmPassword} onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })} className="w-full rounded-lg border border-gray-300 px-3 py-2" />
-                <button disabled={isSubmitting} className="w-full rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">Reset password</button>
+                <input required type="password" placeholder="New password" value={resetForm.newPassword} onChange={(e) => setResetForm({ ...resetForm, newPassword: e.target.value })} className="w-full rounded-xl border border-gray-300 px-3 py-2" />
+                <input required type="password" placeholder="Confirm new password" value={resetForm.confirmPassword} onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })} className="w-full rounded-xl border border-gray-300 px-3 py-2" />
+                <button disabled={isSubmitting} className="w-full rounded-xl bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">Reset password</button>
               </form>
             )}
           </div>

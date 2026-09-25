@@ -199,49 +199,49 @@ export function Transaction({ userRole }: TransactionProps) {
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-l-red-500">
-          <p className="text-gray-600 text-sm font-medium mb-2">Total Loan Payments</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-red-500">
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Loan Payments</p>
           <p className="text-2xl font-bold text-red-600">₱{totalPayment.toLocaleString()}</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-l-orange-500">
-          <p className="text-gray-600 text-sm font-medium mb-2">Total Loan Disbursement</p>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-orange-500">
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Loan Disbursement</p>
           <p className="text-2xl font-bold text-orange-600">₱{totalDebt.toLocaleString()}</p>
         </div>
-        <div className={`bg-white rounded-lg shadow p-6 border-l-4 ${netBalance >= 0 ? 'border-l-green-500' : 'border-l-blue-500'}`}>
-          <p className="text-gray-600 text-sm font-medium mb-2">Net Loan Balance</p>
+        <div className={`bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6 border-l-4 ${netBalance >= 0 ? 'border-l-green-500' : 'border-l-blue-500'}`}>
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Net Loan Balance</p>
           <p className={`text-2xl font-bold ${netBalance >= 0 ? 'text-green-600' : 'text-blue-600'}`}>
             ₱{netBalance.toLocaleString()}
           </p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6 border-l-4 border-l-purple-500">
-          <p className="text-gray-600 text-sm font-medium mb-2">Total Transactions</p>
-            <p className="text-3xl font-bold text-purple-600">{transactions.length}</p>
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-purple-500">
+          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Transactions</p>
+            <p className="break-words text-xl font-bold tabular-nums text-purple-600 sm:text-3xl">{transactions.length}</p>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="flex gap-4">
-            <div>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3 sm:p-4">
+        <div>
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-4">
+            <div className="min-w-0">
               <label className="block text-sm text-gray-600 mb-2">Filter Type</label>
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as any)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-11 w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-56"
               >
                 <option value="all">All Loan Transactions</option>
                 <option value="payment">Loan Payments Only</option>
                 <option value="debt">Loan Disbursements Only</option>
               </select>
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-sm text-gray-600 mb-2">Sort By</label>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-11 w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-56"
               >
                 <option value="date">Date (Newest)</option>
                 <option value="amount">Amount (Highest)</option>
@@ -252,7 +252,7 @@ export function Transaction({ userRole }: TransactionProps) {
       </div>
 
       {/* Transactions Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -346,7 +346,7 @@ export function Transaction({ userRole }: TransactionProps) {
 
       {/* Receipt View Modal */}
       {showReceiptModal && selectedTransaction && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h2 className="text-xl font-bold text-gray-900">Transaction Receipt</h2>
@@ -426,7 +426,7 @@ export function Transaction({ userRole }: TransactionProps) {
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => handleDownloadReceipt(selectedTransaction)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
               >
                 <Download className="w-5 h-5" />
                 Download
@@ -443,7 +443,7 @@ export function Transaction({ userRole }: TransactionProps) {
       )}
 
       {/* Additional Info */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6">
         <div className="flex items-start gap-4">
           <FileText className="w-5 h-5 text-blue-600 mt-1" />
           <div>

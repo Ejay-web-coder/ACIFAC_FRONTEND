@@ -1,4 +1,5 @@
-import { Users, PhilippinePeso, Tractor, Store, TrendingUp, AlertCircle } from 'lucide-react';
+import { Users, PhilippinePeso, Tractor, Store, AlertCircle, AlertTriangle, Info, CheckCircle2, RefreshCw, Activity, UserPlus, ScanLine, BarChart3, ChevronRight } from 'lucide-react';
+import { EmptyState, ListSkeleton, SectionCard, Skeleton, StatCard } from '../../app/components/common/UiKit';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import { fetchAdminDashboard } from '../../app/services/authApi';
@@ -67,125 +68,107 @@ export function AdminDashboard() {
 
   const formatCurrency = (value: number | null) => value === null ? '—' : `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  const loading = totalMembers === null && !loadError;
   const dashboardStats = [
-    {
-      name: 'Total Members',
-      value: totalMembers === null ? '—' : String(totalMembers),
-      change: '',
-      changeType: 'increase',
-      icon: Users,
-      href: '/admin/members',
-      color: 'green',
-      borderColor: 'border-l-4 border-l-green-500'
-    },
-    { ...stats[0], value: formatCurrency(totalLoans) },
-    { ...stats[1], value: machineryOperations === null ? '—' : String(machineryOperations) },
-    { ...stats[2], value: formatCurrency(kadiwaRevenue) },
+    { name: 'Total Members', value: totalMembers === null ? '—' : totalMembers.toLocaleString('en-PH'), icon: Users, href: '/admin/members', detail: 'Registered associates', tone: 'dark' as const },
+    { name: stats[0].name, value: formatCurrency(totalLoans), icon: stats[0].icon, href: stats[0].href, detail: 'Outstanding balance', tone: 'green' as const },
+    { name: stats[1].name, value: machineryOperations === null ? '—' : machineryOperations.toLocaleString('en-PH'), icon: stats[1].icon, href: stats[1].href, detail: 'Recorded operations', tone: 'soft' as const },
+    { name: stats[2].name, value: formatCurrency(kadiwaRevenue), icon: stats[2].icon, href: stats[2].href, detail: 'Store revenue', tone: 'green' as const },
   ];
 
+  const quickActions = [
+    { title: 'Add Members', text: 'Register member', href: '/admin/members', icon: UserPlus },
+    { title: 'Scan Docs', text: 'Use OCR', href: '/admin/ocr', icon: ScanLine },
+    { title: 'Reports', text: 'View analytics', href: '/admin/analytics', icon: BarChart3 },
+  ];
+
+  const alertStyle = {
+    warning: { box: 'border-amber-200 bg-amber-50 text-amber-900', icon: AlertTriangle, iconClass: 'text-amber-600' },
+    info: { box: 'border-green-200 bg-green-50 text-green-900', icon: Info, iconClass: 'text-green-700' },
+    success: { box: 'border-green-200 bg-green-50 text-green-900', icon: CheckCircle2, iconClass: 'text-green-700' },
+  } as const;
+
   return (
-    <div className="space-y-4 md:space-y-6">
-      {loadError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Unable to load dashboard data: {loadError}</p>}
-      {/* Stats Grid - Responsive */}
-      <div className="grid w-full grid-cols-1 gap-3 min-w-0 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
-        {dashboardStats.map((stat) => {
-          const colorClasses = {
-            blue: 'bg-blue-50 text-blue-600',
-            green: 'bg-green-50 text-green-600',
-            orange: 'bg-orange-50 text-orange-600',
-            purple: 'bg-purple-50 text-purple-600',
-          }[stat.color];
+    <div className="space-y-5 md:space-y-6">
+      {loadError && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between" role="alert">
+          <p className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />Unable to load dashboard data: {loadError}</p>
+          <button type="button" onClick={loadDashboard} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-3 font-semibold text-red-700 hover:bg-red-100"><RefreshCw className="h-4 w-4" />Retry</button>
+        </div>
+      )}
 
-          const Icon = stat.icon;
-
-          return (
-            <Link
-              key={stat.name}
-              to={stat.href}
-              aria-label={`Open ${stat.name}`}
-              className={`w-full min-w-0 rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:p-5 ${stat.borderColor}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className={`p-3 rounded-lg flex-shrink-0 ${colorClasses}`}>
-                  <Icon className="w-5 md:w-6 h-5 md:h-6" />
-                </div>
-                {stat.change && (
-                  <div className="flex items-center gap-1 text-green-600 flex-shrink-0">
-                    <TrendingUp className="w-4 h-4" />
-                    <span className="text-xs md:text-sm font-medium">{stat.change}</span>
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 md:mt-4">
-                <p className="text-xs md:text-sm text-gray-600">{stat.name}</p>
-                <p className="text-xl md:text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-              </div>
-            </Link>
-          );
-        })}
+      {/* Key figures: 1 column on small phones, 2 on large phones/tablets, 4 on desktops */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5">
+        {dashboardStats.map((stat) => (
+          <StatCard key={stat.name} label={stat.name} value={stat.value} icon={stat.icon} href={stat.href} detail={stat.detail} tone={stat.tone} loading={loading} />
+        ))}
       </div>
 
-      {/* Alerts and Recent Activities Section - Responsive Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        {/* Alerts & Activities Card */}
-        <div className="lg:col-span-2 bg-white rounded-lg p-4 md:p-6 shadow-sm border border-gray-200">
-          {/* Alerts */}
-          <div>
-            <h2 className="text-base md:text-lg font-bold text-gray-900 mb-3 md:mb-4">Alerts & Notifications</h2>
-            <div className="space-y-2 md:space-y-3">
-              {alerts.map((alert) => {
-                const typeColors = {
-                  warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-                  info: 'bg-blue-50 border-blue-200 text-blue-800',
-                  success: 'bg-green-50 border-green-200 text-green-800',
-                }[alert.type];
+      {/* Quick actions: horizontal on phones, sidebar column on desktops */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
+        <div className="order-2 space-y-5 lg:order-1 lg:col-span-2">
+          <SectionCard title="Alerts & Notifications" description="Items that may need your attention">
+            {loading ? (
+              <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+            ) : alerts.length ? (
+              <ul className="space-y-2.5">
+                {alerts.map((alert) => {
+                  const style = alertStyle[alert.type] ?? alertStyle.info;
+                  const Icon = style.icon;
+                  return (
+                    <li key={alert.id} className={`flex items-start gap-3 rounded-xl border p-3 ${style.box}`}>
+                      <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${style.iconClass}`} aria-hidden="true" />
+                      <p className="text-sm">{alert.message}</p>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <EmptyState icon={CheckCircle2} title="No alerts right now" message="Overdue loans, low stock and other items needing attention will show here." compact />
+            )}
+          </SectionCard>
 
-                return (
-                  <div key={alert.id} className={`flex items-start gap-3 p-3 rounded-lg border ${typeColors}`}>
-                    <AlertCircle className="w-4 md:w-5 h-4 md:h-5 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs md:text-sm">{alert.message}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Recent Activities */}
-          <div className="mt-5 md:mt-6 border-t pt-4 md:pt-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Recent Activities</h3>
-            <div className="space-y-3 md:space-y-4 max-h-64 overflow-y-auto">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-start justify-between gap-3 pb-3 md:pb-4 border-b border-gray-100 last:border-0 last:pb-0">
-                  <div className="flex-1 min-w-0">
-                    <span className="inline-block px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded mb-1 md:mb-2">
-                      {activity.type}
-                    </span>
-                    <p className="text-xs md:text-sm text-gray-900 line-clamp-2">{activity.action}</p>
-                  </div>
-                  <span className="text-xs text-gray-500 whitespace-nowrap flex-shrink-0 ml-2">{activity.time}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <SectionCard title="Recent Activities" description="Latest records across the cooperative" bodyClassName="p-0">
+            {loading ? (
+              <ListSkeleton rows={4} />
+            ) : recentActivities.length ? (
+              <ul className="max-h-[26rem] divide-y divide-gray-100 overflow-y-auto">
+                {recentActivities.map((activity) => (
+                  <li key={activity.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700 ring-1 ring-green-100"><Activity className="h-4 w-4" /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{activity.type}</span>
+                        <span className="text-xs text-gray-400">{activity.time}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-sm text-gray-800">{activity.action}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState icon={Activity} title="No recent activity" message="New members, loans, payments and sales will appear here." compact />
+            )}
+          </SectionCard>
         </div>
 
-        {/* Quick Actions - Responsive Stack */}
-        <div className="flex min-w-0 flex-col gap-3 md:flex-col lg:gap-4">
-          <Link to="/admin/members" className="min-w-0 w-full rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:p-6">
-            <Users className="mx-auto mb-2 h-7 w-7 text-blue-600 md:mb-3 md:h-8 md:w-8" />
-            <h3 className="text-sm font-bold text-gray-900 md:text-base">Add Members</h3>
-            <p className="mt-1 text-xs text-gray-600 md:text-sm">Register member</p>
-          </Link>
-          <Link to="/admin/ocr" className="min-w-0 w-full rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:p-6">
-            <TrendingUp className="mx-auto mb-2 h-7 w-7 text-green-600 md:mb-3 md:h-8 md:w-8" />
-            <h3 className="text-sm font-bold text-gray-900 md:text-base">Scan Docs</h3>
-            <p className="mt-1 text-xs text-gray-600 md:text-sm">Use OCR</p>
-          </Link>
-          <Link to="/admin/analytics" className="min-w-0 w-full rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:p-6">
-            <TrendingUp className="mx-auto mb-2 h-7 w-7 text-purple-600 md:mb-3 md:h-8 md:w-8" />
-            <h3 className="text-sm font-bold text-gray-900 md:text-base">Reports</h3>
-            <p className="mt-1 text-xs text-gray-600 md:text-sm">View analytics</p>
-          </Link>
+        <div className="order-1 lg:order-2">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Quick actions</h2>
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-3 lg:grid-cols-1">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Link key={action.title} to={action.href} className="group flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-gray-200 bg-white p-3 text-center shadow-[var(--shadow-card)] hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[var(--shadow-raised)] sm:p-4 lg:flex-row lg:gap-4 lg:text-left">
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white group-hover:bg-green-700"><Icon className="h-5 w-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-gray-900">{action.title}</span>
+                    <span className="hidden truncate text-xs text-gray-500 sm:block">{action.text}</span>
+                  </span>
+                  <ChevronRight className="hidden h-4 w-4 shrink-0 text-gray-400 group-hover:text-green-700 lg:block" />
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

@@ -139,7 +139,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
       </div>
 
       {/* Settings Container */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         {/* Tabs */}
         <div className="border-b border-gray-200">
           <div className="flex overflow-x-auto">
@@ -217,7 +217,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                       type="text"
                       value={profileData.name}
                       onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -228,7 +228,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                       type="email"
                       value={profileData.email}
                       onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -239,7 +239,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                       type="tel"
                       value={profileData.phone}
                       onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -250,7 +250,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                       type="text"
                       value={profileData.position}
                       onChange={(e) => setProfileData({ ...profileData, position: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                 </div>
@@ -258,7 +258,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
                 >
                   <Save className="w-5 h-5" />
                   Save Changes
@@ -324,7 +324,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveNotifications}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
                 >
                   <Save className="w-5 h-5" />
                   Save Preferences
@@ -344,9 +344,9 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                     <p className="text-sm text-gray-600 mb-4">Update your password to keep your account secure</p>
                     <form onSubmit={handleChangePassword} className="grid gap-3 sm:grid-cols-3">
                       {(['currentPassword', 'newPassword', 'confirmPassword'] as const).map((field) => (
-                        <input key={field} required type="password" placeholder={field === 'currentPassword' ? 'Current password' : field === 'newPassword' ? 'New password' : 'Confirm password'} value={passwordForm[field]} onChange={(event) => setPasswordForm({ ...passwordForm, [field]: event.target.value })} className="rounded-lg border border-gray-300 px-3 py-2" />
+                        <input key={field} required type="password" placeholder={field === 'currentPassword' ? 'Current password' : field === 'newPassword' ? 'New password' : 'Confirm password'} value={passwordForm[field]} onChange={(event) => setPasswordForm({ ...passwordForm, [field]: event.target.value })} className="rounded-xl border border-gray-300 px-3 py-2" />
                       ))}
-                      <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 sm:col-span-3 sm:justify-self-start">
+                      <button type="submit" className="rounded-xl bg-green-600 px-4 py-2 text-white hover:bg-green-700 sm:col-span-3 sm:justify-self-start">
                         Change Password
                       </button>
                     </form>
@@ -382,7 +382,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                     <p className="text-sm text-gray-600 mb-4">Create a backup of the entire database</p>
                     <button
                       onClick={handleBackup}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                      className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
                     >
                       Create Backup
                     </button>
@@ -416,14 +416,14 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                   <p className="mt-1 text-sm text-gray-600">Keep registration, governance, and compliance documents available to administrators.</p>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <select value={documentCategory} onChange={(e) => setDocumentCategory(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <select value={documentCategory} onChange={(e) => setDocumentCategory(e.target.value)} className="rounded-xl border border-gray-300 px-3 py-2 text-sm">
                     <option>Registration</option>
                     <option>Governance</option>
                     <option>Compliance</option>
                     <option>Financial</option>
                     <option>Other</option>
                   </select>
-                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
+                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
                     <Upload className="h-4 w-4" />
                     {isUploading ? 'Uploading...' : 'Upload Document'}
                     <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" disabled={isUploading} onChange={handleDocumentUpload} className="sr-only" />

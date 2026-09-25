@@ -113,6 +113,27 @@ export function fetchMemberStatistics() {
   return apiGet<ApiResponse<MemberStatistics>>('/api/members/statistics');
 }
 
+// Kept well under the backend limit (200) so each request finishes inside the serverless time limit.
+export const MEMBER_IMPORT_BATCH_SIZE = 50;
+
+export interface MemberImportRow {
+  row_number: number;
+  [field: string]: string | number | undefined;
+}
+
+export interface MemberImportResult {
+  row: number;
+  success: boolean;
+  id?: number;
+  memberNumber?: string;
+  name?: string;
+  errors?: string[];
+}
+
+export function importMembersRequest(rows: MemberImportRow[]) {
+  return apiPost<ApiResponse<{ imported: number; failed: number; results: MemberImportResult[] }>>('/api/members/import', { rows });
+}
+
 export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {

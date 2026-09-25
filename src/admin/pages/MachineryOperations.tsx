@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer } from 'lucide-react';
+import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer, Tractor, PhilippinePeso } from 'lucide-react';
+import { StatCard } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
@@ -218,25 +219,24 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-
-          <p className="text-gray-600 mt-1">Track farm equipment and rental operations</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-600">Track farm equipment and rental operations</p>
+        <div className={`grid gap-2 sm:flex ${canEdit ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button
+            type="button"
             onClick={() => setShowReport(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
-            <FileText className="h-5 w-5" />
+            <FileText className="h-4 w-4" />
             Report
           </button>
           {canEdit && (
             <button
+              type="button"
               onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700"
+              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="h-4 w-4" />
               New Rental
             </button>
           )}
@@ -244,51 +244,23 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-50 rounded-lg">
-              <Calendar className="w-6 h-6 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Operations</p>
-              <p className="text-2xl font-bold text-gray-900">{totalOperations}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <Calendar className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Ongoing Operations</p>
-              <p className="text-2xl font-bold text-gray-900">{ongoingOperations}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-50 rounded-lg">
-              <Calendar className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">₱{totalRevenue.toLocaleString()}</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        <StatCard label="Total Operations" value={totalOperations} icon={Calendar} tone="dark" />
+        <StatCard label="Ongoing Operations" value={ongoingOperations} icon={Tractor} tone="soft" />
+        <div className="col-span-2 md:col-span-1">
+          <StatCard label="Total Revenue" value={`₱${totalRevenue.toLocaleString()}`} icon={PhilippinePeso} />
         </div>
       </div>
 
       {/* Content */}
       {canEdit && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3 border-b border-gray-200 p-6">
-            <ClipboardList className="h-5 w-5 text-orange-600" />
+        <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
+          <div className="flex items-start gap-3 border-b border-gray-100 p-4 sm:items-center sm:p-5">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 ring-1 ring-green-100"><ClipboardList className="h-5 w-5 text-green-700" /></span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-bold text-gray-900">Rental Requests from Members</h2>
-                <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">{rentalRequests.filter(request => request.status === 'pending').length} pending</span>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{rentalRequests.filter(request => request.status === 'pending').length} pending</span>
               </div>
               <p className="text-sm text-gray-600">Review booking requests submitted from the member portal.</p>
             </div>
@@ -320,7 +292,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
           <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
@@ -348,7 +320,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -358,7 +330,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                 placeholder="Search operations..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl"
               />
             </div>
           </div>
@@ -415,7 +387,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       </div>
 
       {showReport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
+        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
           <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white shadow-2xl">
             <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white p-5">
               <div>
@@ -430,13 +402,13 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <label className="text-sm font-medium text-gray-700">
                   Filter by month
-                  <input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} className="mt-1 block rounded-lg border border-gray-300 px-3 py-2" />
+                  <input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} className="mt-1 block rounded-xl border border-gray-300 px-3 py-2" />
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={downloadReport} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                  <button onClick={downloadReport} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
                     <Download className="h-4 w-4" /> Download CSV
                   </button>
-                  <button onClick={printReport} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  <button onClick={printReport} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     <Printer className="h-4 w-4" /> Print
                   </button>
                 </div>
@@ -462,7 +434,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
       {/* New Rental Modal Form */}
       {showForm && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Add New Rental</h2>
@@ -485,7 +457,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.machineryId}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   >
                     <option value="">Select machinery</option>
                     {machinery.map(m => (
@@ -506,7 +478,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.memberName}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="Enter member name"
                   />
                   {showMemberSuggestions && (formData.memberName.trim() || formData.memberId.trim()) && (
@@ -538,7 +510,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.memberId}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="e.g., ACIFAC-2024-001"
                   />
                 </div>
@@ -553,7 +525,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.purpose}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="e.g., Rice harvesting"
                   />
                 </div>
@@ -568,7 +540,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.startDate}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   />
                 </div>
 
@@ -582,7 +554,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     value={formData.endDate}
                     onChange={handleFormChange}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   />
                 </div>
 
@@ -597,7 +569,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     onChange={handleFormChange}
                     required
                     min="1"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="0"
                   />
                 </div>
@@ -614,7 +586,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     required
                     min="0"
                     step="100"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                     placeholder="0"
                   />
                 </div>

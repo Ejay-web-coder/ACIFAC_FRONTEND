@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Search, Plus, Edit, Archive, RotateCcw, Eye, Filter, X } from 'lucide-react';
+import { Search, Plus, Edit, Archive, RotateCcw, Eye, X, Users, UserPlus, PiggyBank, ChevronDown } from 'lucide-react';
+import { EmptyState, ListSkeleton, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { AddMemberModal, type MemberDraftData } from '../components/AddMemberModal';
+import { MemberImportModal } from '../components/MemberImportModal';
 import { openProtectedFile, errorMessage } from '../../lib/api';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
@@ -136,6 +138,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [showShareContributionModal, setShowShareContributionModal] = useState(false);
   const [shareContributionForm, setShareContributionForm] = useState({ amount: '', contributionDate: dateOnlyToday(), notes: '' });
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
@@ -480,25 +483,25 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          
-          <p className="text-gray-600 mt-1">Manage cooperative members and registrations</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-gray-600">{showArchivedMembers ? 'Archived associates can be reviewed and restored.' : 'Manage cooperative members and registrations'}</p>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <button
+            type="button"
             onClick={() => setShowArchivedMembers((current) => !current)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${canEdit && !showArchivedMembers ? '' : 'col-span-2'}`}
           >
-            {showArchivedMembers ? <RotateCcw className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
-            {showArchivedMembers ? 'Back to Associates' : 'Archived Members'}
+            {showArchivedMembers ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+            <span className="sm:hidden">{showArchivedMembers ? 'Back' : 'Archived'}</span>
+            <span className="hidden sm:inline">{showArchivedMembers ? 'Back to Associates' : 'Archived Members'}</span>
           </button>
           {canEdit && !showArchivedMembers && (
             <button
+              type="button"
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="h-4 w-4" />
               Add Member
             </button>
           )}
@@ -506,158 +509,177 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-600">Total Members</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{statistics.totalMembers}</p>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-600">Total Share Capital</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">
-            ₱{statistics.totalShareCapital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-600">{showArchivedMembers ? 'Archived Members' : 'New This Month'}</p>
-          <p className="text-2xl font-bold text-blue-600 mt-1">{showArchivedMembers ? statistics.archivedMembers : statistics.newThisMonth}</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+        <StatCard label="Total Members" value={statistics.totalMembers.toLocaleString('en-PH')} icon={Users} tone="dark" loading={isLoading && statistics.totalMembers === 0} />
+        <StatCard label="Total Share Capital" value={`₱${statistics.totalShareCapital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={PiggyBank} loading={isLoading && statistics.totalMembers === 0} />
+        <div className="col-span-2 md:col-span-1">
+          <StatCard label={showArchivedMembers ? 'Archived Members' : 'New This Month'} value={showArchivedMembers ? statistics.archivedMembers : statistics.newThisMonth} icon={showArchivedMembers ? Archive : UserPlus} tone="soft" loading={isLoading && statistics.totalMembers === 0} />
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
-        <div className="flex flex-col md:flex-row gap-4">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder={showArchivedMembers ? 'Search archived members...' : 'Search by name or member ID...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-            />
+      {/* Search */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
+        <label className="relative block">
+          <span className="sr-only">Search members</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            placeholder={showArchivedMembers ? 'Search archived members...' : 'Search by name or member ID...'}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 text-sm"
+          />
+        </label>
+      </div>
+
+      {/* Members list */}
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
+          <h2 className="text-base font-semibold text-gray-900">{showArchivedMembers ? 'Archived Members' : 'Associates'}</h2>
+          {!isLoading && !loadError && <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-800 ring-1 ring-green-200">{filteredMembers.length} shown</span>}
+        </div>
+
+        {isLoading && <ListSkeleton rows={5} />}
+        {!isLoading && loadError && (
+          <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+            <p className="text-sm text-red-700">Unable to load members. Please try again.</p>
+            <button type="button" onClick={() => void loadMembers()} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"><RotateCcw className="h-4 w-4" />Retry</button>
           </div>
-        </div>
-      </div>
+        )}
+        {!isLoading && !loadError && filteredMembers.length === 0 && (
+          <EmptyState icon={Users} title={searchTerm ? 'No members match your search' : showArchivedMembers ? 'No archived members' : 'No members yet'} message={searchTerm ? 'Try a different name or member ID.' : showArchivedMembers ? 'Members you archive will be listed here.' : 'Registered associates will appear here once added.'} />
+        )}
 
-      {/* Members Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Member
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Member ID
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Share Capital
-                </th>
-                {showArchivedMembers && (
-                  <>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Archived Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                  </>
-                )}
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {isLoading && <tr><td colSpan={showArchivedMembers ? 7 : 5} className="px-6 py-10 text-center text-sm text-gray-500">Loading members...</td></tr>}
-              {!isLoading && loadError && <tr><td colSpan={showArchivedMembers ? 7 : 5} className="px-6 py-10 text-center text-sm text-red-600">Unable to load members. Please try again.</td></tr>}
-              {!isLoading && !loadError && filteredMembers.length === 0 && <tr><td colSpan={showArchivedMembers ? 7 : 5} className="px-6 py-10 text-center text-sm text-gray-500">No members found.</td></tr>}
-              {!isLoading && !loadError && filteredMembers.map((member) => (
-                <tr key={member.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                      <div className="text-sm text-gray-500">{member.email}</div>
+        {!isLoading && !loadError && filteredMembers.length > 0 && (
+          <>
+            {/* Phones and small tablets: expandable member cards */}
+            <ul className="divide-y divide-gray-100 lg:hidden">
+              {filteredMembers.map((member) => (
+                <li key={member.id}>
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-green-800">{member.name.charAt(0).toUpperCase() || '?'}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold text-gray-900">{member.name}</span>
+                        <span className="block truncate text-sm text-gray-500">{member.memberId}</span>
+                      </span>
+                      <span className="hidden min-[400px]:block"><StatusBadge status={member.status} /></span>
+                      <ChevronDown className="h-5 w-5 shrink-0 text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+                    </summary>
+                    <div className="space-y-3 bg-gray-50/70 px-4 pb-4 pt-1">
+                      <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm min-[480px]:grid-cols-2">
+                        <div className="min-w-0"><dt className="text-xs text-gray-500">Email</dt><dd className="break-all text-gray-900">{member.email || '—'}</dd></div>
+                        <div className="min-w-0"><dt className="text-xs text-gray-500">Phone</dt><dd className="text-gray-900">{member.phone || '—'}</dd></div>
+                        <div className="min-w-0 min-[480px]:col-span-2"><dt className="text-xs text-gray-500">Address</dt><dd className="text-gray-900">{member.address || '—'}</dd></div>
+                        <div className="min-w-0"><dt className="text-xs text-gray-500">Share Capital</dt><dd className="font-semibold tabular-nums text-gray-900">₱{member.shareCapital.toLocaleString()}</dd></div>
+                        <div className="min-w-0"><dt className="text-xs text-gray-500">Status</dt><dd><StatusBadge status={member.status} /></dd></div>
+                        {showArchivedMembers && <div className="min-w-0"><dt className="text-xs text-gray-500">Archived Date</dt><dd className="text-gray-900">{member.archivedAt ? formatDateTime(member.archivedAt) : '—'}</dd></div>}
+                      </dl>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void viewMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-3 text-sm font-semibold text-white hover:bg-green-700" aria-label={`View ${member.name}`}>
+                          <Eye className="h-4 w-4" />View
+                        </button>
+                        {canEdit && !showArchivedMembers && (
+                          <>
+                            <button type="button" onClick={() => handleEditMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50" aria-label={`Update ${member.name}`}>
+                              <Edit className="h-4 w-4" />Update
+                            </button>
+                            <button type="button" onClick={() => handleArchiveMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50" aria-label={`Delete ${member.name}`}>
+                              <Archive className="h-4 w-4" />Archive
+                            </button>
+                          </>
+                        )}
+                        {canEdit && showArchivedMembers && (
+                          <button type="button" onClick={() => handleRestoreMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-green-300 bg-white px-3 text-sm font-semibold text-green-700 hover:bg-green-50" aria-label={`Restore ${member.name}`}>
+                            <RotateCcw className="h-4 w-4" />Restore
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {member.memberId}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{member.phone}</div>
-                    <div className="text-sm text-gray-500">{member.address}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₱{member.shareCapital.toLocaleString()}
-                  </td>
-                  {showArchivedMembers && (
-                    <>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {member.archivedAt ? formatDateTime(member.archivedAt) : '—'}
+                  </details>
+                </li>
+              ))}
+            </ul>
+
+            {/* Desktops: table */}
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50/80">
+                  <tr className="border-b border-gray-200">
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member ID</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Contact</th>
+                    <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Share Capital</th>
+                    {showArchivedMembers && (
+                      <>
+                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Archived Date</th>
+                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                      </>
+                    )}
+                    <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredMembers.map((member) => (
+                    <tr key={member.id} className="hover:bg-green-50/40">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100 text-sm font-bold text-green-800">{member.name.charAt(0).toUpperCase() || '?'}</span>
+                          <div className="min-w-0">
+                            <div className="max-w-[16rem] truncate font-semibold text-gray-900">{member.name}</div>
+                            <div className="max-w-[16rem] truncate text-gray-500">{member.email}</div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700 capitalize">
-                        {member.status}
+                      <td className="whitespace-nowrap px-5 py-3.5 font-medium text-gray-900">{member.memberId}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="whitespace-nowrap text-gray-900">{member.phone}</div>
+                        <div className="max-w-[18rem] truncate text-gray-500" title={member.address}>{member.address}</div>
                       </td>
-                    </>
-                  )}
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        onClick={() => void viewMember(member)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"
-                        title="View member"
-                        aria-label={`View ${member.name}`}
-                      >
-                        <Eye className="h-5 w-5" />
-                      </button>
-                      {canEdit && !showArchivedMembers && (
+                      <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold tabular-nums text-gray-900">₱{member.shareCapital.toLocaleString()}</td>
+                      {showArchivedMembers && (
                         <>
-                          <button 
-                            onClick={() => handleEditMember(member)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-50"
-                            title="Update member"
-                            aria-label={`Update ${member.name}`}>
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleArchiveMember(member)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
-                            title="Delete member"
-                            aria-label={`Delete ${member.name}`}>
-                            <Archive className="h-5 w-5" />
-                          </button>
+                          <td className="whitespace-nowrap px-5 py-3.5 text-gray-900">{member.archivedAt ? formatDateTime(member.archivedAt) : '—'}</td>
+                          <td className="whitespace-nowrap px-5 py-3.5"><StatusBadge status={member.status} /></td>
                         </>
                       )}
-                      {canEdit && showArchivedMembers && (
-                        <button
-                          onClick={() => handleRestoreMember(member)}
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-green-600 hover:bg-green-50"
-                          title="Restore member"
-                          aria-label={`Restore ${member.name}`}
-                        >
-                          <RotateCcw className="h-5 w-5" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button type="button" onClick={() => void viewMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-green-700 hover:bg-green-50" title="View member" aria-label={`View ${member.name}`}>
+                            <Eye className="h-5 w-5" />
+                          </button>
+                          {canEdit && !showArchivedMembers && (
+                            <>
+                              <button type="button" onClick={() => handleEditMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-gray-100" title="Update member" aria-label={`Update ${member.name}`}>
+                                <Edit className="h-5 w-5" />
+                              </button>
+                              <button type="button" onClick={() => handleArchiveMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-red-600 hover:bg-red-50" title="Archive member" aria-label={`Delete ${member.name}`}>
+                                <Archive className="h-5 w-5" />
+                              </button>
+                            </>
+                          )}
+                          {canEdit && showArchivedMembers && (
+                            <button type="button" onClick={() => handleRestoreMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-green-700 hover:bg-green-50" title="Restore member" aria-label={`Restore ${member.name}`}>
+                              <RotateCcw className="h-5 w-5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Member Details Modal */}
       {showModal && selectedMember && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 border-b border-blue-800">
+            <div className="sticky top-0 bg-green-700 text-white p-6 border-b border-green-800">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold">{selectedMember.name}</h2>
@@ -707,7 +729,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                     <h3 className="text-lg font-bold text-green-900">Share Details</h3>
                     <p className="mt-1 text-sm text-green-800">Installment contributions toward the ₱20,000 maximum.</p>
                   </div>
-                  {canEdit && <button type="button" onClick={() => setShowShareContributionModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Plus className="h-4 w-4" />Add Contribution</button>}
+                  {canEdit && <button type="button" onClick={() => setShowShareContributionModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Plus className="h-4 w-4" />Add Contribution</button>}
                 </div>
                 {selectedMember.shareDetails ? (
                   <>
@@ -877,7 +899,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
             <div className="sticky bottom-0 p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition font-semibold"
               >
                 Close
               </button>
@@ -887,15 +909,15 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       )}
 
       {showShareContributionModal && selectedMember && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/50 p-4">
+        <div className="acf-modal fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/50 p-4">
           <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-200 p-5"><div><h2 className="text-xl font-bold text-gray-900">Add Share Contribution</h2><p className="mt-1 text-sm text-gray-600">{selectedMember.name}</p></div><button type="button" onClick={() => setShowShareContributionModal(false)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100" aria-label="Close contribution form"><X className="h-5 w-5" /></button></div>
             <form onSubmit={handleAddShareContribution} className="space-y-4 p-5">
               <div className="rounded-lg bg-green-50 p-3 text-sm text-green-800">Remaining share limit: <strong>₱{(selectedMember.shareDetails?.remaining || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></div>
-              <label className="block text-sm font-medium text-gray-700">Contribution Amount<input required type="number" min="0.01" max={selectedMember.shareDetails?.remaining || 0} step="0.01" value={shareContributionForm.amount} onChange={(event) => setShareContributionForm((current) => ({ ...current, amount: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
-              <label className="block text-sm font-medium text-gray-700">Contribution Date<input required type="date" value={shareContributionForm.contributionDate} onChange={(event) => setShareContributionForm((current) => ({ ...current, contributionDate: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
-              <label className="block text-sm font-medium text-gray-700">Notes<textarea value={shareContributionForm.notes} onChange={(event) => setShareContributionForm((current) => ({ ...current, notes: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" rows={3} /></label>
-              <div className="flex justify-end gap-3 border-t border-gray-200 pt-4"><button type="button" onClick={() => setShowShareContributionModal(false)} className="rounded-lg bg-gray-100 px-4 py-2 font-medium text-gray-700 hover:bg-gray-200">Cancel</button><button type="submit" className="rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700">Save Contribution</button></div>
+              <label className="block text-sm font-medium text-gray-700">Contribution Amount<input required type="number" min="0.01" max={selectedMember.shareDetails?.remaining || 0} step="0.01" value={shareContributionForm.amount} onChange={(event) => setShareContributionForm((current) => ({ ...current, amount: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" /></label>
+              <label className="block text-sm font-medium text-gray-700">Contribution Date<input required type="date" value={shareContributionForm.contributionDate} onChange={(event) => setShareContributionForm((current) => ({ ...current, contributionDate: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" /></label>
+              <label className="block text-sm font-medium text-gray-700">Notes<textarea value={shareContributionForm.notes} onChange={(event) => setShareContributionForm((current) => ({ ...current, notes: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" rows={3} /></label>
+              <div className="flex justify-end gap-3 border-t border-gray-200 pt-4"><button type="button" onClick={() => setShowShareContributionModal(false)} className="rounded-lg bg-gray-100 px-4 py-2 font-medium text-gray-700 hover:bg-gray-200">Cancel</button><button type="submit" className="rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700">Save Contribution</button></div>
             </form>
           </div>
         </div>
@@ -907,20 +929,31 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           onClose={() => setShowAddModal(false)}
           onSubmit={handleDraftSubmit}
           isSubmitting={false}
+          onImport={() => { setShowAddModal(false); setShowImportModal(true); }}
+        />
+      )}
+
+      {showImportModal && (
+        <MemberImportModal
+          onClose={() => setShowImportModal(false)}
+          onImported={async (imported) => {
+            toast.success(`${imported} member(s) imported.`);
+            await loadMembers();
+          }}
         />
       )}
 
       {/* Edit Member Modal */}
       {showEditModal && editingMember && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             {/* Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 border-b border-blue-800">
+            <div className="sticky top-0 bg-green-700 text-white p-6 border-b border-green-800">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Edit Member</h2>
                 <button
                   onClick={() => setShowEditModal(false)}
-                  className="p-2 hover:bg-blue-500 rounded-lg transition"
+                  className="p-2 hover:bg-green-600 rounded-lg transition"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -939,7 +972,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           required
                           value={formData.name}
                           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
                           placeholder="Full name"
                         />
                       </div>
@@ -950,7 +983,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           required
                           value={formData.email}
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
                           placeholder="email@example.com"
                         />
                       </div>
@@ -961,7 +994,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           required
                           value={formData.phone}
                           onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setFillout({ ...fillout, cpNo: e.target.value }); }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
                           placeholder="+63 XXX XXX XXXX"
                         />
                       </div>
@@ -974,7 +1007,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           step="100"
                           value={formData.shareCapital}
                           onChange={(e) => setFormData({ ...formData, shareCapital: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
                           placeholder="0"
                         />
                       </div>
@@ -984,7 +1017,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           required
                           value={formData.address}
                           onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent mt-1"
                           rows={2}
                           placeholder="Complete address"
                         />
@@ -1002,7 +1035,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.firstName}
                           onChange={(e) => setFillout({ ...fillout, firstName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="First name"
                         />
                       </div>
@@ -1012,7 +1045,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.middleName}
                           onChange={(e) => setFillout({ ...fillout, middleName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Middle name"
                         />
                       </div>
@@ -1022,7 +1055,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.lastName}
                           onChange={(e) => setFillout({ ...fillout, lastName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Last name"
                         />
                       </div>
@@ -1032,7 +1065,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="date"
                           value={fillout.birthday}
                           onChange={(e) => setFillout({ ...fillout, birthday: e.target.value, age: calculateAge(e.target.value) })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                         />
                       </div>
                       <div>
@@ -1041,7 +1074,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="number"
                           readOnly
                           value={fillout.age}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Age"
                         />
                       </div>
@@ -1050,7 +1083,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <select
                           value={fillout.gender}
                           onChange={(e) => setFillout({ ...fillout, gender: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                         >
                           <option value="">Select</option>
                           <option value="male">Male</option>
@@ -1062,7 +1095,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <select
                           value={fillout.civilStatus}
                           onChange={(e) => setFillout({ ...fillout, civilStatus: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                         >
                           <option value="">Select</option>
                           <option value="single">Single</option>
@@ -1076,7 +1109,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <select
                           value={fillout.highestEducation}
                           onChange={(e) => setFillout({ ...fillout, highestEducation: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                         >
                           <option value="">Select</option>
                           <option value="elementary">Elementary</option>
@@ -1098,7 +1131,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.cpNo}
                           onChange={(e) => { setFillout({ ...fillout, cpNo: e.target.value }); setFormData({ ...formData, phone: e.target.value }); }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Contact number"
                         />
                       </div>
@@ -1108,7 +1141,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.idType}
                           onChange={(e) => setFillout({ ...fillout, idType: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="e.g., Driver's License"
                         />
                       </div>
@@ -1118,7 +1151,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.idNo}
                           onChange={(e) => setFillout({ ...fillout, idNo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="ID number"
                         />
                       </div>
@@ -1127,7 +1160,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <textarea
                           value={fillout.permanentAddress}
                           onChange={(e) => setFillout({ ...fillout, permanentAddress: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           rows={2}
                           placeholder="Sito/Street, Barangay, Municipality, Province"
                         />
@@ -1145,7 +1178,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.barangay}
                           onChange={(e) => setFillout({ ...fillout, barangay: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Barangay"
                         />
                       </div>
@@ -1155,7 +1188,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.municipality}
                           onChange={(e) => setFillout({ ...fillout, municipality: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Municipality"
                         />
                       </div>
@@ -1165,7 +1198,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.province}
                           onChange={(e) => setFillout({ ...fillout, province: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Province"
                         />
                       </div>
@@ -1175,7 +1208,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.rsbsaNo}
                           onChange={(e) => setFillout({ ...fillout, rsbsaNo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="RSBSA number"
                         />
                       </div>
@@ -1185,7 +1218,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.livelihood}
                           onChange={(e) => setFillout({ ...fillout, livelihood: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="e.g., Farmer"
                         />
                       </div>
@@ -1195,7 +1228,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.farmArea}
                           onChange={(e) => setFillout({ ...fillout, farmArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="in hectares"
                         />
                       </div>
@@ -1205,7 +1238,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.cornArea}
                           onChange={(e) => setFillout({ ...fillout, cornArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="in hectares"
                         />
                       </div>
@@ -1215,7 +1248,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.palayArea}
                           onChange={(e) => setFillout({ ...fillout, palayArea: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="in hectares"
                         />
                       </div>
@@ -1226,7 +1259,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           min="0"
                           value={fillout.yearlyIncome}
                           onChange={(e) => setFillout({ ...fillout, yearlyIncome: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="e.g., 100000"
                         />
                       </div>
@@ -1243,7 +1276,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.spouseName}
                           onChange={(e) => setFillout({ ...fillout, spouseName: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Spouse name"
                         />
                       </div>
@@ -1253,7 +1286,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="number"
                           value={fillout.spouseAge}
                           onChange={(e) => setFillout({ ...fillout, spouseAge: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Age"
                         />
                       </div>
@@ -1263,7 +1296,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.spouseContact}
                           onChange={(e) => setFillout({ ...fillout, spouseContact: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Contact number"
                         />
                       </div>
@@ -1273,7 +1306,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.children}
                           onChange={(e) => setFillout({ ...fillout, children: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="e.g., Ana - 18, Carlos - 15"
                         />
                       </div>
@@ -1283,7 +1316,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                           type="text"
                           value={fillout.emergencyContact}
                           onChange={(e) => setFillout({ ...fillout, emergencyContact: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl mt-1"
                           placeholder="Name / contact"
                         />
                       </div>
@@ -1303,7 +1336,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
               <button
                 type="submit"
                 form="editMemberForm"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
+                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold transition"
               >
                 Update Member
               </button>
@@ -1314,7 +1347,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
 
       {/* Archive Confirmation Modal */}
       {showArchiveConfirm && memberToArchive && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 text-center">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Archive Member</h2>
@@ -1342,7 +1375,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       )}
 
       {showRestoreConfirm && memberToRestore && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 text-center">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Restore Member</h2>
@@ -1350,7 +1383,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
               <button onClick={() => setShowRestoreConfirm(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancel</button>
-              <button onClick={() => void confirmRestore()} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">Restore Member</button>
+              <button onClick={() => void confirmRestore()} className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium">Restore Member</button>
             </div>
           </div>
         </div>

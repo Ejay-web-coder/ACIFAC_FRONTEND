@@ -1,4 +1,4 @@
-/* Mobile-Friendly CSS Utilities */
+/* ACIFAC global UI layer: responsive base, modals, skeletons, focus, touch. */
 
 html,
 body,
@@ -10,48 +10,247 @@ body,
 
 body {
   margin: 0;
+  background: #ffffff;
+  color: #1f2a1e;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: rgba(59, 129, 50, 0.12);
 }
 
 * {
   box-sizing: border-box;
 }
 
-img,
-svg,
-video {
-  display: block;
-  max-width: 100%;
+/* Base element styling lives in the base layer so Tailwind utilities on a
+   specific element (e.g. text-sm on a button, hidden on an icon, or an error
+   border) still win. */
+@layer base {
+  img,
+  svg,
+  video {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Icons keep their size inside flex rows instead of being squeezed. */
+  svg {
+    flex-shrink: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  /* Smooth, short feedback on interactive elements. */
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+  
+  button:not(:disabled):active,
+  [role="button"]:active {
+    transform: translateY(1px);
+  }
+  
+  button:disabled {
+    cursor: not-allowed;
+  }
+  
+  /* Inputs: consistent height, border and green focus ring everywhere. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    border-color: #d5d9d5;
+    background-color: #ffffff;
+  }
+  
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: #46923c;
+    box-shadow: 0 0 0 3px rgba(70, 146, 60, 0.18);
+  }
+  
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    background-color: #f4f5f4;
+    color: #6b736b;
+    cursor: not-allowed;
+  }
+  
+  input[aria-invalid="true"],
+  select[aria-invalid="true"],
+  textarea[aria-invalid="true"] {
+    border-color: #c62828;
+  }
+  
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #3b8132;
+  }
+  
+  /* Visible keyboard focus in brand green. */
+  *:focus-visible {
+    outline: 2px solid #46923c;
+    outline-offset: 2px;
+  }
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-/* Touch Targets - Minimum 44x44px for mobile accessibility */
+/* Touch targets - minimum 44x44px */
 .touch-target {
-  min-width: 2.75rem; /* 44px */
-  min-height: 2.75rem; /* 44px */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Focus visible for keyboard navigation */
-*:focus-visible {
-  outline: 2px solid #10b981;
-  outline-offset: 2px;
+/* Thin, unobtrusive scrollbars for inner scroll areas. */
+.overflow-x-auto,
+.overflow-y-auto,
+.overflow-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #acd8a7 transparent;
 }
 
-/* Improve text readability on mobile */
-@media (max-width: 640px) {
-  body {
-    font-size: 16px; /* Prevent zoom on input focus */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Wide tables scroll inside their card, never the whole page. Headers keep
+   their words on one line so narrow screens swipe instead of crushing columns. */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.overflow-x-auto > table th,
+.overflow-auto > table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .overflow-x-auto > table td,
+  .overflow-auto > table td {
+    min-width: 6.5rem;
+  }
+}
+
+/* ---------- Modals ---------- */
+@keyframes acf-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes acf-pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes acf-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+.acf-modal {
+  animation: acf-fade-in 180ms ease-out;
+  backdrop-filter: blur(2px);
+  overscroll-behavior: contain;
+}
+
+.acf-modal > * {
+  animation: acf-pop-in 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Phones: modals become bottom sheets that use the full width. */
+@media (max-width: 639px) {
+  .acf-modal {
+    align-items: flex-end !important;
+    padding: 0 !important;
   }
 
-  /* Ensure proper spacing on mobile */
+  .acf-modal > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 94dvh !important;
+    margin: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-top-left-radius: 1.25rem !important;
+    border-top-right-radius: 1.25rem !important;
+    animation: acf-sheet-up 240ms cubic-bezier(0.2, 0, 0, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Grab handle so the sheet reads as a sheet. */
+  .acf-modal > *::before {
+    content: "";
+    display: block;
+    width: 2.5rem;
+    height: 0.25rem;
+    margin: 0.5rem auto 0;
+    border-radius: 9999px;
+    background: #d5d9d5;
+    flex-shrink: 0;
+  }
+
+  /* The full-page "Manage Users" dialog scrolls itself; keep it a page. */
+  .acf-modal.acf-modal-page {
+    align-items: stretch !important;
+  }
+  .acf-modal.acf-modal-page > * {
+    max-height: none !important;
+    min-height: 100dvh;
+    border-radius: 0 !important;
+  }
+  .acf-modal.acf-modal-page > *::before {
+    display: none;
+  }
+}
+
+/* ---------- Skeleton loaders ---------- */
+@keyframes acf-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.acf-skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, #eef1ee 0px, #f7f9f7 160px, #eef1ee 320px);
+  background-size: 800px 100%;
+  animation: acf-shimmer 1.2s linear infinite;
+}
+
+/* Bottom navigation clearance on phones. */
+.acf-bottom-safe {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .acf-bottom-safe {
+    padding-bottom: 0;
+  }
+}
+
+/* ---------- Small screens ---------- */
+@media (max-width: 640px) {
+  body {
+    font-size: 16px;
+  }
+
   .container {
     padding-left: 1rem;
     padding-right: 1rem;
@@ -59,58 +258,33 @@ textarea {
 
   /* Keep compact controls usable without forcing every button full-size. */
   button:not([aria-label]),
-  [role="button"]:not([aria-label]),
-  input[type="checkbox"],
-  input[type="radio"] {
+  [role="button"]:not([aria-label]) {
     min-height: 2.75rem;
   }
 
-  /* Improve form input accessibility */
+  /* 16px inputs prevent iOS zoom on focus. */
   input,
   textarea,
   select {
-    font-size: 16px; /* Prevents auto-zoom */
+    font-size: 16px !important;
+    min-height: 2.75rem;
   }
 
-  /* Ensure proper scrolling */
+  textarea {
+    min-height: 5rem;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
   .overflow-y-auto {
     -webkit-overflow-scrolling: touch;
   }
-}
 
-/* Landscape mode adjustments */
-@media (max-height: 500px) and (orientation: landscape) {
-  .sidebar {
-    max-height: calc(100vh - 60px);
-  }
-}
-
-/* Improve long text handling */
-.truncate-long-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Accessible color contrast */
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #111827;
-    color: #f3f4f6;
-  }
-}
-
-/* Respect reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-/* Ensure proper spacing for small screens */
-@media (max-width: 640px) {
   .gap-6 {
     gap: 1rem;
   }
@@ -128,11 +302,51 @@ textarea {
     padding-top: 1rem;
     padding-bottom: 1rem;
   }
+
+  /* Page-level headings scale down on phones. */
+  main h1.text-3xl,
+  main h2.text-3xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+  main .text-2xl {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
 }
 
-/* Print styles for mobile */
+/* Tablets: slightly tighter spacing than desktop. */
+@media (min-width: 641px) and (max-width: 1023px) {
+  main .p-6 {
+    padding: 1.25rem;
+  }
+}
+
+/* Landscape phones */
+@media (max-height: 500px) and (orientation: landscape) {
+  .sidebar {
+    max-height: calc(100vh - 60px);
+  }
+}
+
+.truncate-long-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media print {
   .no-print {
-    display: none;
+    display: none !important;
   }
 }

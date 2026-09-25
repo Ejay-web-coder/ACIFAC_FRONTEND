@@ -6,7 +6,7 @@ import { closeLiveUpdates } from '../../lib/liveUpdates';
 
 export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>(mustChangePassword ? 'security' : 'profile');
-  const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', membershipNumber: '' });
+  const [profileData, setProfileData] = useState({ name: '', phone: '', membershipNumber: '' });
   const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
   const [passwordFormData, setPasswordFormData] = useState({
@@ -19,7 +19,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
     fetchCurrentUser()
       .then(({ user }) => {
         if (!user) return;
-        setProfileData({ name: user.display_name || '', email: user.email || '', phone: user.phone || '', membershipNumber: user.member_number || '' });
+        setProfileData({ name: user.display_name || '', phone: user.phone || '', membershipNumber: user.member_number || '' });
         if (user.notification_preferences) setNotificationSettings(user.notification_preferences);
       })
       .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
@@ -32,7 +32,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateProfileRequest({ email: profileData.email, phone: profileData.phone });
+      await updateProfileRequest({ phone: profileData.phone });
       toast.success('Profile updated successfully!');
       loadAccount();
     } catch (error) {
@@ -94,7 +94,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
       </div>
 
       {/* Settings Container */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         {/* Tabs */}
         <div className="border-b border-gray-200">
           <div className="flex overflow-x-auto">
@@ -151,18 +151,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                       value={profileData.name}
                       readOnly
                       title="Your name is maintained by the ACIFAC office"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={profileData.email}
-                      onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -173,7 +162,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                       type="tel"
                       value={profileData.phone}
                       onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -184,7 +173,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                       type="text"
                       value={profileData.membershipNumber}
                       disabled
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -192,7 +181,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
                 >
                   <Save className="w-5 h-5" />
                   Save Changes
@@ -207,21 +196,6 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Notification Preferences</h2>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">Email Notifications</p>
-                      <p className="text-sm text-gray-600">Receive updates via email</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notificationSettings.emailNotifications}
-                        onChange={(e) => setNotificationSettings({ ...notificationSettings, emailNotifications: e.target.checked })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                    </label>
-                  </div>
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
@@ -257,7 +231,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <div className="flex justify-end">
                 <button
                   onClick={handleSaveNotifications}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
                 >
                   <Save className="w-5 h-5" />
                   Save Preferences
@@ -277,7 +251,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                     <p className="text-sm text-gray-600 mb-4">Update your password to keep your account secure</p>
                     <button
                       onClick={() => setShowChangePasswordModal(true)}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                      className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700"
                     >
                       Change Password
                     </button>
@@ -291,7 +265,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
+        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Change Password</h2>
@@ -321,7 +295,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   value={passwordFormData.currentPassword}
                   onChange={handlePasswordFormChange}
                   placeholder="Enter current password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
@@ -335,7 +309,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   value={passwordFormData.newPassword}
                   onChange={handlePasswordFormChange}
                   placeholder="Enter new password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 
@@ -349,7 +323,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   value={passwordFormData.confirmPassword}
                   onChange={handlePasswordFormChange}
                   placeholder="Confirm new password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
 

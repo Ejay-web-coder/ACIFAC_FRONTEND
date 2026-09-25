@@ -97,10 +97,10 @@ export function AccountManagement() {
           <p className="mt-1 text-sm text-gray-600">Manage member login accounts and credentials.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => void loadData()} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button onClick={() => void loadData()} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
             <Plus className="h-4 w-4" /> Create Member Account
           </button>
         </div>
@@ -113,33 +113,33 @@ export function AccountManagement() {
             <label className="text-sm font-medium text-gray-700">Select member
               <div className="relative mt-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input type="search" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member..." className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3" />
+                <input type="search" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search member..." className="w-full rounded-xl border border-gray-300 bg-white py-2 pl-9 pr-3" />
               </div>
-              <select required value={form.memberId} onChange={(event) => setForm({ ...form, memberId: event.target.value })} className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2">
+              <select required value={form.memberId} onChange={(event) => setForm({ ...form, memberId: event.target.value })} className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-3 py-2">
                 <option value="">Choose an existing member</option>
                 {filteredMembers.map((member) => <option key={member.id} value={member.id}>{member.member_number || member.id} - {member.first_name} {member.last_name}</option>)}
               </select>
               <span className="mt-1 block text-xs text-gray-500">Showing {filteredMembers.length} of {availableMembers.length} members</span>
             </label>
             <label className="text-sm font-medium text-gray-700">Username
-              <input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" />
+              <input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
             </label>
             <label className="text-sm font-medium text-gray-700">Temporary password
-              <input required minLength={8} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" />
+              <input required minLength={8} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
               <span className="mt-1 block text-xs font-normal text-gray-500">Use 8+ characters with uppercase, lowercase, number, and symbol.</span>
             </label>
             <label className="text-sm font-medium text-gray-700">Confirm password
-              <input required minLength={8} type="password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" />
+              <input required minLength={8} type="password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
             </label>
           </div>
           <div className="mt-4 flex gap-2">
-            <button type="submit" disabled={isCreating} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{isCreating ? 'Creating...' : 'Create account'}</button>
-            <button type="button" disabled={isCreating} onClick={() => setShowCreate(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={isCreating} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{isCreating ? 'Creating...' : 'Create account'}</button>
+            <button type="button" disabled={isCreating} onClick={() => setShowCreate(false)} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
           </div>
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50"><tr>{['Member', 'Username', 'Role', 'Status', 'Created', 'Actions'].map((heading) => <th key={heading} className="px-4 py-3 text-left font-semibold text-gray-600">{heading}</th>)}</tr></thead>
           <tbody className="divide-y divide-gray-100">
