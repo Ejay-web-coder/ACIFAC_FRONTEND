@@ -80,7 +80,7 @@ const STATUS_TONES: Record<string, StatusTone> = {
   active: 'success', approved: 'success', paid: 'success', completed: 'success', complete: 'success', success: 'success', released: 'success', available: 'success', 'in stock': 'success', current: 'success', settled: 'success', verified: 'success', excellent: 'success', good: 'success', 'fully paid': 'success',
   pending: 'warning', 'for review': 'warning', review: 'warning', 'under review': 'warning', 'low stock': 'warning', 'due soon': 'warning', partial: 'warning', fair: 'warning', 'in use': 'progress',
   scheduled: 'info', ongoing: 'progress', 'in progress': 'progress', processing: 'progress', disbursed: 'progress', maintenance: 'info',
-  overdue: 'danger', declined: 'danger', rejected: 'danger', cancelled: 'danger', canceled: 'danger', failed: 'danger', suspended: 'danger', defaulted: 'danger', 'out of stock': 'danger', poor: 'danger', locked: 'danger',
+  overdue: 'danger', unpaid: 'danger', declined: 'danger', rejected: 'danger', cancelled: 'danger', canceled: 'danger', failed: 'danger', suspended: 'danger', defaulted: 'danger', 'out of stock': 'danger', poor: 'danger', locked: 'danger',
   inactive: 'neutral', archived: 'neutral', closed: 'neutral', draft: 'neutral', unavailable: 'neutral',
 };
 

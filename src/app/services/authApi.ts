@@ -475,6 +475,12 @@ export interface Machinery {
   lastMaintenance?: string | null;
   nextMaintenance?: string | null;
   dailyFee: number;
+  deliveryDate?: string | null;
+  condition?: 'operational' | 'non_operational' | 'always_repair' | 'idle' | null;
+  // An implement (e.g. a Rotavator) names the machine it is attached to.
+  parentMachineryId?: string | null;
+  // per_service machines are paid per job (per hectare / per 100 bags), not booked by the day.
+  pricingMode?: 'per_day' | 'per_service';
 }
 
 export interface RentalRequest {

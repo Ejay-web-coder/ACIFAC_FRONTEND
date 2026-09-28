@@ -1,11 +1,11 @@
 import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye, PiggyBank, Tractor } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { PagedList } from '../../app/components/common/PagedList';
 import { sumMoney } from '../../utils/money';
 import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
-import { escapeHtml } from '../../utils/html';
 
 interface TransactionProps {
   userRole: UserRole;
@@ -50,6 +50,104 @@ const STATUS_STYLE: Record<TransactionStatus, string> = {
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// The built-in PDF fonts have no peso sign or narrow spaces (Intl puts one before AM/PM).
+const pdfText = (value: string) => value.replace(/₱/g, 'PHP ').replace(/[\u00A0\u2009\u202F]/g, ' ');
+
+// Builds the same receipt as the View modal as an A4 PDF and saves it.
+async function downloadReceiptPdf(txn: Transaction) {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  doc.setProperties({ title: `Transaction Receipt - ${txn.id}` });
+
+  const left = 20;
+  const right = 190;
+  const center = (left + right) / 2;
+  const lineHeight = 5;
+  let y = 28;
+
+  const valueLines = (value: string): string[] => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
+    return doc.splitTextToSize(pdfText(value), 95);
+  };
+  const rowHeight = (value: string) => (valueLines(value).length - 1) * lineHeight + 8.5;
+  const row = (label: string, value: string, x0: number, x1: number, strong = false) => {
+    const lines = valueLines(value);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(51);
+    doc.text(label, x0, y);
+    doc.setFont('helvetica', strong ? 'bold' : 'normal');
+    doc.setTextColor(strong ? 17 : 85);
+    doc.text(lines, x1, y, { align: 'right' });
+    const separator = y + (lines.length - 1) * lineHeight + 2.5;
+    doc.setDrawColor(strong ? 51 : 225);
+    doc.setLineWidth(strong ? 0.5 : 0.2);
+    doc.line(x0, separator, x1, separator);
+    y = separator + 6;
+  };
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(17);
+  doc.text('TRANSACTION RECEIPT', center, y, { align: 'center' });
+  y += 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(102);
+  doc.text('ACIFAC Cooperative', center, y, { align: 'center' });
+  y += 7;
+  doc.setDrawColor(51);
+  doc.setLineWidth(0.6);
+  doc.line(left, y, right, y);
+  y += 11;
+
+  row('Receipt Number:', txn.id, left, right);
+  row('Date & Time:', formatDate(txn.date), left, right);
+  row('Type:', TYPE_STYLE[txn.type].label, left, right);
+  row('Category:', txn.category, left, right);
+  row('Description:', txn.detail ? `${txn.description} (${txn.detail})` : txn.description, left, right);
+
+  const details: [string, string, boolean?][] = [
+    ['Amount:', peso(txn.amount)],
+    ['Payment Method:', txn.paymentMethod],
+    ['Reference:', txn.reference],
+    ['Status:', capitalize(txn.status), true],
+  ];
+  if (txn.balance !== null) details.push([`${txn.balanceLabel}:`, peso(txn.balance)]);
+
+  // The shaded box is drawn first, so its height is measured before the rows.
+  y += 4;
+  const boxTop = y;
+  const boxHeight = 16 + details.reduce((sum, [, value]) => sum + rowHeight(value), 0);
+  doc.setFillColor(245, 245, 245);
+  doc.roundedRect(left, boxTop, right - left, boxHeight, 2, 2, 'F');
+  y = boxTop + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(17);
+  doc.text('Transaction Details', left + 6, y);
+  y += 9;
+  details.forEach(([label, value, strong]) => row(label, value, left + 6, right - 6, strong));
+
+  y = boxTop + boxHeight + 12;
+  doc.setDrawColor(221);
+  doc.setLineWidth(0.2);
+  doc.line(left, y, right, y);
+  y += 9;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(102);
+  doc.text('Thank you for your transaction!', center, y, { align: 'center' });
+  y += 5.5;
+  doc.text('This is a computer-generated receipt. No signature is required.', center, y, { align: 'center' });
+  y += 9;
+  doc.setFontSize(9);
+  doc.setTextColor(51);
+  doc.text(pdfText(`Printed on ${formatDateTime(new Date())}`), center, y, { align: 'center' });
+
+  doc.save(`Receipt-${txn.id}.pdf`);
+}
 
 export function Transaction({ userRole }: TransactionProps) {
   const { memberData, error } = useMyMemberData();
@@ -165,104 +263,9 @@ export function Transaction({ userRole }: TransactionProps) {
   };
 
   const handleDownloadReceipt = (txn: Transaction) => {
-    const receiptContent = generateReceiptHTML(txn);
-    const element = document.createElement('a');
-    const file = new Blob([receiptContent], { type: 'text/html' });
-    element.href = URL.createObjectURL(file);
-    element.download = `Receipt-${txn.id}.html`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
-  const generateReceiptHTML = (txn: Transaction) => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Transaction Receipt - ${escapeHtml(txn.id)}</title>
-        <style>
-          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-          .receipt-container { border: 1px solid #ddd; border-radius: 8px; padding: 30px; background: white; }
-          .receipt-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-          .receipt-title { font-size: 24px; font-weight: bold; margin: 0; }
-          .receipt-subtitle { color: #666; margin: 5px 0 0 0; }
-          .receipt-section { margin: 20px 0; }
-          .receipt-label { font-weight: bold; color: #333; }
-          .receipt-value { color: #666; margin-left: 10px; }
-          .receipt-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-          .receipt-summary { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
-          .receipt-total { font-size: 18px; font-weight: bold; color: #28a745; }
-          .receipt-footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; }
-          .amount { text-align: right; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt-container">
-          <div class="receipt-header">
-            <h1 class="receipt-title">TRANSACTION RECEIPT</h1>
-            <p class="receipt-subtitle">ACIFAC Cooperative</p>
-          </div>
-          
-          <div class="receipt-section">
-            <div class="receipt-row">
-              <span class="receipt-label">Receipt Number:</span>
-              <span class="receipt-value">${escapeHtml(txn.id)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Date & Time:</span>
-              <span class="receipt-value">${formatDate(txn.date)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Type:</span>
-              <span class="receipt-value">${escapeHtml(TYPE_STYLE[txn.type].label)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Category:</span>
-              <span class="receipt-value">${escapeHtml(txn.category)}</span>
-            </div>
-          </div>
-
-          <div class="receipt-section">
-            <div class="receipt-row">
-              <span class="receipt-label">Description:</span>
-              <span class="receipt-value">${escapeHtml(txn.detail ? `${txn.description} (${txn.detail})` : txn.description)}</span>
-            </div>
-          </div>
-
-          <div class="receipt-summary">
-            <h3 style="margin-top: 0;">Transaction Details</h3>
-            <div class="receipt-row">
-              <span class="receipt-label">Amount:</span>
-              <span class="receipt-value amount">${peso(txn.amount)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Payment Method:</span>
-              <span class="receipt-value">${escapeHtml(txn.paymentMethod)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Reference:</span>
-              <span class="receipt-value">${escapeHtml(txn.reference)}</span>
-            </div>
-            <div class="receipt-row" style="border-bottom: 2px solid #333; font-weight: bold;">
-              <span class="receipt-label">Status:</span>
-              <span class="receipt-value">${capitalize(txn.status)}</span>
-            </div>
-            ${txn.balance === null ? '' : `<div class="receipt-row">
-              <span class="receipt-label">${escapeHtml(txn.balanceLabel)}:</span>
-              <span class="receipt-value amount">${peso(txn.balance)}</span>
-            </div>`}
-          </div>
-
-          <div class="receipt-footer">
-            <p>Thank you for your transaction!</p>
-            <p>This is a computer-generated receipt. No signature is required.</p>
-            <p style="margin-top: 20px; color: #333;">Printed on ${formatDateTime(new Date())}</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    downloadReceiptPdf(txn).catch(() => {
+      toast.error('Unable to create the receipt PDF. Please try again.');
+    });
   };
 
   return (

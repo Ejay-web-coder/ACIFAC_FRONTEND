@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer, Tractor, PhilippinePeso } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer, Tractor, PhilippinePeso, Settings2 } from 'lucide-react';
 import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
@@ -8,12 +9,29 @@ import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, r
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import { escapeHtml } from '../../utils/html';
 import { useLiveRefresh } from '../../lib/liveUpdates';
+import { ServicesPanel } from '../components/machinery/ServicesPanel';
+import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
+import { PhilmechReportPanel } from '../components/machinery/PhilmechReportPanel';
+import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
+import { ConditionBadge } from '../components/machinery/shared';
 
 interface MachineryOperationsProps {
   userRole: UserRole;
 }
 
+const TABS = [
+  { id: 'rentals', label: 'Fleet & Rentals' },
+  { id: 'services', label: 'Services' },
+  { id: 'expenses', label: 'Expenses' },
+  { id: 'report', label: 'PhilMech Report' },
+] as const;
+type TabId = typeof TABS[number]['id'];
+
 export function MachineryOperations({ userRole }: MachineryOperationsProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: TabId = TABS.some((entry) => entry.id === searchParams.get('tab')) ? searchParams.get('tab') as TabId : 'rentals';
+  const selectTab = (id: TabId) => setSearchParams(id === 'rentals' ? {} : { tab: id }, { replace: true });
+  const [settingsMachine, setSettingsMachine] = useState<Machinery | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -227,6 +245,22 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {canEdit && (
+        <nav aria-label="Machinery sections" className="-mx-1 flex gap-1 overflow-x-auto px-1">
+          {TABS.map((entry) => (
+            <button key={entry.id} type="button" onClick={() => selectTab(entry.id)} aria-current={tab === entry.id ? 'page' : undefined}
+              className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${tab === entry.id ? 'bg-green-600 text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+              {entry.label}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
+      {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
+      {canEdit && tab === 'report' && <PhilmechReportPanel machinery={machinery} />}
+
+      {tab === 'rentals' && (<>
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-600">Track farm equipment and rental operations</p>
@@ -317,12 +351,27 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-1 text-xs ${machine.status === 'available' ? 'bg-green-100 text-green-800' : machine.status === 'in-use' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>{machine.status}</span>
               </div>
-              <p className="mt-2 text-sm text-gray-700">₱{machine.dailyFee.toLocaleString('en-PH', { minimumFractionDigits: 2 })} / day</p>
+              <div className="mt-2"><ConditionBadge condition={machine.condition} /></div>
+              <p className="mt-2 text-sm text-gray-700">
+                {machine.pricingMode === 'per_service' ? 'Per service (per ha / per 100 bags)' : `₱${machine.dailyFee.toLocaleString('en-PH', { minimumFractionDigits: 2 })} / day`}
+              </p>
+              {machine.deliveryDate && <p className="text-xs text-gray-500">Delivered: {formatDate(machine.deliveryDate)}</p>}
+              {machine.parentMachineryId && <p className="text-xs text-gray-500">Attached to: {machinery.find((row) => row.id === machine.parentMachineryId)?.name ?? machine.parentMachineryId}</p>}
+              {machinery.some((row) => row.parentMachineryId === machine.id) && (
+                <p className="text-xs text-gray-500">Implements: {machinery.filter((row) => row.parentMachineryId === machine.id).map((row) => row.name).join(', ')}</p>
+              )}
               {machine.nextMaintenance && <p className="text-xs text-gray-500">Next maintenance: {formatDate(machine.nextMaintenance)}</p>}
-              {canEdit && machine.status !== 'in-use' && (
-                <button type="button" onClick={() => void toggleMaintenance(machine)} className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800">
-                  {machine.status === 'maintenance' ? 'Mark available' : 'Set to maintenance'}
-                </button>
+              {canEdit && (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                  <button type="button" onClick={() => setSettingsMachine(machine)} className="inline-flex items-center gap-1 text-xs font-medium text-green-700 hover:text-green-900">
+                    <Settings2 className="h-3.5 w-3.5" />Details &amp; rates
+                  </button>
+                  {machine.status !== 'in-use' && (
+                    <button type="button" onClick={() => void toggleMaintenance(machine)} className="text-xs font-medium text-blue-600 hover:text-blue-800">
+                      {machine.status === 'maintenance' ? 'Mark available' : 'Set to maintenance'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -397,6 +446,11 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </div>
         <Pagination page={operationPages.page} totalPages={operationPages.totalPages} total={operationPages.total} pageSize={operationPages.pageSize} onPageChange={operationPages.setPage} onPageSizeChange={operationPages.setPageSize} label="operations" />
       </div>
+      </>)}
+
+      {settingsMachine && (
+        <MachineSettingsModal machine={settingsMachine} machinery={machinery} onClose={() => setSettingsMachine(null)} onChanged={() => { void loadData(); }} />
+      )}
 
       {showReport && (
         <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
@@ -472,7 +526,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   >
                     <option value="">Select machinery</option>
-                    {machinery.map(m => (
+                    {machinery.filter(m => m.pricingMode !== 'per_service').map(m => (
                       <option key={m.id} value={m.id} disabled={m.status === 'maintenance'}>
                         {m.name} — ₱{m.dailyFee.toLocaleString('en-PH')}/day{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
                       </option>
