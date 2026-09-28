@@ -1,6 +1,7 @@
 // Single HTTP client for the ACIFAC API. Every request sends the session
 // cookie and the X-Requested-With header the backend requires for CSRF
 // protection on state-changing requests.
+import { isUserActive, noteServerActivity, SESSION_ACTIVITY_HEADER } from './sessionActivity';
 
 export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -8,17 +9,21 @@ export class ApiError extends Error {
   status: number;
   code?: string;
   errors?: string[];
+  /** The full error response, e.g. retryAfterSeconds on a sign-in lockout. */
+  data: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string, errors?: string[]) {
+  constructor(message: string, status: number, code?: string, errors?: string[], data: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
     this.code = code;
     this.errors = errors;
+    this.data = data;
   }
 }
 
 export const SESSION_ENDED_EVENT = 'acifac:session-ended';
 export const PASSWORD_CHANGE_EVENT = 'acifac:password-change-required';
+export const SESSION_IDLE_MESSAGE = 'Your session expired because of inactivity. Please log in again.';
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -26,6 +31,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+  // Requests made while nobody is using the page (background refreshes) do
+  // not extend the session's inactivity timeout.
+  if (!headers.has(SESSION_ACTIVITY_HEADER) && !isUserActive()) headers.set(SESSION_ACTIVITY_HEADER, 'passive');
+  const countsAsActivity = headers.get(SESSION_ACTIVITY_HEADER) !== 'passive';
 
   let response: Response;
   try {
@@ -33,10 +42,11 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   } catch {
     throw new ApiError('Unable to reach the ACIFAC server. Check your connection and try again.', 0);
   }
+  if (countsAsActivity && response.status !== 401) noteServerActivity();
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new ApiError(data.message || 'Request failed.', response.status, data.code, data.errors);
+    const error = new ApiError(data.message || 'Request failed.', response.status, data.code, data.errors, data);
     if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/me') {
       window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: error.message }));
     }

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_URL, SESSION_ENDED_EVENT } from './api';
+import { API_URL, SESSION_ENDED_EVENT, SESSION_IDLE_MESSAGE } from './api';
 
 // Live updates over Server-Sent Events. The server only sends
 // {table, op} for changes the signed-in user is allowed to see; pages
@@ -21,9 +21,15 @@ function ensureConnection() {
       /* ignore malformed events */
     }
   });
-  source.addEventListener('session-ended', () => {
+  source.addEventListener('session-ended', (event) => {
+    let reason = '';
+    try {
+      reason = (JSON.parse((event as MessageEvent).data) as { reason?: string }).reason || '';
+    } catch {
+      /* no reason given */
+    }
     closeLiveUpdates();
-    window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: 'Your session has ended. Please sign in again.' }));
+    window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: reason === 'inactivity' ? SESSION_IDLE_MESSAGE : 'Your session has ended. Please sign in again.' }));
   });
 }
 

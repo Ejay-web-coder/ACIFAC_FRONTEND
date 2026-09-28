@@ -1,12 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { PASSWORD_CHANGE_EVENT, SESSION_ENDED_EVENT } from '../lib/api';
+import { ApiError, PASSWORD_CHANGE_EVENT, SESSION_ENDED_EVENT } from '../lib/api';
 import { closeLiveUpdates } from '../lib/liveUpdates';
 import { lazy, Suspense } from 'react';
 import { Layout } from './components/Layout';
 import { Toaster } from './components/ui/Toaster';
 import { Login } from './components/Login';
+import { SessionTimeout } from './components/SessionTimeout';
 import { fetchCurrentUser } from './services/authApi';
 
 const AdminDashboard = lazy(() => import('../admin/pages/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
@@ -46,6 +47,13 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  // Why the last session ended (e.g. inactivity), shown on the login page.
+  const [loginNotice, setLoginNotice] = useState<string | null>(null);
+  const isAuthenticatedRef = useRef(false);
+
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   useEffect(() => {
     fetchCurrentUser()
@@ -56,17 +64,23 @@ export default function App() {
           setIsAuthenticated(true);
         }
       })
-      .catch(() => setIsAuthenticated(false))
+      .catch((error) => {
+        setIsAuthenticated(false);
+        // Reopened or refreshed after the server timed the session out.
+        if (error instanceof ApiError && error.code === 'SESSION_IDLE_TIMEOUT') setLoginNotice(error.message);
+      })
       .finally(() => setIsAuthReady(true));
   }, []);
 
   useEffect(() => {
     const onSessionEnded = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail || 'Your session has ended. Please sign in again.';
       closeLiveUpdates();
-      setIsAuthenticated((wasAuthenticated) => {
-        if (wasAuthenticated) toast.error((event as CustomEvent<string>).detail || 'Your session has ended. Please sign in again.');
-        return false;
-      });
+      if (isAuthenticatedRef.current) {
+        toast.error(message);
+        setLoginNotice(message);
+      }
+      setIsAuthenticated(false);
       setMustChangePassword(false);
     };
     const onPasswordChangeRequired = () => setMustChangePassword(true);
@@ -81,6 +95,7 @@ export default function App() {
   const handleLogin = (role: UserRole, requiresPasswordChange: boolean) => {
     setUserRole(role);
     setMustChangePassword(requiresPasswordChange);
+    setLoginNotice(null);
     setIsAuthenticated(true);
   };
 
@@ -89,6 +104,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster />
+      {isAuthenticated && <SessionTimeout />}
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-gray-500">Loading...</div>}>
         <Routes>
         <Route
@@ -97,18 +113,18 @@ export default function App() {
             isAuthenticated ? (
               <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
             ) : (
-              <Login onLogin={handleLogin} />
+              <Login onLogin={handleLogin} notice={loginNotice} />
             )
           }
         />
-        <Route path="/reset-password" element={<Login onLogin={handleLogin} />} />
+        <Route path="/reset-password" element={<Login onLogin={handleLogin} notice={loginNotice} />} />
         <Route
           path="/login"
           element={
             isAuthenticated ? (
               <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
             ) : (
-              <Login onLogin={handleLogin} />
+              <Login onLogin={handleLogin} notice={loginNotice} />
             )
           }
         />

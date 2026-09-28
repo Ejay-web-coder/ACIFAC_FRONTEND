@@ -1,21 +1,55 @@
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { User, Lock, Shield, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { User, Lock, Shield, Users, Clock3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole } from '../App';
-import { forgotPasswordRequest, loginRequest, resetPasswordRequest } from '../services/authApi';
+import { ApiError } from '../../lib/api';
+import { loginRequest, resetPasswordRequest } from '../services/authApi';
 import { InstallAppButton } from './common/InstallAppButton';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface LoginProps {
   onLogin: (role: UserRole, mustChangePassword: boolean) => void;
+  /** Why the last session ended, shown above the sign-in options. */
+  notice?: string | null;
 }
 
-export function Login({ onLogin }: LoginProps) {
+// Sign-in lockouts are enforced by the server. This tab only remembers when a
+// lock it was told about ends, so the countdown survives a refresh.
+const LOCKS_KEY = 'acifac:login-locks';
+type LoginLocks = Record<string, number>;
+
+function readLocks(): LoginLocks {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(LOCKS_KEY) || '{}') as LoginLocks;
+    return Object.fromEntries(Object.entries(stored).filter(([, until]) => typeof until === 'number' && until > Date.now()));
+  } catch {
+    return {};
+  }
+}
+
+function saveLocks(locks: LoginLocks) {
+  try {
+    sessionStorage.setItem(LOCKS_KEY, JSON.stringify(locks));
+  } catch {
+    // Storage unavailable: the server still enforces the lock.
+  }
+}
+
+const lockKey = (identifier: string) => identifier.trim().toLowerCase();
+
+const formatCountdown = (ms: number) => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+export function Login({ onLogin, notice }: LoginProps) {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState<'admin' | 'member' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [recoveryIdentifier, setRecoveryIdentifier] = useState('');
+  const [locks, setLocks] = useState<LoginLocks>(readLocks);
+  const [now, setNow] = useState(() => Date.now());
   // Email links use /reset-password?token=...; ?resetToken= is accepted for older links.
   const [resetToken, setResetToken] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -31,18 +65,65 @@ export function Login({ onLogin }: LoginProps) {
     password: ''
   });
 
+  const hasActiveLock = Object.values(locks).some((until) => until > now);
+  useEffect(() => {
+    if (!hasActiveLock) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveLock]);
+
+  // The lock belongs to the account, so it shows for the name that was locked.
+  const currentIdentifier = selectedRole === 'admin' ? adminForm.username : memberForm.identifier;
+  const lockRemaining = (locks[lockKey(currentIdentifier)] ?? 0) - now;
+  const isLocked = Boolean(currentIdentifier.trim()) && lockRemaining > 0;
+
+  const forgetLock = (identifier?: string) => {
+    const next = identifier === undefined ? {} : Object.fromEntries(Object.entries(readLocks()).filter(([key]) => key !== lockKey(identifier)));
+    saveLocks(next);
+    setLocks(next);
+  };
+
+  const handleLoginError = (error: unknown, identifier: string) => {
+    if (error instanceof ApiError && error.code === 'LOGIN_LOCKED') {
+      // Counts down from the time left on the server's lock.
+      const seconds = Number(error.data.retryAfterSeconds) || 20 * 60;
+      const next = { ...readLocks(), [lockKey(identifier)]: Date.now() + seconds * 1000 };
+      saveLocks(next);
+      setLocks(next);
+      setNow(Date.now());
+      toast.error(error.message);
+      return;
+    }
+    if (error instanceof ApiError && error.code === 'INVALID_CREDENTIALS' && error.data.attemptsRemaining === 1) {
+      toast.error(`${error.message} 1 attempt left before sign-in is locked for 20 minutes.`);
+      return;
+    }
+    toast.error(error instanceof Error ? error.message : 'Unable to sign in.');
+  };
+
+  const lockNotice = isLocked && (
+    <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+      <Clock3 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div>
+        <p className="font-medium">Too many failed login attempts.</p>
+        <p className="tabular-nums">Try again in {formatCountdown(lockRemaining)}</p>
+      </div>
+    </div>
+  );
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
       const response = await loginRequest({ usernameOrEmail: adminForm.username, password: adminForm.password });
+      forgetLock(adminForm.username);
       if (response.role !== 'ADMIN') throw new Error('This account is not an administrator.');
       onLogin('admin', Boolean(response.mustChangePassword));
       toast.success(response.mustChangePassword ? 'Please change your temporary password to continue.' : 'Login successful');
       navigate(response.mustChangePassword ? '/settings' : '/admin-dashboard');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to sign in.');
+      handleLoginError(error, adminForm.username);
     } finally {
       setIsSubmitting(false);
     }
@@ -54,27 +135,13 @@ export function Login({ onLogin }: LoginProps) {
 
     try {
       const response = await loginRequest({ usernameOrEmail: memberForm.identifier, password: memberForm.password });
+      forgetLock(memberForm.identifier);
       if (response.role !== 'MEMBER') throw new Error('This account is not a member account.');
       onLogin('member', Boolean(response.mustChangePassword));
       toast.success(response.mustChangePassword ? 'Please change your temporary password to continue.' : 'Login successful');
       navigate(response.mustChangePassword ? '/settings' : '/member-dashboard');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to sign in.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      const response = await forgotPasswordRequest({ usernameOrEmail: recoveryIdentifier });
-      toast.success(response.message);
-      setShowForgotPassword(false);
-      setRecoveryIdentifier('');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to process recovery request.');
+      handleLoginError(error, memberForm.identifier);
     } finally {
       setIsSubmitting(false);
     }
@@ -121,6 +188,10 @@ export function Login({ onLogin }: LoginProps) {
           </p>
           <div className="mt-4 flex justify-center"><InstallAppButton variant="full" /></div>
         </div>
+
+        {notice && (
+          <p role="status" className="mx-auto mb-4 max-w-2xl rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-center text-sm text-yellow-800">{notice}</p>
+        )}
 
         {!selectedRole ? (
           <div className="mx-auto grid max-w-2xl grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
@@ -219,9 +290,11 @@ export function Login({ onLogin }: LoginProps) {
                   </div>
                 </div>
 
+                {lockNotice}
+
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isLocked}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-2.5 font-medium text-white transition hover:bg-green-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <Shield className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -261,9 +334,11 @@ export function Login({ onLogin }: LoginProps) {
                   </div>
                 </div>
 
+                {lockNotice}
+
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isLocked}
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-2.5 font-medium text-white transition hover:bg-green-700 sm:py-3 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <Users className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -273,21 +348,8 @@ export function Login({ onLogin }: LoginProps) {
             )}
 
             <div className="mt-6 text-center">
-              <button type="button" onClick={() => setShowForgotPassword((current) => !current)} className="text-xs text-gray-500 underline hover:text-gray-700">Forgot password?</button>
+              <button type="button" onClick={() => setShowForgotPassword(true)} className="text-xs text-gray-500 underline hover:text-gray-700">Forgot password?</button>
             </div>
-            {showForgotPassword && selectedRole === 'member' && (
-              <p className="mt-4 border-t border-gray-100 pt-4 text-center text-sm text-gray-600">
-                Please visit or contact the ACIFAC office to reset your password.
-              </p>
-            )}
-            {showForgotPassword && selectedRole === 'admin' && (
-              <form onSubmit={handleForgotPassword} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-                <label className="block text-sm font-medium text-gray-700">Username or email
-                  <input required value={recoveryIdentifier} onChange={(e) => setRecoveryIdentifier(e.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
-                </label>
-                <button disabled={isSubmitting} className="w-full rounded-xl border border-gray-300 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">Request reset</button>
-              </form>
-            )}
             {resetToken && (
               <form onSubmit={handleResetPassword} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
                 <p className="text-xs text-gray-600">Enter a new password for the reset token returned by the development server.</p>
@@ -299,6 +361,8 @@ export function Login({ onLogin }: LoginProps) {
           </div>
         )}
       </div>
+      {/* A completed reset also lifts the server's lockout. */}
+      {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} onPasswordReset={() => forgetLock()} />}
     </div>
   );
 }

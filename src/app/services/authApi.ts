@@ -39,8 +39,18 @@ export function loginRequest(payload: { usernameOrEmail: string; password: strin
 }
 export const logoutRequest = () => apiPost<{ message: string }>('/api/auth/logout');
 export const fetchCurrentUser = () => apiGet<{ user?: AuthUser }>('/api/auth/me');
-export const forgotPasswordRequest = (payload: { usernameOrEmail: string }) => apiPost<{ message: string }>('/api/auth/forgot-password', payload);
-export const resetPasswordRequest = (payload: { token: string; newPassword: string; confirmPassword: string }) => apiPost<{ message: string }>('/api/auth/reset-password', payload);
+// Forgot password: the code is emailed and checked on the server only. After
+// a correct code the server sets an httpOnly cookie that authorises the reset,
+// so the page never holds the code's proof.
+export const forgotPasswordRequest = (payload: { email: string }) =>
+  apiPost<{ message: string; expiresInSeconds: number; resendAvailableInSeconds: number }>('/api/auth/forgot-password', payload);
+export const verifyResetCodeRequest = (payload: { email: string; code: string }) => apiPost<{ message: string; expiresInSeconds: number }>('/api/auth/verify-reset-code', payload);
+// Emailed links (account setup, office resets) pass their token; after a verified code none is needed.
+export const resetPasswordRequest = (payload: { token?: string; newPassword: string; confirmPassword: string }) => apiPost<{ message: string }>('/api/auth/reset-password', payload);
+
+export interface SessionStatus { idleTimeoutSeconds: number; idleExpiresInSeconds: number; sessionExpiresInSeconds: number }
+// 'passive' checks the session without counting as activity.
+export const fetchSessionStatus = (mode: 'active' | 'passive') => apiFetch<SessionStatus>('/api/auth/session', { headers: { 'X-Session-Activity': mode } });
 export const changePasswordRequest = (payload: { currentPassword: string; newPassword: string; confirmPassword: string }) => apiPost<{ message: string }>('/api/auth/change-password', payload);
 export const updateProfileRequest = (payload: { name?: string; email?: string; phone?: string; position?: string }) => apiPatch<{ message: string; profile: Record<string, string | null> }>('/api/auth/profile', payload);
 export const updateNotificationPreferencesRequest = (payload: NotificationPreferences) => apiPatch<{ message: string; preferences: NotificationPreferences }>('/api/auth/notification-preferences', payload);
