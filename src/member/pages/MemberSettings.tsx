@@ -3,10 +3,12 @@ import { User, Bell, Shield, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { changePasswordRequest, fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
 import { closeLiveUpdates } from '../../lib/liveUpdates';
+import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 
 export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>(mustChangePassword ? 'security' : 'profile');
   const [profileData, setProfileData] = useState({ name: '', phone: '', membershipNumber: '' });
+  const [notificationEmail, setNotificationEmail] = useState<string | null>(null);
   const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
   const [passwordFormData, setPasswordFormData] = useState({
@@ -21,6 +23,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
         if (!user) return;
         setProfileData({ name: user.display_name || '', phone: user.phone || '', membershipNumber: user.member_number || '' });
         if (user.notification_preferences) setNotificationSettings(user.notification_preferences);
+        setNotificationEmail(user.notification_email || null);
       })
       .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
   }, []);
@@ -139,6 +142,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-6">
+              <ProfilePhotoEditor visibilityNote="Shown in your top bar and to ACIFAC administrators on your member record." />
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Profile Information</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -196,6 +200,23 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Notification Preferences</h2>
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4 p-4 border border-gray-200 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">Email Notifications</p>
+                      <p className="text-sm text-gray-600">Receive emails when savings, share capital, loans, payments or machinery rentals are recorded on your account</p>
+                      <p className="mt-1 text-xs text-gray-500">{notificationEmail ? <>Sent to <span className="font-medium text-gray-700">{notificationEmail}</span>. To change it, contact the ACIFAC office.</> : 'No email address is on file. Ask the ACIFAC office to add one to receive emails.'}</p>
+                    </div>
+                    <label className="relative inline-flex shrink-0 items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        aria-label="Email notifications"
+                        checked={notificationSettings.emailNotifications}
+                        onChange={(e) => setNotificationSettings({ ...notificationSettings, emailNotifications: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
@@ -214,7 +235,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">Loan Payment Reminders</p>
-                      <p className="text-sm text-gray-600">Get notified about upcoming loan payments</p>
+                      <p className="text-sm text-gray-600">Get notified about upcoming loan payments (in the app, and by email when email notifications are on)</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input

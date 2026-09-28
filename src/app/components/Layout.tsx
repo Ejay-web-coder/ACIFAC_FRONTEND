@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Search,
   BellOff,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../App';
@@ -37,6 +38,7 @@ import { useIsMobile } from './ui/use-mobile';
 import { formatDateTime } from '../../utils/dateTime';
 import { EmptyState, ListSkeleton } from './common/UiKit';
 import { InstallAppButton } from './common/InstallAppButton';
+import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
 
 const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 
@@ -82,6 +84,7 @@ const navigation: NavItem[] = [
   { name: 'Loan Status', href: '/loan-status', icon: PhilippinePeso, roles: ['member'], group: 'My Account', aliases: ['/member/loans'], short: 'Loans' },
   { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Activity' },
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
+  { name: 'Activity Log', href: '/activity-log', icon: History, roles: ['member'], group: 'My Account', aliases: ['/member/activity'], short: 'Log' },
   { name: 'Associates', href: '/membership', icon: Users, roles: ['admin'], group: 'Members', aliases: ['/admin/members'], short: 'Members' },
   { name: 'Loans & Payments', href: '/loans', icon: PhilippinePeso, roles: ['admin'], group: 'Finance', aliases: ['/admin/loans'], short: 'Loans' },
   { name: 'Savings', href: '/admin/savings', icon: Wallet, roles: ['admin'], group: 'Finance', short: 'Savings' },
@@ -233,6 +236,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
       toast.error('Unable to contact the server, but this session was cleared locally.');
     } finally {
       closeLiveUpdates();
+      clearProfilePhoto();
       setUserRole('member');
       setIsAuthenticated(false);
       setShowProfileMenu(false);
@@ -309,6 +313,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
 
   const roleLabel = userRole === 'admin' ? 'Administrator' : 'Member';
   const initial = userRole === 'admin' ? 'A' : 'M';
+  const profilePicture = useProfilePhoto();
 
   const brand = (compact = false) => (
     <div className={`flex items-center gap-3 ${compact ? 'justify-center lg:justify-start' : ''}`}>
@@ -480,7 +485,9 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                   aria-label="Profile menu"
                   aria-expanded={showProfileMenu}
                 >
-                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">{initial}</span>
+                  {profilePicture
+                    ? <img src={profilePicture} alt="" className="h-9 w-9 rounded-full border border-green-100 object-cover" />
+                    : <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">{initial}</span>}
                   <span className="hidden text-left leading-tight md:block">
                     <span className="block text-sm font-semibold text-gray-900">{roleLabel}</span>
                     <span className="block text-xs text-gray-500">Signed in</span>

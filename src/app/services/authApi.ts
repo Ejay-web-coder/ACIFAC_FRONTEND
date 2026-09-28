@@ -21,6 +21,8 @@ export interface AuthUser {
   position?: string | null;
   member_number?: string | null;
   notification_preferences?: NotificationPreferences;
+  // Address member activity emails are sent to (login email, else member record).
+  notification_email?: string | null;
 }
 
 const query = (params: Record<string, string | number | undefined | null>) => {

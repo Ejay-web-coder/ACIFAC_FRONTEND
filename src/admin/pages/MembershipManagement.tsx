@@ -8,6 +8,7 @@ import { AddMemberModal, type MemberDraftData } from '../components/AddMemberMod
 import { MemberImportModal } from '../components/MemberImportModal';
 import { additionalInfoFrom, calculateAge, childrenText, EMPTY_FILLOUT, filloutFromMember, MemberEditSections, MemberViewSections, type MemberFillout } from '../components/MemberDetailSections';
 import { openProtectedFile, errorMessage } from '../../lib/api';
+import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
@@ -142,6 +143,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [memberPicture, setMemberPicture] = useState<string | null>(null);
   const [showShareContributionModal, setShowShareContributionModal] = useState(false);
   const [shareContributionForm, setShareContributionForm] = useState({ amount: '', contributionDate: dateOnlyToday(), notes: '' });
   const [showAddModal, setShowAddModal] = useState(false);
@@ -320,6 +322,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       const { data } = await fetchMemberRequest(member.id);
       setSelectedMember(data);
       setShowModal(true);
+      // The member's own picture, else their 2x2 photo (admins only).
+      setMemberPicture((current) => { if (current) URL.revokeObjectURL(current); return null; });
+      void fetchProtectedImage(`/api/members/${member.id}/documents/avatar`).then(setMemberPicture).catch(() => undefined);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to load member.');
     }
@@ -592,13 +597,16 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
             {/* Header */}
             <div className="sticky top-0 bg-green-700 text-white p-6 border-b border-green-800">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex items-center gap-4">
+                  {memberPicture && <img src={memberPicture} alt={`${selectedMember.name}'s picture`} className="h-16 w-16 shrink-0 rounded-full border-2 border-white/70 object-cover" />}
+                  <div>
                   <h2 className="text-2xl font-bold">{selectedMember.name}</h2>
                   <p className="text-blue-100 mt-1">ID: {selectedMember.memberId}</p>
                   <div className="mt-2 flex flex-wrap gap-3 text-sm text-blue-100">
                     <span>Status: <strong className="text-white capitalize">{selectedMember.status}</strong></span>
                     {selectedMember.archivedAt && <span>Archived: {formatDateTime(selectedMember.archivedAt)}</span>}
                     {selectedMember.archivedBy && <span>Archived by: {selectedMember.archivedBy}</span>}
+                  </div>
                   </div>
                 </div>
               </div>

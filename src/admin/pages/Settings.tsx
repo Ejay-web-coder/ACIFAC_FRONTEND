@@ -9,6 +9,7 @@ import {
 import { openProtectedFile } from '../../lib/api';
 import { closeLiveUpdates } from '../../lib/liveUpdates';
 import { formatDate, formatDateTime } from '../../utils/dateTime';
+import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 
 interface SettingsProps {
   userRole: UserRole;
@@ -206,6 +207,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-6">
+              <ProfilePhotoEditor visibilityNote="Shown in your top bar. Members never see administrator pictures." />
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Profile Information</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
