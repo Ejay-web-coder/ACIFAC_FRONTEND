@@ -23,6 +23,8 @@ export interface AuthUser {
   notification_preferences?: NotificationPreferences;
   // Address member activity emails are sent to (login email, else member record).
   notification_email?: string | null;
+  // Whether a password change code can be texted to `phone`.
+  sms_available?: boolean;
 }
 
 const query = (params: Record<string, string | number | undefined | null>) => {
@@ -39,19 +41,25 @@ export function loginRequest(payload: { usernameOrEmail: string; password: strin
 }
 export const logoutRequest = () => apiPost<{ message: string }>('/api/auth/logout');
 export const fetchCurrentUser = () => apiGet<{ user?: AuthUser }>('/api/auth/me');
-// Forgot password: the code is emailed and checked on the server only. After
-// a correct code the server sets an httpOnly cookie that authorises the reset,
-// so the page never holds the code's proof.
-export const forgotPasswordRequest = (payload: { email: string }) =>
+// Forgot password: the code is emailed or texted, to whichever the person
+// typed, and checked on the server only. After a correct code the server sets
+// an httpOnly cookie that authorises the reset, so the page never holds the
+// code's proof.
+export type ResetAddress = { email: string } | { phone: string };
+export const forgotPasswordRequest = (payload: ResetAddress) =>
   apiPost<{ message: string; expiresInSeconds: number; resendAvailableInSeconds: number }>('/api/auth/forgot-password', payload);
-export const verifyResetCodeRequest = (payload: { email: string; code: string }) => apiPost<{ message: string; expiresInSeconds: number }>('/api/auth/verify-reset-code', payload);
+export const verifyResetCodeRequest = (payload: ResetAddress & { code: string }) => apiPost<{ message: string; expiresInSeconds: number }>('/api/auth/verify-reset-code', payload);
 // Emailed links (account setup, office resets) pass their token; after a verified code none is needed.
 export const resetPasswordRequest = (payload: { token?: string; newPassword: string; confirmPassword: string }) => apiPost<{ message: string }>('/api/auth/reset-password', payload);
 
 export interface SessionStatus { idleTimeoutSeconds: number; idleExpiresInSeconds: number; sessionExpiresInSeconds: number }
 // 'passive' checks the session without counting as activity.
 export const fetchSessionStatus = (mode: 'active' | 'passive') => apiFetch<SessionStatus>('/api/auth/session', { headers: { 'X-Session-Activity': mode } });
-export const changePasswordRequest = (payload: { currentPassword: string; newPassword: string; confirmPassword: string }) => apiPost<{ message: string }>('/api/auth/change-password', payload);
+// Signed in: a code to the account's own email or mobile number, used in place of the current password.
+export const sendPasswordChangeCodeRequest = (channel: 'email' | 'sms') =>
+  apiPost<{ message: string; sentTo: string; expiresInSeconds: number; resendAvailableInSeconds: number }>('/api/auth/change-password/code', { channel });
+export const changePasswordRequest = (payload: ({ currentPassword: string } | { code: string }) & { newPassword: string; confirmPassword: string }) =>
+  apiPost<{ message: string }>('/api/auth/change-password', payload);
 export const updateProfileRequest = (payload: { name?: string; email?: string; phone?: string; position?: string }) => apiPatch<{ message: string; profile: Record<string, string | null> }>('/api/auth/profile', payload);
 export const updateNotificationPreferencesRequest = (payload: NotificationPreferences) => apiPatch<{ message: string; preferences: NotificationPreferences }>('/api/auth/notification-preferences', payload);
 

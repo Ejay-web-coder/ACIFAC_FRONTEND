@@ -24,7 +24,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
   const [documentCategory, setDocumentCategory] = useState('Registration');
   const [account, setAccount] = useState<AuthUser | null>(null);
   const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
-  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
+  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: true, loanReminders: true });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [isUploading, setIsUploading] = useState(false);
 
@@ -293,7 +293,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
-                      <p className="text-sm text-gray-600">Receive updates via SMS (saved as a preference; SMS delivery is not set up yet)</p>
+                      <p className="text-sm text-gray-600">Loan payment reminders by text message to your mobile number.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input

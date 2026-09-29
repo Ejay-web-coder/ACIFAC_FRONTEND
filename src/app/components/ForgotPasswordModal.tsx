@@ -2,23 +2,28 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ApiError, errorMessage } from '../../lib/api';
-import { forgotPasswordRequest, resetPasswordRequest, verifyResetCodeRequest } from '../services/authApi';
+import { forgotPasswordRequest, resetPasswordRequest, verifyResetCodeRequest, type ResetAddress } from '../services/authApi';
 
-type Step = 'email' | 'code' | 'password' | 'done';
+type Step = 'address' | 'code' | 'password' | 'done';
+type Method = 'email' | 'phone';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TITLES: Record<Step, string> = { email: 'Forgot Password', code: 'Enter Verification Code', password: 'Create New Password', done: 'Password Reset' };
+// 09171234567, 0917 123 4567, +63 917 123 4567, 639171234567 (the server normalizes it).
+const MOBILE_PATTERN = /^(?:63|0)?9\d{9}$/;
+const TITLES: Record<Step, string> = { address: 'Forgot Password', code: 'Enter Verification Code', password: 'Create New Password', done: 'Password Reset' };
 const INPUT = 'w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500';
 const PRIMARY = 'flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60';
 const SECONDARY = 'flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300';
 
-// Forgot password: email -> 6-digit code -> new password. Every rule (who gets
-// a code, expiry, attempts, resend cooldown, password policy) is enforced by
-// the server; the code never comes back to the page, and the final step is
-// authorised by an httpOnly cookie the page cannot read.
+// Forgot password: email or mobile number -> 6-digit code -> new password.
+// Every rule (who gets a code, expiry, attempts, resend cooldown, password
+// policy) is enforced by the server; the code never comes back to the page,
+// and the final step is authorised by an httpOnly cookie the page cannot read.
 export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () => void; onPasswordReset?: () => void }) {
-  const [step, setStep] = useState<Step>('email');
+  const [step, setStep] = useState<Step>('address');
+  const [method, setMethod] = useState<Method>('email');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [passwords, setPasswords] = useState({ newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
@@ -50,17 +55,22 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
     setResendAt(Date.now() + seconds * 1000);
   };
 
+  const address = (): ResetAddress => (method === 'email' ? { email: email.trim() } : { phone: phone.trim() });
+
   const sendCode = async (event?: FormEvent) => {
     event?.preventDefault();
-    const address = email.trim();
-    if (!EMAIL_PATTERN.test(address)) {
+    if (method === 'email' && !EMAIL_PATTERN.test(email.trim())) {
       setError('Please enter a valid email address.');
+      return;
+    }
+    if (method === 'phone' && !MOBILE_PATTERN.test(phone.trim().replace(/^\+/, '').replace(/[\s().-]/g, ''))) {
+      setError('Please enter a valid mobile number, like 0917 123 4567.');
       return;
     }
     setBusy(true);
     setError('');
     try {
-      const response = await forgotPasswordRequest({ email: address });
+      const response = await forgotPasswordRequest(address());
       startCooldown(response.resendAvailableInSeconds);
       toast.success(response.message);
       setCode('');
@@ -80,13 +90,13 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
   const verifyCode = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{6}$/.test(code)) {
-      setError('Enter the 6-digit code from the email.');
+      setError(`Enter the 6-digit code from the ${method === 'email' ? 'email' : 'text message'}.`);
       return;
     }
     setBusy(true);
     setError('');
     try {
-      await verifyResetCodeRequest({ email: email.trim(), code });
+      await verifyResetCodeRequest({ ...address(), code });
       setStep('password');
     } catch (requestError) {
       if (requestError instanceof ApiError && requestError.code !== 'RESET_CODE_INVALID') setCode('');
@@ -115,7 +125,7 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
       onPasswordReset?.();
     } catch (requestError) {
       // The verified code is only good for 10 minutes: start again.
-      if (requestError instanceof ApiError && requestError.code === 'RESET_SESSION_EXPIRED') setStep('email');
+      if (requestError instanceof ApiError && requestError.code === 'RESET_SESSION_EXPIRED') setStep('address');
       setError(errorMessage(requestError, 'Unable to reset the password.'));
     } finally {
       setBusy(false);
@@ -131,23 +141,47 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
   );
 
   let body: ReactNode;
-  if (step === 'email') {
+  if (step === 'address') {
+    const choose = (next: Method) => { setMethod(next); setError(''); };
+    const tab = (value: Method, label: string) => (
+      <button
+        type="button"
+        role="tab"
+        aria-selected={method === value}
+        onClick={() => choose(value)}
+        className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${method === value ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
+      >
+        {label}
+      </button>
+    );
     body = (
       <form onSubmit={sendCode} noValidate className="p-6 space-y-4">
-        <p className="text-sm text-gray-600">Enter your registered email address.</p>
-        <div>
-          <label htmlFor="reset-email" className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-          <input id="reset-email" type="email" autoComplete="email" autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className={INPUT} />
+        <p className="text-sm text-gray-600">Where should we send your 6-digit code?</p>
+        <div role="tablist" aria-label="Send the code by" className="flex gap-1 rounded-lg bg-gray-100 p-1">
+          {tab('email', 'Email')}
+          {tab('phone', 'Mobile number')}
         </div>
+        {method === 'email' ? (
+          <div>
+            <label htmlFor="reset-email" className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input id="reset-email" type="email" autoComplete="email" autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className={INPUT} />
+          </div>
+        ) : (
+          <div>
+            <label htmlFor="reset-phone" className="block text-sm font-medium text-gray-700 mb-2">Mobile number</label>
+            <input id="reset-phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0917 123 4567" className={INPUT} />
+            <p className="mt-2 text-xs text-gray-500">The number on your ACIFAC account. If it is shared with another member, use your email instead.</p>
+          </div>
+        )}
         {feedback}
-        <p className="text-xs text-gray-500">No email address on your account? Please visit or contact the ACIFAC office.</p>
+        <p className="text-xs text-gray-500">No email or mobile number on your account? Please visit or contact the ACIFAC office.</p>
         {buttons('Send Code', 'Sending...')}
       </form>
     );
   } else if (step === 'code') {
     body = (
       <form onSubmit={verifyCode} noValidate className="p-6 space-y-4">
-        <p className="text-sm text-gray-600">We sent a 6-digit verification code to your email.</p>
+        <p className="text-sm text-gray-600">{method === 'email' ? 'We sent a 6-digit verification code to your email.' : 'We texted a 6-digit verification code to your mobile number.'}</p>
         <div>
           <label htmlFor="reset-code" className="block text-sm font-medium text-gray-700 mb-2">6-digit code</label>
           <input
@@ -161,11 +195,11 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
             placeholder="000000"
             className={`${INPUT} text-center text-2xl font-semibold tracking-[0.4em]`}
           />
-          <p className="mt-2 text-xs text-gray-500">Sent to {email.trim()}. The code expires in 10 minutes.</p>
+          <p className="mt-2 text-xs text-gray-500">Sent to {method === 'email' ? email.trim() : phone.trim()}. The code expires in 10 minutes.</p>
         </div>
         {feedback}
         <div className="flex items-center justify-between text-sm">
-          <button type="button" onClick={() => { setError(''); setStep('email'); }} className="text-gray-500 hover:text-gray-700">Use a different email</button>
+          <button type="button" onClick={() => { setError(''); setStep('address'); }} className="text-gray-500 hover:text-gray-700">Use a different email or number</button>
           {resendIn > 0
             ? <span className="text-gray-500 tabular-nums">Resend code in {resendIn}s</span>
             : <button type="button" onClick={() => void sendCode()} disabled={busy} className="font-medium text-green-700 hover:text-green-800 disabled:opacity-60">Resend Code</button>}

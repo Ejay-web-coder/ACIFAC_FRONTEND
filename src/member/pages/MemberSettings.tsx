@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { User, Bell, Shield, Save, X } from 'lucide-react';
+import { User, Bell, Shield, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import { changePasswordRequest, fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
-import { closeLiveUpdates } from '../../lib/liveUpdates';
+import { fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
+import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 
 export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>(mustChangePassword ? 'security' : 'profile');
   const [profileData, setProfileData] = useState({ name: '', phone: '', membershipNumber: '' });
   const [notificationEmail, setNotificationEmail] = useState<string | null>(null);
-  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: false, loanReminders: true });
+  // The saved number (not the one being edited) and whether codes can be texted to it.
+  const [savedPhone, setSavedPhone] = useState<string | null>(null);
+  const [smsAvailable, setSmsAvailable] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: true, loanReminders: true });
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
-  const [passwordFormData, setPasswordFormData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
 
   const loadAccount = useCallback(() => {
     fetchCurrentUser()
@@ -24,6 +22,8 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
         setProfileData({ name: user.display_name || '', phone: user.phone || '', membershipNumber: user.member_number || '' });
         if (user.notification_preferences) setNotificationSettings(user.notification_preferences);
         setNotificationEmail(user.notification_email || null);
+        setSavedPhone(user.phone || null);
+        setSmsAvailable(Boolean(user.sms_available));
       })
       .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
   }, []);
@@ -50,43 +50,6 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to save notification settings.');
     }
-  };
-
-  const handlePasswordFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setPasswordFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordFormData.newPassword !== passwordFormData.confirmPassword) {
-      toast.error('New passwords do not match!');
-      return;
-    }
-    if (!passwordFormData.currentPassword || !passwordFormData.newPassword) {
-      toast.error('Please fill in all fields!');
-      return;
-    }
-    if (passwordFormData.newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters with upper and lower case letters, a number and a symbol.');
-      return;
-    }
-    try {
-      await changePasswordRequest(passwordFormData);
-      toast.success('Password changed successfully! Please sign in again.');
-      // The server ends every session after a password change.
-      closeLiveUpdates();
-      window.setTimeout(() => window.location.replace('/login'), 800);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to change password.');
-      return;
-    }
-    setPasswordFormData({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    });
-    setShowChangePasswordModal(false);
   };
 
   return (
@@ -220,7 +183,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
-                      <p className="text-sm text-gray-600">Receive updates via SMS (saved as a preference; SMS delivery is not set up yet)</p>
+                      <p className="text-sm text-gray-600">Loan payment reminders by text message to your mobile number.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
@@ -269,7 +232,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                 <div className="space-y-4">
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Change Password</h3>
-                    <p className="text-sm text-gray-600 mb-4">Update your password to keep your account secure</p>
+                    <p className="text-sm text-gray-600 mb-4">Update your password with a 6-digit code sent to your email or mobile number, or with your current password</p>
                     <button
                       onClick={() => setShowChangePasswordModal(true)}
                       className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700"
@@ -284,95 +247,8 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
         </div>
       </div>
 
-      {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
-            <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Change Password</h2>
-              <button
-                onClick={() => {
-                  setShowChangePasswordModal(false);
-                  setPasswordFormData({
-                    currentPassword: '',
-                    newPassword: '',
-                    confirmPassword: ''
-                  });
-                }}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleChangePasswordSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Current Password
-                </label>
-                <input
-                  type="password"
-                  name="currentPassword"
-                  value={passwordFormData.currentPassword}
-                  onChange={handlePasswordFormChange}
-                  placeholder="Enter current password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  New Password
-                </label>
-                <input
-                  type="password"
-                  name="newPassword"
-                  value={passwordFormData.newPassword}
-                  onChange={handlePasswordFormChange}
-                  placeholder="Enter new password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Confirm New Password
-                </label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={passwordFormData.confirmPassword}
-                  onChange={handlePasswordFormChange}
-                  placeholder="Confirm new password"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowChangePasswordModal(false);
-                    setPasswordFormData({
-                      currentPassword: '',
-                      newPassword: '',
-                      confirmPassword: ''
-                    });
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700"
-                >
-                  Change Password
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ChangePasswordModal email={notificationEmail} phone={savedPhone} smsAvailable={smsAvailable} onClose={() => setShowChangePasswordModal(false)} />
       )}
     </div>
   );
