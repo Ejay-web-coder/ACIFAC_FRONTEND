@@ -21,7 +21,6 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchServices>> | null>(null);
   const [editing, setEditing] = useState<MachineryService | null | undefined>(undefined);
   const [paying, setPaying] = useState<MachineryService | null>(null);
-  const perService = machinery.filter((machine) => machine.pricingMode === 'per_service');
 
   const load = useCallback(async () => {
     try {
@@ -64,7 +63,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
           <label className="col-span-2 md:col-span-1"><span className="sr-only">Machine</span>
             <select value={filters.machineryId} onChange={(event) => setFilter('machineryId', event.target.value)} className={selectClass}>
               <option value="">All machines</option>
-              {perService.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+              {machinery.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
             </select>
           </label>
           <label><span className="sr-only">Cropping period</span>

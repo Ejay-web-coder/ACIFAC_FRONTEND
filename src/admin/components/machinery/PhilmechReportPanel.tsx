@@ -105,7 +105,11 @@ export function PhilmechReportPanel({ machinery }: { machinery: Machinery[] }) {
   const [report, setReport] = useState<PhilmechReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState('');
-  const mainMachines = machinery.filter((machine) => !machine.parentMachineryId);
+  // An implement's records are reported under its tractor, so choosing one shows that tractor's report.
+  const machineLabel = (machine: Machinery) => {
+    const parent = machinery.find((row) => row.id === machine.parentMachineryId);
+    return parent ? `${machine.name} (on ${parent.name})` : machine.name;
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -180,7 +184,7 @@ export function PhilmechReportPanel({ machinery }: { machinery: Machinery[] }) {
           <label className={`${labelClass} col-span-2`}>Machine
             <select value={params.machineryId} onChange={(event) => setParams({ ...params, machineryId: event.target.value })} className={inputClass}>
               <option value="">All machines in this cropping</option>
-              {mainMachines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name}</option>)}
+              {machinery.map((machine) => <option key={machine.id} value={machine.id}>{machineLabel(machine)}</option>)}
             </select>
           </label>
           <label className="col-span-2 inline-flex items-center gap-2 text-sm text-gray-700 md:col-span-6">
