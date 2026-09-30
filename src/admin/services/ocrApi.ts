@@ -19,6 +19,8 @@ export interface OcrAuthenticity {
   physicalDocument?: boolean | null;
   filledIn?: boolean | null;
   signaturePresent?: boolean | null;
+  /** Membership form: the 2x2 picture in the photo box shows a recognizable face. */
+  photoRecognized?: boolean | null;
   issues?: string[];
 }
 
@@ -44,6 +46,9 @@ export type IdSource = 'upload' | 'camera';
 
 export interface OcrIdDocument { fileName: string; mimeType: string; size: number; source: IdSource; reading: OcrIdReading }
 
+/** AI check of a 2x2 picture uploaded because the one on the membership form could not be recognized. */
+export interface OcrPhotoReading { portrait?: boolean | null; faceVisible?: boolean | null; screen?: boolean | null; issues?: string[]; error?: string }
+
 export interface OcrScan {
   id: number;
   fileName: string;
@@ -61,6 +66,8 @@ export interface OcrScan {
   targetModule: string | null;
   requiresIdDocument: boolean;
   idDocument: OcrIdDocument | null;
+  photoExpected: boolean;
+  photo: { reading: OcrPhotoReading } | null;
   posted: { module: string; recordId: string; at: string; automatically: boolean } | null;
   createdAt: string;
   updatedAt: string;
@@ -69,7 +76,7 @@ export interface OcrScan {
 export interface OcrSummary { total: number; reviewed: number; needsReview: number; failed: number; posted: number; autoPosted: number }
 
 export interface OcrFormField { key: string; label: string; kind: 'text' | 'date' | 'money' | 'number' | 'integer'; required: boolean }
-export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; fields: OcrFormField[] }
+export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; photoExpected: boolean; fields: OcrFormField[] }
 
 type ScanResponse = { success: boolean; data: OcrScan; message?: string };
 
@@ -98,6 +105,15 @@ export function attachIdDocument(id: number, file: File, source: IdSource) {
 }
 
 export const idDocumentPath = (id: number) => `/api/ocr/${id}/id-document`;
+
+// The applicant's 2x2 picture, when the one on the membership form cannot be recognized.
+export function attachPhoto(id: number, file: File) {
+  const form = new FormData();
+  form.append('photo', file);
+  return apiFetch<ScanResponse>(`/api/ocr/${id}/photo`, { method: 'POST', body: form });
+}
+
+export const photoPath = (id: number) => `/api/ocr/${id}/photo`;
 
 export function verifyDocument(id: number) {
   return apiPost<ScanResponse>(`/api/ocr/${id}/verify`);
