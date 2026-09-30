@@ -19,6 +19,7 @@ export interface MemberFillout {
   childrenList: MemberChildRow[]; incomeSources: MemberIncomeRow[];
   membershipType: string; membershipAcceptanceDate: string; separationDate: string; bodResolution: string; membershipFee: string;
   dateReceived: string; preMembershipSeminar: string; paymentOfMembershipFee: string; orNumber: string; initialPaidUpCapital: string;
+  seminarOrNumber: string; seminarCertifiedBy: string; feeCertifiedBy: string; capitalOrNumber: string; capitalCertifiedBy: string;
 }
 
 export const EMPTY_FILLOUT: MemberFillout = {
@@ -29,6 +30,7 @@ export const EMPTY_FILLOUT: MemberFillout = {
   childrenList: [{ name: '', age: '' }], incomeSources: [{ source: '', amount: '' }],
   membershipType: 'Regular', membershipAcceptanceDate: '', separationDate: '', bodResolution: '', membershipFee: '', dateReceived: '',
   preMembershipSeminar: 'Yes', paymentOfMembershipFee: 'Yes', orNumber: '', initialPaidUpCapital: '',
+  seminarOrNumber: '', seminarCertifiedBy: '', feeCertifiedBy: '', capitalOrNumber: '', capitalCertifiedBy: '',
 };
 
 export function calculateAge(birthday: string) {
@@ -65,6 +67,8 @@ export function filloutFromMember(member: Member): MemberFillout {
     dateReceived: profile.dateReceived || '', preMembershipSeminar: profile.preMembershipSeminar || 'Yes',
     paymentOfMembershipFee: profile.paymentOfMembershipFee || 'Yes', orNumber: profile.orNumber || '',
     initialPaidUpCapital: profile.initialPaidUpCapital || '',
+    seminarOrNumber: profile.seminarOrNumber || '', seminarCertifiedBy: profile.seminarCertifiedBy || '',
+    feeCertifiedBy: profile.feeCertifiedBy || '', capitalOrNumber: profile.capitalOrNumber || '', capitalCertifiedBy: profile.capitalCertifiedBy || '',
   };
 }
 
@@ -80,6 +84,8 @@ export function additionalInfoFrom(fillout: MemberFillout) {
     membershipType: fillout.membershipType, separationDate: fillout.separationDate, bodResolution: fillout.bodResolution,
     membershipFee: fillout.membershipFee, dateReceived: fillout.dateReceived, preMembershipSeminar: fillout.preMembershipSeminar,
     paymentOfMembershipFee: fillout.paymentOfMembershipFee, orNumber: fillout.orNumber, initialPaidUpCapital: fillout.initialPaidUpCapital,
+    seminarOrNumber: fillout.seminarOrNumber, seminarCertifiedBy: fillout.seminarCertifiedBy, feeCertifiedBy: fillout.feeCertifiedBy,
+    capitalOrNumber: fillout.capitalOrNumber, capitalCertifiedBy: fillout.capitalCertifiedBy,
   };
 }
 
@@ -209,8 +215,13 @@ export function MemberViewSections({ member }: { member: Member }) {
         <Show label="Date Received" value={p.dateReceived} />
         <Show label="Pre-Membership Education Seminar" value={p.preMembershipSeminar} />
         <Show label="Payment of Membership Fee" value={p.paymentOfMembershipFee} />
-        <Show label="OR Number" value={p.orNumber} span="col-span-2" />
+        <Show label="Seminar OR No." value={p.seminarOrNumber} />
+        <Show label="Seminar Certified By" value={p.seminarCertifiedBy} />
+        <Show label="Membership Fee OR No." value={p.orNumber} />
+        <Show label="Membership Fee Certified By" value={p.feeCertifiedBy} />
         <Show label="Initial Paid-Up Capital" value={peso(p.initialPaidUpCapital)} strong span="col-span-2" />
+        <Show label="Paid-Up Capital OR No." value={p.capitalOrNumber} />
+        <Show label="Paid-Up Capital Certified By" value={p.capitalCertifiedBy} />
       </Card>
     </>
   );
@@ -333,8 +344,13 @@ export function MemberEditSections({ memberNumber, formData, setFormData, fillou
         <Field label="Date Received">{text('dateReceived', '', 'date')}</Field>
         <Field label="Pre-Membership Education Seminar"><Choice value={fillout.preMembershipSeminar} options={['Yes', 'No']} onChange={(value) => set('preMembershipSeminar', value)} /></Field>
         <Field label="Payment of Membership Fee"><Choice value={fillout.paymentOfMembershipFee} options={['Yes', 'No']} onChange={(value) => set('paymentOfMembershipFee', value)} /></Field>
-        <Field label="OR Number" span="col-span-2">{text('orNumber', 'Official receipt no.')}</Field>
+        <Field label="Seminar OR No.">{text('seminarOrNumber', 'Official receipt no.')}</Field>
+        <Field label="Seminar Certified By">{text('seminarCertifiedBy', 'Name')}</Field>
+        <Field label="Membership Fee OR No.">{text('orNumber', 'Official receipt no.')}</Field>
+        <Field label="Membership Fee Certified By">{text('feeCertifiedBy', 'Name')}</Field>
         <Field label="Initial Paid-Up Capital" span="col-span-2"><input type="number" min="0" step="0.01" value={fillout.initialPaidUpCapital} onChange={(event) => set('initialPaidUpCapital', event.target.value)} className={INPUT} placeholder="0.00" /></Field>
+        <Field label="Paid-Up Capital OR No.">{text('capitalOrNumber', 'Official receipt no.')}</Field>
+        <Field label="Paid-Up Capital Certified By">{text('capitalCertifiedBy', 'Name')}</Field>
       </Card>
     </>
   );

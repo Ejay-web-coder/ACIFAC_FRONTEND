@@ -77,6 +77,7 @@ function mapMember(record: Record<string, unknown>): Member {
     idDocumentType: record.id_document_type ? String(record.id_document_type) : null,
     idDocumentSize: record.id_document_size ? Number(record.id_document_size) : null,
     hasIdDocument: Boolean(record.has_id_document ?? record.id_document_name),
+    signatureCount: Number(record.signature_count || 0),
     createdAt: String(record.created_at || ''),
     updatedAt: String(record.updated_at || ''),
     shareDetails: record.shareDetails as Member['shareDetails'],
@@ -126,6 +127,11 @@ function mapMember(record: Record<string, unknown>): Member {
           paymentOfMembershipFee: text('paymentOfMembershipFee'),
           orNumber: text('orNumber'),
           initialPaidUpCapital: text('initialPaidUpCapital'),
+          seminarOrNumber: text('seminarOrNumber'),
+          seminarCertifiedBy: text('seminarCertifiedBy'),
+          feeCertifiedBy: text('feeCertifiedBy'),
+          capitalOrNumber: text('capitalOrNumber'),
+          capitalCertifiedBy: text('capitalCertifiedBy'),
         };
       })(),
     },
@@ -176,13 +182,14 @@ export function importMembersRequest(rows: MemberImportRow[]) {
   return apiPost<ApiResponse<{ imported: number; failed: number; results: MemberImportResult[] }>>('/api/members/import', { rows });
 }
 
-export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null) {
+export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null, signatures: File[] = []) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
   });
   if (document) form.append('idDocument', document);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
+  signatures.forEach((signature) => form.append('signatures', signature));
   return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
@@ -233,4 +240,4 @@ export function createSavingsRequest(payload: { memberId: number; amount: string
   return apiPost<ApiResponse<SavingsRecord> & { memberTotal: number }>('/api/members/savings', payload);
 }
 
-export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'photo') => `/api/members/${memberId}/documents/${kind}`;
+export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'photo' | `signature-${1 | 2 | 3}`) => `/api/members/${memberId}/documents/${kind}`;

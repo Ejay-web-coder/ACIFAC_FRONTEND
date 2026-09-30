@@ -29,6 +29,8 @@ export interface Member {
   idDocumentType?: string | null;
   idDocumentSize?: number | null;
   hasIdDocument?: boolean;
+  /** Specimen signatures taken with Add Member (0 to 3). */
+  signatureCount?: number;
   createdAt?: string;
   updatedAt?: string;
   shareDetails?: {
@@ -90,6 +92,11 @@ export interface Member {
     paymentOfMembershipFee?: string;
     orNumber?: string;
     initialPaidUpCapital?: string;
+    seminarOrNumber?: string;
+    seminarCertifiedBy?: string;
+    feeCertifiedBy?: string;
+    capitalOrNumber?: string;
+    capitalCertifiedBy?: string;
   };
 }
 
@@ -288,20 +295,26 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         membershipType: draft.membershipType, separationDate: draft.separationDate, bodResolution: draft.bodResolution,
         membershipFee: draft.membershipFee, dateReceived: draft.dateReceived, preMembershipSeminar: draft.preMembershipSeminar,
         paymentOfMembershipFee: draft.paymentOfMembershipFee, orNumber: draft.orNumber, initialPaidUpCapital: draft.initialPaidUpCapital,
+        seminarOrNumber: draft.seminarOrNumber, seminarCertifiedBy: draft.seminarCertifiedBy, feeCertifiedBy: draft.feeCertifiedBy,
+        capitalOrNumber: draft.capitalOrNumber, capitalCertifiedBy: draft.capitalCertifiedBy,
       },
     };
   };
 
-  const handleDraftSubmit = async (draft: MemberDraftData, photoFile: File | null, idDocumentFile: File | null) => {
+  const [savingDraft, setSavingDraft] = useState(false);
+  const handleDraftSubmit = async (draft: MemberDraftData, photoFile: File | null, idDocumentFile: File | null, signatureFiles: File[]) => {
     const payload = buildDraftPayload(draft);
+    setSavingDraft(true);
     try {
-      const { data: newMember } = await createMemberRequest(payload, idDocumentFile, photoFile);
+      const { data: newMember } = await createMemberRequest(payload, idDocumentFile, photoFile, signatureFiles);
       setMembers((current) => [newMember, ...current]);
       void loadMembers();
       setShowAddModal(false);
       toast.success('Member added successfully.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to add member.');
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -677,6 +690,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                       <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document</label><p className="mt-1 break-all text-sm font-medium text-gray-900">{selectedMember.idDocumentName || '—'}</p>{selectedMember.hasIdDocument && <button type="button" onClick={() => openProtectedFile(memberDocumentPath(selectedMember.id, 'id-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.')))} className="mt-1 text-sm font-medium text-blue-600 hover:text-blue-800">View document</button>}</div>
                       <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentType || '—'}</p></div>
                       <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentSize ? `${(selectedMember.idDocumentSize / 1024).toFixed(1)} KB` : '—'}</p></div>
+                      <div className="min-w-0 md:col-span-3"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Specimen Signatures</label>{selectedMember.signatureCount ? <div className="mt-1 flex flex-wrap gap-3">{([1, 2, 3] as const).slice(0, selectedMember.signatureCount).map((number) => <button key={number} type="button" onClick={() => openProtectedFile(memberDocumentPath(selectedMember.id, `signature-${number}`)).catch((error) => toast.error(errorMessage(error, 'Unable to open signature.')))} className="text-sm font-medium text-blue-600 hover:text-blue-800">View signature {number}</button>)}</div> : <p className="mt-1 text-sm font-medium text-gray-900">—</p>}</div>
                     </div>
                   </div>
                   <MemberViewSections member={selectedMember} />
@@ -718,7 +732,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           open={showAddModal}
           onClose={() => setShowAddModal(false)}
           onSubmit={handleDraftSubmit}
-          isSubmitting={false}
+          isSubmitting={savingDraft}
           onImport={() => { setShowAddModal(false); setShowImportModal(true); }}
         />
       )}
