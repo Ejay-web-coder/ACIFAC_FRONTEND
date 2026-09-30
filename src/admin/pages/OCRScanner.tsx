@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, AlertTriangle, Camera, CheckCircle, CheckCircle2, Database, FileText, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Upload, User, XCircle,
 } from 'lucide-react';
@@ -6,14 +6,18 @@ import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
 import { Pagination, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
+import { openProtectedFile } from '../../lib/api';
 import { DocumentScannerModal } from '../components/DocumentScannerModal';
+import { IdDocumentPanel } from '../components/IdDocumentPanel';
 import {
-  analyzeDocument, fetchDocumentScans, fetchFormDefinitions, OcrFormDefinition, OcrScan, postDocument, retryDocumentReading, saveDocumentReview, verifyDocument, type CheckStatus,
+  analyzeDocument, attachIdDocument, fetchDocumentScans, fetchFormDefinitions, idDocumentPath, OcrFormDefinition, OcrScan, postDocument, retryDocumentReading, saveDocumentReview,
+  verifyDocument, type CheckStatus, type IdSource,
 } from '../services/ocrApi';
 
 const UNRECOGNIZED = 'Document Type Not Recognized';
 const REFERENCE_TYPES = ['Payment Receipt', 'ID Document', 'Cooperative Form'];
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const ID_MAX_BYTES = 5 * 1024 * 1024;
 
 // Loan form fields named <row><Column> are shown as the paper's in-kind table.
 const TABLE_COLUMNS = ['Description', 'Quantity', 'Unit', 'UnitPrice', 'Total'] as const;
@@ -34,10 +38,14 @@ const CHECK_STYLE: Record<CheckStatus, { icon: typeof CheckCircle2; className: s
   fail: { icon: XCircle, className: 'text-red-600' },
 };
 
+// A scanned membership form waits for the applicant's valid ID before it can be saved.
+const waitsForId = (scan: OcrScan) => scan.requiresIdDocument && !scan.idDocument;
+
 function scanStatus(scan: OcrScan): { status: string; label: string } {
   if (scan.posted) return { status: 'completed', label: 'Saved to records' };
   if (scan.processingStatus === 'failed') return { status: 'failed', label: 'Not read' };
   if (scan.reviewStatus === 'rejected') return { status: 'rejected', label: 'Rejected' };
+  if (waitsForId(scan)) return { status: 'pending', label: 'Needs ID' };
   if (scan.verification?.status === 'failed') return { status: 'overdue', label: 'Flagged' };
   return { status: 'pending', label: 'Needs review' };
 }
@@ -51,15 +59,18 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const [dragActive, setDragActive] = useState(false);
   const [processingStage, setProcessingStage] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry'>('');
+  const [idCameraOpen, setIdCameraOpen] = useState(false);
+  const [requiredIdSignatures, setRequiredIdSignatures] = useState(3);
+  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry' | 'id'>('');
   const [acknowledged, setAcknowledged] = useState(false);
+  const idPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchDocumentScans()
       .then(({ data }) => setScans(data))
       .catch((error) => toast.error('Unable to load document scans', { description: errorText(error, 'Please refresh and try again.') }));
     fetchFormDefinitions()
-      .then(({ data, autoPost: enabled }) => { setForms(data); setAutoPost(enabled); })
+      .then(({ data, autoPost: enabled, requiredIdSignatures: signatures }) => { setForms(data); setAutoPost(enabled); if (signatures) setRequiredIdSignatures(signatures); })
       .catch(() => undefined);
   }, []);
 
@@ -89,6 +100,10 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       storeScan(data);
       if (data.processingStatus === 'failed') toast.error('AI recognition failed', { description: data.processingError || 'Review the document or retry.' });
       else if (data.posted) toast.success('Document saved to records', { description: message });
+      else if (waitsForId(data)) {
+        toast.info('Membership form read. Now submit the applicant\'s valid ID.', { description: `Upload a back-to-back copy with ${requiredIdSignatures} specimen signatures, or capture the ID with the live camera.` });
+        setTimeout(() => idPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+      }
       else if (data.verification?.status === 'failed') toast.warning(`${data.documentType}: verification found problems`, { description: message });
       else toast.success(data.documentType === UNRECOGNIZED ? 'Document needs review' : `Document detected: ${data.documentType}`, { description: message });
     } catch (error) {
@@ -153,6 +168,36 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     }
   };
 
+  // The applicant's ID for a scanned membership form: a back-to-back copy with
+  // specimen signatures (upload) or the ID card captured with the live camera.
+  const submitId = async (file: File, source: IdSource) => {
+    if (!activeScan) return;
+    if (!ACCEPTED_TYPES.includes(file.type) || (source === 'camera' && !file.type.startsWith('image/'))) {
+      toast.error('Unsupported file type', { description: 'Upload the ID copy as a PNG, JPG, WEBP, or PDF.' });
+      return;
+    }
+    if (file.size > ID_MAX_BYTES) {
+      toast.error('File is too large', { description: 'The ID must not exceed 5 MB.' });
+      return;
+    }
+    setBusy('id');
+    try {
+      // Unsaved corrections (such as the typed-in email) are saved first so the ID is checked against them.
+      if (dirty) await saveDocumentReview(activeScan.id, activeScan.documentType, activeScan.extractedData);
+      const { data, message } = await attachIdDocument(activeScan.id, file, source);
+      storeScan(data);
+      const failed = data.verification?.checks?.find((check) => check.status === 'fail' && check.id.startsWith('id'));
+      if (data.posted) toast.success('Member saved to records', { description: message });
+      else if (failed) toast.warning('The ID did not pass the check', { description: failed.message });
+      else toast.success('ID submitted', { description: data.verification?.status === 'failed' ? 'Fix the remaining checks below, then save the member.' : 'Review the checks below, then save the member.' });
+    } catch (error) {
+      toast.error('The ID was not submitted', { description: errorText(error, 'Please try again.') });
+      await refreshScan(activeScan.id).catch(() => undefined);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const recheck = async () => {
     if (!activeScan) return;
     setBusy('verify');
@@ -204,8 +249,10 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const verification = activeScan?.verification || {};
   const checks = verification.checks || [];
   const hasWarnings = verification.status === 'warning';
-  const canPost = Boolean(activeScan && definition && !locked && activeScan.processingStatus !== 'failed'
+  const needsId = Boolean(activeScan && definition?.requiresIdDocument && !activeScan.idDocument);
+  const canPost = Boolean(activeScan && definition && !locked && !needsId && activeScan.processingStatus !== 'failed'
     && (dirty || verification.status !== 'failed') && (!hasWarnings || dirty || acknowledged));
+  const memberNumber = activeScan?.posted?.recordId || verification.target?.memberNumber;
   const authenticity = activeScan?.authenticity || {};
   const typeOptions = [...forms.map((form) => form.type), ...REFERENCE_TYPES, UNRECOGNIZED];
 
@@ -257,6 +304,9 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
             <h2 className="text-xl font-bold text-gray-900">{activeScan.documentType}</h2>
             <p className="text-sm text-gray-500 mt-1 flex items-center gap-1.5">{activeScan.captureSource === 'camera' ? <Camera className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}{activeScan.fileName}</p>
             {activeScan.targetModule && <p className="text-sm text-gray-600 mt-1">Goes to: <span className="font-medium">{activeScan.targetModule}</span></p>}
+            {definition?.module === 'members' && <p className="text-sm text-gray-600 mt-1">Membership No.: {activeScan.posted
+              ? <span className="font-semibold text-gray-900">{memberNumber}</span>
+              : <><span className="font-semibold text-gray-900">{memberNumber || 'Pending'}</span> <span className="text-gray-500">(given by the system when the member is saved)</span></>}</p>}
           </div>
           <div className="text-right space-y-1">
             <StatusBadge {...scanStatus(activeScan)} />
@@ -267,6 +317,19 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
         {activeScan.posted && <div className="mt-4 flex gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800"><Database className="h-5 w-5 shrink-0" /><p>{activeScan.posted.automatically ? 'AI verified this document and saved it automatically' : 'This document was verified and saved'} to <strong>{activeScan.targetModule || activeScan.posted.module}</strong> as record <strong>{activeScan.posted.recordId}</strong> on {new Date(activeScan.posted.at).toLocaleString()}.</p></div>}
         {activeScan.processingStatus === 'failed' && <div className="mt-4 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><p>AI could not read this document: {activeScan.processingError || 'unknown error'}</p>{canEdit && <button type="button" onClick={() => void retryReading()} disabled={Boolean(busy)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${busy === 'retry' ? 'animate-spin' : ''}`} />{busy === 'retry' ? 'Reading again...' : 'Retry AI reading'}</button>}</div>}
         {activeScan.documentType === UNRECOGNIZED && activeScan.processingStatus !== 'failed' && <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">The document type could not be identified confidently. Choose the correct type below.</div>}
+
+        {definition?.requiresIdDocument && activeScan.processingStatus !== 'failed' && <div ref={idPanelRef} className="mt-5">
+          <IdDocumentPanel
+            scan={activeScan}
+            requiredSignatures={requiredIdSignatures}
+            editable={canEdit && !locked}
+            submitting={busy === 'id'}
+            disabled={Boolean(busy)}
+            onUpload={(file) => void submitId(file, 'upload')}
+            onCapture={() => setIdCameraOpen(true)}
+            onView={() => void openProtectedFile(idDocumentPath(activeScan.id)).catch((error) => toast.error('Unable to open the ID', { description: errorText(error, 'Please try again.') }))}
+          />
+        </div>}
 
         {activeScan.processingStatus !== 'failed' && <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="rounded-lg border border-gray-200 p-4">
@@ -327,15 +390,17 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
               <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview()} className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">{busy === 'save' ? 'Saving...' : 'Save corrections'}</button>
               <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview(true)} className="px-4 py-2 border border-red-200 text-red-700 text-sm rounded-lg hover:bg-red-50 disabled:opacity-50">{busy === 'reject' ? 'Rejecting...' : 'Reject document'}</button>
             </div>
-            {definition && verification.status === 'failed' && !dirty && <p className="text-sm text-red-700">This document cannot be saved until the failed checks are fixed. Correct the data from the paper form, or reject it if it is not genuine.</p>}
+            {needsId ? <p className="text-sm text-amber-800">Submit the applicant's valid ID above before saving the member.</p>
+              : definition && verification.status === 'failed' && !dirty && <p className="text-sm text-red-700">This document cannot be saved until the failed checks are fixed. Correct the data from the paper form, or reject it if it is not genuine.</p>}
           </div>}
         </div>}
       </div>}
 
       <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200"><h2 className="text-lg font-bold text-gray-900 mb-4">Recent Scans</h2>{scans.length === 0 ? <p className="text-sm text-gray-500">Uploaded and scanned documents will appear here after AI analysis.</p> : <div className="space-y-3">{scanPages.pageItems.map((scan) => <button type="button" key={scan.id} onClick={() => showScan(scan)} className={`w-full text-left border rounded-lg p-4 hover:bg-gray-50 ${activeScan?.id === scan.id ? 'border-green-300 bg-green-50/40' : 'border-gray-200'}`}><div className="flex items-center gap-3"><div className="p-2 rounded-lg bg-blue-50">{scan.captureSource === 'camera' ? <Camera className="w-5 h-5 text-blue-600" /> : <User className="w-5 h-5 text-blue-600" />}</div><div className="min-w-0"><p className="font-bold text-gray-900 truncate">{scan.documentType}</p><p className="text-sm text-gray-500 truncate">{scan.fileName}{scan.posted ? ` · ${scan.posted.module} ${scan.posted.recordId}` : ''}</p></div><span className="ml-auto"><StatusBadge {...scanStatus(scan)} /></span></div></button>)}<Pagination className="-mx-6 -mb-6 mt-4" page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" /></div>}</div>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>A scanned membership form also needs the applicant's valid ID: a back-to-back copy with {requiredIdSignatures} specimen signatures, or the ID card captured with the live camera. The system gives the membership number.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
 
       {scannerOpen && <DocumentScannerModal onClose={() => setScannerOpen(false)} onScanned={(file) => { setScannerOpen(false); void processFile(file, 'camera'); }} />}
+      {idCameraOpen && <DocumentScannerModal variant="id" onClose={() => setIdCameraOpen(false)} onScanned={(file) => { setIdCameraOpen(false); void submitId(file, 'camera'); }} />}
     </div>
   );
 }
