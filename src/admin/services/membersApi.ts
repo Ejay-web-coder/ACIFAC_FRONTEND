@@ -85,6 +85,7 @@ function mapMember(record: Record<string, unknown>): Member {
       firstName: String(record.first_name || ''),
       middleName: String(record.middle_name || ''),
       lastName: String(record.last_name || ''),
+      suffix: String(record.suffix || ''),
       birthday: String(record.date_of_birth || ''),
       gender: String(record.gender || ''),
       cpNo: String(record.phone || ''),
@@ -191,6 +192,15 @@ export function createMemberRequest(payload: Record<string, unknown>, document: 
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
   signatures.forEach((signature) => form.append('signatures', signature));
   return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
+}
+
+/** Edit Member: replaces the 2x2 photo, valid ID and/or single signatures; null keeps the file on record. */
+export function replaceMemberDocumentsRequest(id: number, files: { photo: File | null; idDocument: File | null; signatures: Array<File | null> }) {
+  const form = new FormData();
+  if (files.idDocument) form.append('idDocument', files.idDocument);
+  if (files.photo) form.append('profilePhoto', files.photo);
+  files.signatures.forEach((signature, index) => { if (signature) form.append(`signature${index + 1}`, signature); });
+  return apiFetch<ApiResponse<Record<string, unknown>>>(`/api/members/${id}/documents`, { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
 export function updateMemberRequest(id: number, payload: Record<string, unknown>) {

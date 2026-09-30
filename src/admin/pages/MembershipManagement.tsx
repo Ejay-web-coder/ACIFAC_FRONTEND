@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Search, Plus, Edit, Archive, RotateCcw, Eye, X, Users, UserPlus, PiggyBank, ChevronDown } from 'lucide-react';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { AddMemberModal, type MemberDraftData } from '../components/AddMemberModal';
+import { AddMemberModal, draftFromMember, MemberForm, MemberFormModal, useSavedMemberFiles, type MemberDraftData, type MemberFormFiles } from '../components/AddMemberModal';
 import { MemberImportModal } from '../components/MemberImportModal';
-import { additionalInfoFrom, calculateAge, childrenText, EMPTY_FILLOUT, filloutFromMember, MemberEditSections, MemberViewSections, type MemberFillout } from '../components/MemberDetailSections';
 import { openProtectedFile, errorMessage } from '../../lib/api';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
+import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, replaceMemberDocumentsRequest, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
 export interface Member {
@@ -51,6 +50,7 @@ export interface Member {
     remaining: number;
   };
   profile?: {
+    suffix?: string;
     lastName?: string;
     firstName?: string;
     middleName?: string;
@@ -104,42 +104,6 @@ interface MembershipManagementProps {
   userRole: UserRole;
 }
 
-function buildMemberPayload(formData: { name: string; email: string; phone: string; address: string; shareCapital: string }, fillout: MemberFillout = EMPTY_FILLOUT, status = 'active', membershipDate = dateOnlyToday()) {
-  const nameParts = formData.name.trim().split(/\s+/).filter(Boolean);
-  return {
-    first_name: fillout.firstName || nameParts[0] || '',
-    middle_name: fillout.middleName || '',
-    last_name: fillout.lastName || nameParts.slice(1).join(' '),
-    email: formData.email,
-    phone: formData.phone || fillout.cpNo || '',
-    address: formData.address || fillout.permanentAddress || '',
-    barangay: fillout.barangay || '',
-    municipality: fillout.municipality || '',
-    province: fillout.province || '',
-    date_of_birth: fillout.birthday || null,
-    gender: fillout.gender || null,
-    civil_status: fillout.civilStatus || null,
-    education: fillout.highestEducation || null,
-    id_type: (fillout.idType === 'Other' ? fillout.idTypeOther.trim() || 'Other' : fillout.idType) || null,
-    id_number: fillout.idNo || null,
-    rsbsa_no: fillout.rsbsaNo || null,
-    livelihood: fillout.livelihood || null,
-    farm_area_ha: fillout.farmArea || null,
-    corn_area_ha: fillout.cornArea || null,
-    palay_area_ha: fillout.palayArea || null,
-    yearly_income: fillout.yearlyIncome || null,
-    spouse_name: fillout.spouseName || null,
-    spouse_age: fillout.spouseAge || null,
-    spouse_contact: fillout.spouseContact || null,
-    children: childrenText(fillout.childrenList) || null,
-    emergency_contact: fillout.emergencyContact || null,
-    membership_date: fillout.membershipAcceptanceDate || membershipDate,
-    share_capital: formData.shareCapital,
-    status,
-    additional_info: additionalInfoFrom(fillout),
-  };
-}
-
 export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [archivedMembers, setArchivedMembers] = useState<Member[]>([]);
@@ -162,16 +126,20 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [memberToRestore, setMemberToRestore] = useState<Member | null>(null);
   const [showArchivedMembers, setShowArchivedMembers] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    address: '',
-    shareCapital: ''
+  // Edit and View show the Add Member form; these fill it from the saved member.
+  const viewDraft = useMemo(() => (selectedMember ? draftFromMember(selectedMember) : null), [selectedMember]);
+  const editDraft = useMemo(() => (editingMember ? draftFromMember(editingMember) : null), [editingMember]);
+  const viewSaved = useSavedMemberFiles(showModal ? selectedMember : null, fetchProtectedImage);
+  const editSaved = useSavedMemberFiles(showEditModal ? editingMember : null, fetchProtectedImage);
+  const savedFilesOf = (member: Member | null, loaded: typeof viewSaved) => ({
+    ...loaded,
+    idDocumentName: member?.idDocumentName || (member?.hasIdDocument ? 'Valid ID on file' : null),
+    onOpenIdDocument: member?.hasIdDocument
+      ? () => { void openProtectedFile(memberDocumentPath(member.id, 'id-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.'))); }
+      : undefined,
   });
-  const [uploadFiles, setUploadFiles] = useState({ idDocument: null as File | null });
-  // extended fields matching the membership fillout form
-  const [fillout, setFillout] = useState<MemberFillout>(EMPTY_FILLOUT);
+  const viewFiles = savedFilesOf(selectedMember, viewSaved);
+  const editFiles = savedFilesOf(editingMember, editSaved);
 
   const loadMembers = async (search = searchTerm) => {
     try {
@@ -220,32 +188,6 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to record share contribution.');
     }
-  };
-
-  const handleAddMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const payload = buildMemberPayload(formData, fillout);
-    try {
-      const { data: newMember } = await createMemberRequest(payload, uploadFiles.idDocument);
-      setMembers((current) => [newMember, ...current]);
-      void loadMembers();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to add member.');
-      return;
-    }
-    setShowAddModal(false);
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      address: '',
-      shareCapital: ''
-    });
-    setUploadFiles({
-      idDocument: null
-    });
-    setFillout(EMPTY_FILLOUT);
-    toast.success('Member added successfully.');
   };
 
   const buildDraftPayload = (draft: MemberDraftData) => {
@@ -322,8 +264,6 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     try {
       const { data } = await fetchMemberRequest(member.id);
       setEditingMember(data);
-      setFormData({ name: data.name, email: data.email, phone: data.phone, address: data.address, shareCapital: String(data.shareCapital) });
-      setFillout(filloutFromMember(data));
       setShowEditModal(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to load member.');
@@ -343,28 +283,35 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     }
   };
 
-  const handleUpdateMember = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [savingEdit, setSavingEdit] = useState(false);
+  const handleUpdateMember = async (draft: MemberDraftData, files: MemberFormFiles) => {
     if (!editingMember) return;
+    const profile = editingMember.profile || {};
+    setSavingEdit(true);
     try {
-      await updateMemberRequest(editingMember.id, buildMemberPayload(formData, fillout, editingMember.status, editingMember.dateJoined));
+      await updateMemberRequest(editingMember.id, {
+        ...buildDraftPayload(draft),
+        // Kept as they are: status, and details the paper form does not show.
+        status: editingMember.status,
+        suffix: profile.suffix || null,
+        corn_area_ha: profile.cornArea || null,
+        palay_area_ha: profile.palayArea || null,
+        emergency_contact: profile.emergencyContact || null,
+      });
+      if (files.photo || files.idDocument || files.signatures.some(Boolean)) {
+        await replaceMemberDocumentsRequest(editingMember.id, files);
+      }
       void loadMembers();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to update member.');
       return;
+    } finally {
+      setSavingEdit(false);
     }
     setShowEditModal(false);
     setEditingMember(null);
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      address: '',
-      shareCapital: ''
-    });
-    setFillout(EMPTY_FILLOUT);
     toast.success('Member updated successfully!', {
-      description: `${formData.name}'s information has been updated`
+      description: `${draft.fullName}'s information has been updated`
     });
   };
 
@@ -606,9 +553,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       {/* Member Details Modal */}
       {showModal && selectedMember && (
         <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[95vh] overflow-y-auto shadow-2xl">
             {/* Header */}
-            <div className="sticky top-0 bg-green-700 text-white p-6 border-b border-green-800">
+            <div className="sticky top-0 z-10 bg-green-700 text-white p-6 border-b border-green-800">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   {memberPicture && <img src={memberPicture} alt={`${selectedMember.name}'s picture`} className="h-16 w-16 shrink-0 rounded-full border-2 border-white/70 object-cover" />}
@@ -628,31 +575,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
             {/* Content */}
             <div className="p-6 space-y-6">
               
-              {/* Account Information Card */}
-              <div className="bg-gradient-to-br from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-5">
-                <h3 className="text-lg font-bold text-blue-900 mb-4 pb-3 border-b-2 border-blue-300">Member / Account Information</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="bg-white p-3 rounded-lg">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</label>
-                    <p className="text-sm font-medium text-gray-900 mt-1">{selectedMember.email}</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</label>
-                    <p className="text-sm font-medium text-gray-900 mt-1">{selectedMember.phone}</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date Joined</label>
-                    <p className="text-sm font-medium text-gray-900 mt-1">{selectedMember.dateJoined}</p>
-                  </div>
-                  <div className="bg-white p-3 rounded-lg">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Share Capital</label>
-                    <p className="text-sm font-medium text-green-600 font-bold mt-1">₱{selectedMember.shareCapital.toLocaleString()}</p>
-                  </div>
-                  <div className="md:col-span-2 bg-white p-3 rounded-lg">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Address</label>
-                    <p className="text-sm font-medium text-gray-900 mt-1">{selectedMember.address}</p>
-                  </div>
-                </div>
+              <div className="-mx-2 rounded-xl bg-slate-100 px-2 py-4 sm:mx-0 sm:px-4">
+                {viewDraft && <MemberForm mode="view" initial={viewDraft} saved={viewFiles} />}
               </div>
 
               <div className="rounded-lg border border-green-200 bg-green-50 p-5">
@@ -681,26 +605,19 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                 ) : <p className="mt-4 text-sm text-gray-500">Share contribution history is unavailable.</p>}
               </div>
 
-              {/* Personal Information Card */}
-              {selectedMember.profile && (
-                <>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4 pb-3 border-b-2 border-gray-300">Required Documents</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Document</label><p className="mt-1 break-all text-sm font-medium text-gray-900">{selectedMember.idDocumentName || '—'}</p>{selectedMember.hasIdDocument && <button type="button" onClick={() => openProtectedFile(memberDocumentPath(selectedMember.id, 'id-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.')))} className="mt-1 text-sm font-medium text-blue-600 hover:text-blue-800">View document</button>}</div>
-                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentType || '—'}</p></div>
-                      <div className="min-w-0"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Size</label><p className="mt-1 break-words text-sm font-medium text-gray-900">{selectedMember.idDocumentSize ? `${(selectedMember.idDocumentSize / 1024).toFixed(1)} KB` : '—'}</p></div>
-                      <div className="min-w-0 md:col-span-3"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Specimen Signatures</label>{selectedMember.signatureCount ? <div className="mt-1 flex flex-wrap gap-3">{([1, 2, 3] as const).slice(0, selectedMember.signatureCount).map((number) => <button key={number} type="button" onClick={() => openProtectedFile(memberDocumentPath(selectedMember.id, `signature-${number}`)).catch((error) => toast.error(errorMessage(error, 'Unable to open signature.')))} className="text-sm font-medium text-blue-600 hover:text-blue-800">View signature {number}</button>)}</div> : <p className="mt-1 text-sm font-medium text-gray-900">—</p>}</div>
-                    </div>
-                  </div>
-                  <MemberViewSections member={selectedMember} />
-                </>
-              )}
-
             </div>
 
             {/* Footer */}
-            <div className="sticky bottom-0 p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
+            <div className="sticky bottom-0 p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+              {canEdit && selectedMember.status !== 'archived' && (
+                <button
+                  type="button"
+                  onClick={() => { setShowModal(false); void handleEditMember(selectedMember); }}
+                  className="inline-flex items-center gap-2 px-6 py-2 border border-green-600 text-green-700 rounded-xl hover:bg-green-50 transition font-semibold"
+                >
+                  <Edit className="h-4 w-4" /> Edit
+                </button>
+              )}
               <button
                 onClick={() => setShowModal(false)}
                 className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition font-semibold"
@@ -747,46 +664,18 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         />
       )}
 
-      {/* Edit Member Modal */}
-      {showEditModal && editingMember && (
-        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            {/* Header */}
-            <div className="sticky top-0 bg-green-700 text-white p-6 border-b border-green-800">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold">Edit Member</h2>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="p-2 hover:bg-green-600 rounded-lg transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            <form id="editMemberForm" onSubmit={handleUpdateMember}>
-              <div className="p-6 space-y-6">
-                <MemberEditSections memberNumber={editingMember.memberId} formData={formData} setFormData={setFormData} fillout={fillout} setFillout={setFillout} />
-              </div>
-            </form>
-            {/* Footer */}
-            <div className="sticky bottom-0 p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowEditModal(false)}
-                className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-semibold transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                form="editMemberForm"
-                className="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-semibold transition"
-              >
-                Update Member
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Edit Member Modal: the Add Member form, filled in */}
+      {showEditModal && editingMember && editDraft && (
+        <MemberFormModal
+          key={editingMember.id}
+          mode="edit"
+          title={`Edit Member — ${editingMember.memberId}`}
+          initial={editDraft}
+          saved={editFiles}
+          onClose={() => { setShowEditModal(false); setEditingMember(null); }}
+          onSubmit={handleUpdateMember}
+          isSubmitting={savingEdit}
+        />
       )}
 
       {/* Archive Confirmation Modal */}
