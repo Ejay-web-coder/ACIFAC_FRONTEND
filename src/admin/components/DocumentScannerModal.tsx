@@ -7,6 +7,8 @@ import { Camera, CameraOff, Check, ImagePlus, RefreshCw, ScanLine, Trash2, X } f
 //
 // The "id" variant captures an applicant's ID card with the live camera only:
 // the front, then the back, joined into one picture like a back-to-back copy.
+// The "idCopy" variant photographs one page: a back-to-back copy of an ID with
+// the person's specimen signatures (a loan borrower's or co-maker's).
 
 const MAX_EDGE = 2200; // px; keeps text sharp while staying well under the 10 MB limit
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -19,8 +21,13 @@ interface Page { blob: Blob; url: string; width: number; height: number }
 interface DocumentScannerModalProps {
   onClose: () => void;
   onScanned: (file: File) => void;
-  variant?: 'document' | 'id';
+  variant?: 'document' | 'id' | 'idCopy';
+  /** Whose ID is captured: applicant, borrower or co-maker. */
+  person?: string;
+  requiredSignatures?: number;
 }
+
+const titleCase = (text: string) => text.replace(/(^|[\s-])([a-z])/g, (_, space: string, letter: string) => `${space}${letter.toUpperCase()}`);
 
 function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
   return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Capture failed.'))), 'image/jpeg', quality));
@@ -89,9 +96,11 @@ async function joinSides(pages: Page[]): Promise<File> {
   return new File([await canvasToBlob(canvas, 0.88)], `id-${stamp()}.jpg`, { type: 'image/jpeg' });
 }
 
-export function DocumentScannerModal({ onClose, onScanned, variant = 'document' }: DocumentScannerModalProps) {
+export function DocumentScannerModal({ onClose, onScanned, variant = 'document', person = 'applicant', requiredSignatures = 3 }: DocumentScannerModalProps) {
   const isId = variant === 'id';
-  const maxPages = isId ? ID_SIDES.length : MAX_PAGES;
+  const isCopy = variant === 'idCopy';
+  const maxPages = isId ? ID_SIDES.length : isCopy ? 1 : MAX_PAGES;
+  const title = isId ? `Capture the ${titleCase(person)}'s ID` : isCopy ? `Photograph the ${titleCase(person)}'s ID Copy` : 'Scan Document';
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const pagesRef = useRef<Page[]>([]);
@@ -135,13 +144,13 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document' 
         if (!cancelled) setCanSwitch(devices.filter((device) => device.kind === 'videoinput').length > 1);
       } catch (error) {
         const name = error instanceof DOMException ? error.name : '';
-        setCameraError(name === 'NotAllowedError' ? `Camera permission was denied. Allow camera access in the browser, ${isId ? 'or upload a back-to-back copy of the ID instead.' : 'or use the phone camera button below.'}`
+        setCameraError(name === 'NotAllowedError' ? `Camera permission was denied. Allow camera access in the browser, ${isId || isCopy ? 'or upload a back-to-back copy of the ID instead.' : 'or use the phone camera button below.'}`
           : name === 'NotFoundError' ? 'No camera was found on this device.' : 'The camera could not be started.');
       }
     };
     void start();
     return () => { cancelled = true; stopCamera(); };
-  }, [facingMode, isId, stopCamera]);
+  }, [facingMode, isId, isCopy, stopCamera]);
 
   useEffect(() => () => pagesRef.current.forEach((page) => URL.revokeObjectURL(page.url)), []);
 
@@ -180,7 +189,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document' 
     setBusy(true);
     try {
       const file = isId ? await joinSides(pages) : await buildFile(pages);
-      if (file.size > (isId ? ID_MAX_BYTES : MAX_BYTES)) throw new Error(isId ? 'The ID picture is larger than 5 MB. Capture it again.' : 'The scan is larger than 10 MB. Remove a page and try again.');
+      if (file.size > (isId || isCopy ? ID_MAX_BYTES : MAX_BYTES)) throw new Error(isId || isCopy ? 'The ID picture is larger than 5 MB. Capture it again.' : 'The scan is larger than 10 MB. Remove a page and try again.');
       stopCamera();
       onScanned(file);
     } catch (error) {
@@ -191,12 +200,14 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document' 
   };
 
   return (
-    <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={isId ? "Capture the applicant's ID" : 'Scan document'}>
+    <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={title}>
       <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 sm:px-6">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{isId ? "Capture the Applicant's ID" : 'Scan Document'}</h2>
-            <p className="text-sm text-gray-500">{isId ? 'Hold the ID card itself inside the frame in good light, without glare. Capture the front, then turn it over and capture the back.' : 'Place the form flat in good light and fit it inside the frame. Capture each page in order.'}</p>
+            <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+            <p className="text-sm text-gray-500">{isId ? 'Hold the ID card itself inside the frame in good light, without glare. Capture the front, then turn it over and capture the back.'
+              : isCopy ? `Place the page with the front and back of the ID and the ${person}'s ${requiredSignatures} specimen signatures flat in good light, and fit the whole page inside the frame.`
+                : 'Place the form flat in good light and fit it inside the frame. Capture each page in order.'}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close scanner" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </div>
@@ -222,7 +233,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document' 
 
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button type="button" onClick={() => void capture()} disabled={!ready || busy || pages.length >= maxPages} className="inline-flex items-center gap-2 rounded-full bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-green-700 disabled:opacity-50">
-              <ScanLine className="h-5 w-5" /> {isId ? (pages.length < maxPages ? `Capture ${ID_SIDES[pages.length].toLowerCase()}` : 'Both sides captured') : pages.length ? `Capture page ${pages.length + 1}` : 'Capture'}
+              <ScanLine className="h-5 w-5" /> {isId ? (pages.length < maxPages ? `Capture ${ID_SIDES[pages.length].toLowerCase()}` : 'Both sides captured') : isCopy ? (pages.length ? 'Captured' : 'Capture') : pages.length ? `Capture page ${pages.length + 1}` : 'Capture'}
             </button>
             {canSwitch && <button type="button" onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))} disabled={busy} className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"><RefreshCw className="h-4 w-4" /> Switch camera</button>}
             {!isId && <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-300 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
@@ -249,11 +260,11 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document' 
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p className="text-xs text-gray-500">{isId ? 'AI checks the ID and that it belongs to the applicant on the form.' : 'AI reads the form, checks it is genuine, and saves it to the right module.'}</p>
+          <p className="text-xs text-gray-500">{isId || isCopy ? `AI checks the ID${isCopy ? ', counts the specimen signatures,' : ''} and that it belongs to the ${person} on the form.` : 'AI reads the form, checks it is genuine, and saves it to the right module.'}</p>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
             <button type="button" onClick={() => void finish()} disabled={!pages.length || busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
-              <Check className="h-4 w-4" /> {busy ? 'Preparing...' : isId ? (pages.length < maxPages ? 'Submit front only' : 'Submit ID') : `Scan ${pages.length || ''} ${pages.length === 1 ? 'page' : 'pages'}`.replace('  ', ' ')}
+              <Check className="h-4 w-4" /> {busy ? 'Preparing...' : isId ? (pages.length < maxPages ? 'Submit front only' : 'Submit ID') : isCopy ? 'Submit picture' : `Scan ${pages.length || ''} ${pages.length === 1 ? 'page' : 'pages'}`.replace('  ', ' ')}
             </button>
           </div>
         </div>

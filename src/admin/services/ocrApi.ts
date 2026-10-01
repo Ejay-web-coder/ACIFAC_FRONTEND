@@ -24,13 +24,14 @@ export interface OcrAuthenticity {
   issues?: string[];
 }
 
-/** AI reading of the applicant's ID submitted with a scanned membership form. */
+/** AI reading of a valid ID submitted with a scanned form (applicant, borrower or co-maker). */
 export interface OcrIdReading {
   isId?: boolean | null;
   idType?: string;
   idNumber?: string;
   name?: string;
   dateOfBirth?: string;
+  address?: string;
   frontVisible?: boolean | null;
   backVisible?: boolean | null;
   photocopy?: boolean | null;
@@ -41,8 +42,17 @@ export interface OcrIdReading {
   error?: string;
 }
 
-/** upload = a back-to-back copy with specimen signatures; camera = the ID card captured with the live camera. */
+/**
+ * upload = a file of the back-to-back copy with specimen signatures; camera = taken with the camera
+ * (the ID card itself for a membership applicant, the signed copy for a loan borrower or co-maker).
+ */
 export type IdSource = 'upload' | 'camera';
+
+/** Where an ID is kept on the scan: holder = membership applicant or loan borrower; coMaker = loan co-maker. */
+export type IdSlot = 'holder' | 'coMaker';
+
+/** A valid ID a scanned form needs. cardCapture: the live camera may capture the ID card itself instead of a signed copy. */
+export interface OcrIdRequirement { slot: IdSlot; person: string; label: string; cardCapture: boolean }
 
 export interface OcrIdDocument { fileName: string; mimeType: string; size: number; source: IdSource; reading: OcrIdReading }
 
@@ -65,6 +75,10 @@ export interface OcrScan {
   postable: boolean;
   targetModule: string | null;
   requiresIdDocument: boolean;
+  /** Sent by newer servers: the IDs the form needs, and those submitted per slot. */
+  idRequirements?: OcrIdRequirement[];
+  idDocuments?: Partial<Record<IdSlot, OcrIdDocument | null>>;
+  /** The holder's ID (applicant or borrower). */
   idDocument: OcrIdDocument | null;
   photoExpected: boolean;
   photo: { reading: OcrPhotoReading } | null;
@@ -76,7 +90,7 @@ export interface OcrScan {
 export interface OcrSummary { total: number; reviewed: number; needsReview: number; failed: number; posted: number; autoPosted: number }
 
 export interface OcrFormField { key: string; label: string; kind: 'text' | 'date' | 'money' | 'number' | 'integer'; required: boolean }
-export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; photoExpected: boolean; fields: OcrFormField[] }
+export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; idDocuments?: OcrIdRequirement[]; photoExpected: boolean; fields: OcrFormField[] }
 
 type ScanResponse = { success: boolean; data: OcrScan; message?: string };
 
@@ -96,15 +110,15 @@ export function retryDocumentReading(id: number) {
   return apiPost<ScanResponse>(`/api/ocr/${id}/retry`);
 }
 
-// The applicant's valid ID for a scanned membership form.
-export function attachIdDocument(id: number, file: File, source: IdSource) {
+// A valid ID for a scanned form: the membership applicant's or loan borrower's (holder), or the loan co-maker's.
+export const idDocumentPath = (id: number, slot: IdSlot = 'holder') => `/api/ocr/${id}/${slot === 'coMaker' ? 'co-maker-id' : 'id-document'}`;
+
+export function attachIdDocument(id: number, file: File, source: IdSource, slot: IdSlot = 'holder') {
   const form = new FormData();
   form.append('source', source);
   form.append('idDocument', file);
-  return apiFetch<ScanResponse>(`/api/ocr/${id}/id-document`, { method: 'POST', body: form });
+  return apiFetch<ScanResponse>(idDocumentPath(id, slot), { method: 'POST', body: form });
 }
-
-export const idDocumentPath = (id: number) => `/api/ocr/${id}/id-document`;
 
 // The applicant's 2x2 picture, when the one on the membership form cannot be recognized.
 export function attachPhoto(id: number, file: File) {

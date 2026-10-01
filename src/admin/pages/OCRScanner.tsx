@@ -10,10 +10,10 @@ import { openProtectedFile } from '../../lib/api';
 import { DocumentScannerModal } from '../components/DocumentScannerModal';
 import { FormPhotoPanel } from '../components/FormPhotoPanel';
 import { IdDocumentPanel } from '../components/IdDocumentPanel';
-import { MembershipRequirementsModal } from '../components/MembershipRequirementsModal';
+import { ScanRequirementsModal } from '../components/ScanRequirementsModal';
 import {
   analyzeDocument, attachIdDocument, attachPhoto, fetchDocumentScans, fetchFormDefinitions, idDocumentPath, OcrFormDefinition, OcrScan, postDocument, retryDocumentReading, saveDocumentReview,
-  verifyDocument, type CheckStatus, type IdSource,
+  verifyDocument, type CheckStatus, type IdSlot, type IdSource, type OcrIdRequirement,
 } from '../services/ocrApi';
 
 const UNRECOGNIZED = 'Document Type Not Recognized';
@@ -41,19 +41,57 @@ const CHECK_STYLE: Record<CheckStatus, { icon: typeof CheckCircle2; className: s
   fail: { icon: XCircle, className: 'text-red-600' },
 };
 
-// What a scanned membership form still needs before it can be saved: the
-// applicant's valid ID, and a 2x2 picture when AI cannot recognize the one on the form.
+// A scanned membership form needs the applicant's valid ID; a scanned loan
+// form needs the borrower's and the co-maker's. Older servers sent only
+// requiresIdDocument and idDocument (the applicant's).
+const APPLICANT_ID: OcrIdRequirement = { slot: 'holder', person: 'applicant', label: 'Applicant\'s valid ID', cardCapture: true };
+
+function idRequirementsOf(scan: OcrScan, definition?: OcrFormDefinition): OcrIdRequirement[] {
+  if (definition) return definition.idDocuments ?? (definition.requiresIdDocument ? [APPLICANT_ID] : []);
+  return scan.idRequirements ?? (scan.requiresIdDocument ? [APPLICANT_ID] : []);
+}
+
+function idDocumentOf(scan: OcrScan, slot: IdSlot) {
+  return scan.idDocuments ? scan.idDocuments[slot] ?? null : slot === 'holder' ? scan.idDocument : null;
+}
+
+// The verification checks of each ID: the ID itself, and whether it belongs to the person on the form.
+const ID_CHECKS: Record<IdSlot, [string, string]> = { holder: ['idDocument', 'idMatch'], coMaker: ['coMakerId', 'coMakerMatch'] };
+
+const listed = (items: string[]) => (items.length > 2 ? `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}` : items.join(' and '));
+
+// What a scanned form still needs before it can be saved: its valid IDs, and a
+// 2x2 picture when AI cannot recognize the one on a membership form.
 function missingRequirements(scan: OcrScan) {
-  const missing: string[] = [];
-  if (scan.requiresIdDocument && !scan.idDocument) missing.push('ID');
+  const missing = idRequirementsOf(scan).filter((requirement) => !idDocumentOf(scan, requirement.slot))
+    .map((requirement) => (requirement.person === 'applicant' ? 'ID' : `${requirement.person} ID`));
   if (scan.photoExpected && !scan.photo && scan.authenticity?.photoRecognized !== true) missing.push('2x2 picture');
   return missing;
 }
 
 // Why a submitted ID or 2x2 picture did not pass its check.
 function requirementProblems(scan: OcrScan) {
-  const submitted = [...(scan.idDocument ? ['idDocument', 'idMatch'] : []), ...(scan.photo ? ['photo'] : [])];
+  const submitted = [
+    ...idRequirementsOf(scan).filter((requirement) => idDocumentOf(scan, requirement.slot)).flatMap((requirement) => ID_CHECKS[requirement.slot]),
+    ...(scan.photo ? ['photo'] : []),
+  ];
   return (scan.verification?.checks || []).filter((check) => check.status === 'fail' && submitted.includes(check.id)).map((check) => check.message);
+}
+
+// The dialog shown right after a membership or loan form is scanned.
+function requirementsText(scan: OcrScan, requiredSignatures: number) {
+  const requirements = idRequirementsOf(scan);
+  const people = requirements.map((requirement) => `${requirement.person}'s`);
+  const items = requirements.map((requirement) => (requirement.cardCapture
+    ? `the ${requirement.person}'s valid ID with ${requiredSignatures} specimen signatures, or the ID captured with the live camera`
+    : `the ${requirement.person}'s valid ID: front and back on one page, with the ${requirement.person}'s ${requiredSignatures} specimen signatures`));
+  if (scan.photoExpected && scan.authenticity?.photoRecognized !== true) items.push('a 2x2 picture, because the one on the form cannot be recognized');
+  return {
+    heading: `${scan.documentType.replace(/ Form$/, ' form')} read`,
+    title: scan.photoExpected ? `Submit the ${people[0] || 'applicant\'s'} requirements` : `Submit the ${people.join(' and ')} valid ${people.length > 1 ? 'IDs' : 'ID'}`,
+    intro: scan.postable && scan.targetModule?.startsWith('Loans') ? 'The loan application goes to Loans & Payments for approval only after you submit:' : 'The member is saved only after you submit:',
+    items,
+  };
 }
 
 const requirementsDone = (scan: OcrScan) => Boolean(scan.posted) || (!missingRequirements(scan).length && !requirementProblems(scan).length);
@@ -77,10 +115,11 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const [dragActive, setDragActive] = useState(false);
   const [processingStage, setProcessingStage] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [idCameraOpen, setIdCameraOpen] = useState(false);
+  // The ID being captured with the camera.
+  const [idCamera, setIdCamera] = useState<OcrIdRequirement | null>(null);
   const [requirementsOpen, setRequirementsOpen] = useState(false);
   const [requiredIdSignatures, setRequiredIdSignatures] = useState(3);
-  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry' | 'id' | 'photo'>('');
+  const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry' | `id-${IdSlot}` | 'photo'>('');
   const [acknowledged, setAcknowledged] = useState(false);
   const idPanelRef = useRef<HTMLDivElement>(null);
 
@@ -121,8 +160,8 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       if (data.processingStatus === 'failed') toast.error('AI recognition failed', { description: data.processingError || 'Review the document or retry.' });
       else if (data.posted) toast.success('Document saved to records', { description: message });
       else if (missingRequirements(data).length) {
-        // Asked for straight away: the member is saved only with these.
-        toast.info('Submit the applicant\'s requirements', { description: message });
+        // Asked for straight away: the form is saved only with these.
+        toast.info(requirementsText(data, requiredIdSignatures).title, { description: message });
         setRequirementsOpen(true);
       }
       else if (data.verification?.status === 'failed') toast.warning(`${data.documentType}: verification found problems`, { description: message });
@@ -189,9 +228,10 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     }
   };
 
-  // The applicant's ID for a scanned membership form: a back-to-back copy with
-  // specimen signatures (upload) or the ID card captured with the live camera.
-  const submitId = async (file: File, source: IdSource) => {
+  // A valid ID for a scanned form: a back-to-back copy with specimen signatures
+  // (uploaded, or photographed for a loan form) or, for a membership applicant,
+  // the ID card captured with the live camera.
+  const submitId = async (file: File, source: IdSource, slot: IdSlot) => {
     if (!activeScan) return;
     if (!ACCEPTED_TYPES.includes(file.type) || (source === 'camera' && !file.type.startsWith('image/'))) {
       toast.error('Unsupported file type', { description: 'Upload the ID copy as a PNG, JPG, WEBP, or PDF.' });
@@ -201,15 +241,15 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       toast.error('File is too large', { description: 'The ID must not exceed 5 MB.' });
       return;
     }
-    setBusy('id');
+    setBusy(`id-${slot}`);
     try {
       // Unsaved corrections (such as the typed-in email) are saved first so the ID is checked against them.
       if (dirty) await saveDocumentReview(activeScan.id, activeScan.documentType, activeScan.extractedData);
-      const { data, message } = await attachIdDocument(activeScan.id, file, source);
+      const { data, message } = await attachIdDocument(activeScan.id, file, source, slot);
       storeScan(data);
       if (requirementsDone(data)) setRequirementsOpen(false);
-      const failed = data.verification?.checks?.find((check) => check.status === 'fail' && check.id.startsWith('id'));
-      if (data.posted) toast.success('Member saved to records', { description: message });
+      const failed = data.verification?.checks?.find((check) => check.status === 'fail' && ID_CHECKS[slot].includes(check.id));
+      if (data.posted) toast.success('Saved to records', { description: message });
       else if (failed) toast.warning('The ID did not pass the check', { description: failed.message });
       else toast.success('ID submitted', { description: message });
     } catch (error) {
@@ -300,28 +340,37 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const verification = activeScan?.verification || {};
   const checks = verification.checks || [];
   const hasWarnings = verification.status === 'warning';
-  const needsId = Boolean(activeScan && definition?.requiresIdDocument && !activeScan.idDocument);
+  const requirements = activeScan ? idRequirementsOf(activeScan, definition) : [];
   const needsPhoto = Boolean(activeScan && definition?.photoExpected && !activeScan.photo && activeScan.authenticity?.photoRecognized === false);
-  const stillNeeded = [needsId && 'the applicant\'s valid ID', needsPhoto && 'a 2x2 picture'].filter(Boolean).join(' and ');
+  const stillNeeded = listed([
+    ...requirements.filter((requirement) => activeScan && !idDocumentOf(activeScan, requirement.slot)).map((requirement) => `the ${requirement.person}'s valid ID`),
+    ...(needsPhoto ? ['a 2x2 picture'] : []),
+  ]);
   const canPost = Boolean(activeScan && definition && !locked && !stillNeeded && activeScan.processingStatus !== 'failed'
     && (dirty || verification.status !== 'failed') && (!hasWarnings || dirty || acknowledged));
   const memberNumber = activeScan?.posted?.recordId || verification.target?.memberNumber;
   const authenticity = activeScan?.authenticity || {};
   const typeOptions = [...forms.map((form) => form.type), ...REFERENCE_TYPES, UNRECOGNIZED];
 
-  const requirementPanels = activeScan && definition?.requiresIdDocument && activeScan.processingStatus !== 'failed' ? (
+  const requirementPanels = activeScan && requirements.length > 0 && activeScan.processingStatus !== 'failed' ? (
     <div className="space-y-4">
-      <IdDocumentPanel
-        scan={activeScan}
-        requiredSignatures={requiredIdSignatures}
-        editable={canEdit && !locked}
-        submitting={busy === 'id'}
-        disabled={Boolean(busy)}
-        onUpload={(file) => void submitId(file, 'upload')}
-        onCapture={() => setIdCameraOpen(true)}
-        onView={() => void openProtectedFile(idDocumentPath(activeScan.id)).catch((error) => toast.error('Unable to open the ID', { description: errorText(error, 'Please try again.') }))}
-      />
-      {definition.photoExpected && <FormPhotoPanel scan={activeScan} editable={canEdit && !locked} submitting={busy === 'photo'} disabled={Boolean(busy)} onUpload={(file) => void submitPhoto(file)} />}
+      {requirements.map((requirement) => (
+        <IdDocumentPanel
+          key={requirement.slot}
+          requirement={requirement}
+          id={idDocumentOf(activeScan, requirement.slot)}
+          formName={activeScan.documentType.replace(/ Form$/, ' form').toLowerCase()}
+          requiredSignatures={requiredIdSignatures}
+          checks={checks.filter((check) => check.id === ID_CHECKS[requirement.slot][1])}
+          editable={canEdit && !locked}
+          submitting={busy === `id-${requirement.slot}`}
+          disabled={Boolean(busy)}
+          onUpload={(file) => void submitId(file, 'upload', requirement.slot)}
+          onCapture={() => setIdCamera(requirement)}
+          onView={() => void openProtectedFile(idDocumentPath(activeScan.id, requirement.slot)).catch((error) => toast.error('Unable to open the ID', { description: errorText(error, 'Please try again.') }))}
+        />
+      ))}
+      {definition?.photoExpected && <FormPhotoPanel scan={activeScan} editable={canEdit && !locked} submitting={busy === 'photo'} disabled={Boolean(busy)} onUpload={(file) => void submitPhoto(file)} />}
     </div>
   ) : null;
 
@@ -449,25 +498,32 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
               <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview()} className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">{busy === 'save' ? 'Saving...' : 'Save corrections'}</button>
               <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview(true)} className="px-4 py-2 border border-red-200 text-red-700 text-sm rounded-lg hover:bg-red-50 disabled:opacity-50">{busy === 'reject' ? 'Rejecting...' : 'Reject document'}</button>
             </div>
-            {stillNeeded ? <p className="text-sm text-amber-800">Submit {stillNeeded} above before saving the member.</p>
+            {stillNeeded ? <p className="text-sm text-amber-800">Submit {stillNeeded} above before saving.</p>
               : definition && verification.status === 'failed' && !dirty && <p className="text-sm text-red-700">This document cannot be saved until the failed checks are fixed. Correct the data from the paper form, or reject it if it is not genuine.</p>}
           </div>}
         </div>}
       </div>}
 
       <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200"><h2 className="text-lg font-bold text-gray-900 mb-4">Recent Scans</h2>{scans.length === 0 ? <p className="text-sm text-gray-500">Uploaded and scanned documents will appear here after AI analysis.</p> : <div className="space-y-3">{scanPages.pageItems.map((scan) => <button type="button" key={scan.id} onClick={() => showScan(scan)} className={`w-full text-left border rounded-lg p-4 hover:bg-gray-50 ${activeScan?.id === scan.id ? 'border-green-300 bg-green-50/40' : 'border-gray-200'}`}><div className="flex items-center gap-3"><div className="p-2 rounded-lg bg-blue-50">{scan.captureSource === 'camera' ? <Camera className="w-5 h-5 text-blue-600" /> : <User className="w-5 h-5 text-blue-600" />}</div><div className="min-w-0"><p className="font-bold text-gray-900 truncate">{scan.documentType}</p><p className="text-sm text-gray-500 truncate">{scan.fileName}{scan.posted ? ` · ${scan.posted.module} ${scan.posted.recordId}` : ''}</p></div><span className="ml-auto"><StatusBadge {...scanStatus(scan)} /></span></div></button>)}<Pagination className="-mx-6 -mb-6 mt-4" page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" /></div>}</div>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>A scanned membership form also needs the applicant's valid ID: a picture of the ID with {requiredIdSignatures} specimen signatures (back to back), or the ID card captured with the live camera. When AI cannot recognize the 2x2 picture on the form, it asks for one. The system gives the membership number.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>A scanned membership form also needs the applicant's valid ID: a picture of the ID with {requiredIdSignatures} specimen signatures (back to back), or the ID card captured with the live camera. When AI cannot recognize the 2x2 picture on the form, it asks for one. The system gives the membership number.</p><p>A scanned loan form needs the borrower's and the co-maker's valid IDs, each the front and back of the ID on one page with their {requiredIdSignatures} specimen signatures, uploaded or photographed. AI reads each ID and checks that it belongs to the borrower or co-maker on the form.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
 
       {scannerOpen && <DocumentScannerModal onClose={() => setScannerOpen(false)} onScanned={(file) => { setScannerOpen(false); void processFile(file, 'camera'); }} />}
       {requirementsOpen && activeScan && requirementPanels && !requirementsDone(activeScan) && (
-        <MembershipRequirementsModal
-          requiredSignatures={requiredIdSignatures}
-          photoNeeded={activeScan.photoExpected && activeScan.authenticity?.photoRecognized !== true}
+        <ScanRequirementsModal
+          {...requirementsText(activeScan, requiredIdSignatures)}
           problems={requirementProblems(activeScan)}
           onClose={() => { setRequirementsOpen(false); setTimeout(() => idPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }}
-        >{requirementPanels}</MembershipRequirementsModal>
+        >{requirementPanels}</ScanRequirementsModal>
       )}
-      {idCameraOpen && <DocumentScannerModal variant="id" onClose={() => setIdCameraOpen(false)} onScanned={(file) => { setIdCameraOpen(false); void submitId(file, 'camera'); }} />}
+      {idCamera && (
+        <DocumentScannerModal
+          variant={idCamera.cardCapture ? 'id' : 'idCopy'}
+          person={idCamera.person}
+          requiredSignatures={requiredIdSignatures}
+          onClose={() => setIdCamera(null)}
+          onScanned={(file) => { setIdCamera(null); void submitId(file, 'camera', idCamera.slot); }}
+        />
+      )}
     </div>
   );
 }

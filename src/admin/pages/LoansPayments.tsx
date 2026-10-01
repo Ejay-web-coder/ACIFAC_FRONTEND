@@ -1,19 +1,54 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanSummary, type Pagination } from '../../app/services/authApi';
+import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, loanIdPath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
+import { openProtectedFile } from '../../lib/api';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 import { escapeHtml } from '../../utils/html';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { LoanApplicationWizard, type LoanApplicationPayload } from '../../app/components/LoanApplicationWizard';
+import { LoanApplicationForm, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
+import type { Member } from './MembershipManagement';
 
 type Loan = AdminLoan;
 type Payment = AdminPayment;
 type LoanRequest = AdminLoanRequest;
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const memberPhotoPath = (member: Member) => `/api/members/${member.id}/documents/photo`;
+
+const ID_LABELS: Record<LoanIdHolder, string> = { borrower: 'Borrower\'s ID', coMaker: 'Co-maker\'s ID' };
+const openLoanId = (kind: 'loans' | 'loan-requests', id: number, holder: LoanIdHolder) => {
+  openProtectedFile(loanIdPath(kind, id, holder)).catch((error: Error) => toast.error('Unable to open the ID', { description: error.message }));
+};
+const hasIds = (documents?: LoanIdDocuments) => Boolean(documents && Object.keys(documents).length);
+
+// The borrower's and co-maker's valid IDs that came with an application: what AI
+// read, anything it flagged, and the file itself.
+function LoanIdSummary({ requestId, documents }: { requestId: number; documents: LoanIdDocuments }) {
+  return (
+    <div className="mt-3 grid gap-2 lg:grid-cols-2">
+      {(['borrower', 'coMaker'] as const).map((holder) => {
+        const document = documents[holder];
+        if (!document) return <p key={holder} className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">{ID_LABELS[holder]}: not submitted</p>;
+        const reading = document.reading || {};
+        const flagged = (document.checks || []).filter((check) => check.status !== 'pass');
+        const summary = [reading.idType, reading.name, typeof reading.signatureCount === 'number' ? `${reading.signatureCount} of 3 signatures` : null].filter(Boolean).join(' · ');
+        return (
+          <div key={holder} className={`rounded-xl border p-3 text-xs ${flagged.length ? 'border-amber-200 bg-amber-50' : 'border-green-200 bg-green-50'}`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-gray-800"><IdCard className="mr-1 inline h-4 w-4 align-[-3px]" /><span className="font-semibold">{ID_LABELS[holder]}:</span> {summary || 'not read by AI'}</p>
+              <button type="button" onClick={() => openLoanId('loan-requests', requestId, holder)} className="inline-flex shrink-0 items-center gap-1 font-semibold text-blue-700 hover:underline"><Eye className="h-3.5 w-3.5" />View</button>
+            </div>
+            {flagged.length ? flagged.map((check) => <p key={check.id} className={`mt-1 ${check.status === 'fail' ? 'text-red-800' : 'text-amber-900'}`}>{check.label}: {check.message}</p>)
+              : <p className="mt-1 text-green-800">AI checked the ID: it belongs to the {holder === 'coMaker' ? 'co-maker' : 'borrower'}.</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 interface LoansPaymentsProps {
   userRole: UserRole;
@@ -52,6 +87,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const totalCollected = summary?.totalCollected ?? 0;
 
   const canEdit = userRole === 'admin';
+  // Shown as "Evaluated / Approved by" on the New Loan form.
+  const [approverName, setApproverName] = useState('');
+  useEffect(() => {
+    if (!showAddLoanModal || approverName) return;
+    fetchCurrentUser().then(({ user }) => setApproverName(user?.display_name || user?.full_name || user?.username || 'Administrator')).catch(() => setApproverName('Administrator'));
+  }, [showAddLoanModal, approverName]);
 
   const loadData = useCallback(async () => {
     try {
@@ -99,8 +140,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     }
   };
 
-  const handleAgriculturalApplication = async (application: LoanApplicationPayload) => {
-    const { loan } = await createAdminLoan(application);
+  const handleAgriculturalApplication = async (application: LoanApplicationPayload, ids: LoanApplicationIds) => {
+    const { loan } = await createAdminLoan(application, ids);
     setShowAddLoanModal(false);
     void loadData();
     toast.success('Loan approved successfully', { description: `${loan.id} has been created using server-verified amounts.` });
@@ -357,7 +398,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                           {loan.loanType}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}</p>
+                      <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}
+                        {hasIds(loan.idDocuments) && (['borrower', 'coMaker'] as const).filter((holder) => loan.idDocuments?.[holder]).map((holder) => (
+                          <button key={holder} type="button" onClick={() => openLoanId('loans', loan.databaseId, holder)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><IdCard className="h-3.5 w-3.5" />{ID_LABELS[holder]}</button>
+                        ))}
+                      </p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                         <div>
                           <p className="text-xs text-gray-500">Loan Amount</p>
@@ -498,7 +543,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     </div>
                     <p className="text-sm text-gray-600 mt-1">Application {request.id} · Member ID: {request.memberNumber || request.memberId || '—'} · Submitted {formatDateTime(request.submittedAt)}</p>
                     <p className="text-sm text-gray-700 mt-2">₱{request.amount.toLocaleString()} for {request.term} months · {request.purpose}</p>
-                    <p className="text-xs text-gray-500 mt-1">Monthly income: ₱{request.monthlyIncome.toLocaleString()}</p>
+                    {request.monthlyIncome > 0 && <p className="text-xs text-gray-500 mt-1">Monthly income: ₱{request.monthlyIncome.toLocaleString()}</p>}
                     {request.farmArea !== undefined && (
                       <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 rounded-xl bg-gray-50 p-3 text-xs text-gray-600 min-[420px]:grid-cols-2 sm:grid-cols-4">
                         <span>Farm area: <strong>{Number(request.farmArea).toFixed(2)} ha</strong></span>
@@ -510,6 +555,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         <span>Collateral: <strong>{request.collateralType || '—'}</strong></span>
                       </div>
                     )}
+                    {hasIds(request.idDocuments) && <LoanIdSummary requestId={request.id} documents={request.idDocuments!} />}
                   </div>
                   <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
                     <button type="button" onClick={() => updateLoanRequestStatus(request, 'declined')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 sm:flex-none"><XCircle className="h-4 w-4" />
@@ -533,9 +579,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       {showAddLoanModal && (
         <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
           <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <LoanApplicationWizard
+            <LoanApplicationForm
               allowMemberLookup
-              submitLabel="Submit approved loan"
+              approvedBy={approverName || 'Administrator'}
+              photoPath={memberPhotoPath}
+              submitLabel="Approve and release loan"
               onCancel={() => setShowAddLoanModal(false)}
               onSubmit={handleAgriculturalApplication}
             />

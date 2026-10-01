@@ -1,4 +1,5 @@
 import { apiDelete, apiFetch, apiGet, apiPatch, apiPost, toNumber } from '../../lib/api';
+import type { OcrIdReading, VerificationCheck } from '../../admin/services/ocrApi';
 
 export type UserRole = 'ADMIN' | 'MEMBER';
 
@@ -65,6 +66,25 @@ export const updateNotificationPreferencesRequest = (payload: NotificationPrefer
 
 // ----- Loans ------------------------------------------------------------------
 
+/** Whose valid ID: the borrower's or the co-maker's. */
+export type LoanIdHolder = 'borrower' | 'coMaker';
+
+/** A valid ID kept with a loan application or loan: AI's reading and how it compared with the borrower or co-maker. */
+export interface LoanIdDocument {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  source: 'upload' | 'camera';
+  reading: OcrIdReading;
+  checks: VerificationCheck[];
+  /** Set when the ID came with a scanned loan form. */
+  scanId?: number;
+}
+
+export type LoanIdDocuments = Partial<Record<LoanIdHolder, LoanIdDocument>>;
+
+export const loanIdPath = (kind: 'loans' | 'loan-requests', id: number | string, holder: LoanIdHolder) => `/api/admin/${kind}/${id}/id-documents/${holder}`;
+
 export interface AdminLoan {
   databaseId: number;
   id: string;
@@ -91,6 +111,7 @@ export interface AdminLoan {
   nextAmountDue: number | null;
   purpose?: string | null;
   farmArea?: number | null;
+  idDocuments?: LoanIdDocuments;
 }
 
 export interface AdminPayment {
@@ -129,6 +150,7 @@ export interface AdminLoanRequest {
   loanMode?: string;
   coMakerName?: string | null;
   collateralType?: string | null;
+  idDocuments?: LoanIdDocuments;
 }
 
 export interface LoanSummary {
@@ -222,9 +244,44 @@ export async function fetchAdminLoanDetail(id: number) {
   };
 }
 
-export async function createAdminLoan(payload: { memberId: string | number; loanType: string; amount: string | number; term: string | number; [key: string]: unknown }) {
-  const data = await apiPost<{ loan: Record<string, unknown> }>('/api/admin/loans', payload);
+/** The borrower's and co-maker's ID files, with the readings AI made of them in the form. */
+export interface LoanApplicationIds {
+  borrower: { file: File; readingId: number };
+  coMaker: { file: File; readingId: number };
+  /** An admin releasing the loan confirms the flagged ID details were compared. */
+  acknowledgeIdWarnings?: boolean;
+}
+
+// The application (paper-form layout: cashAmount, the server adds the in-kind
+// farm inputs) with the borrower's and co-maker's ID files.
+function loanApplicationForm(payload: Record<string, unknown>, ids: LoanApplicationIds) {
+  const form = new FormData();
+  form.append('application', JSON.stringify(payload));
+  for (const holder of ['borrower', 'coMaker'] as const) {
+    form.append(`${holder}IdReading`, String(ids[holder].readingId));
+    form.append(`${holder}Id`, ids[holder].file);
+  }
+  if (ids.acknowledgeIdWarnings) form.append('acknowledgeIdWarnings', 'true');
+  return form;
+}
+
+export async function createAdminLoan(payload: { memberId: string | number; loanType: string; amount?: string | number; cashAmount?: string; term: string | number; [key: string]: unknown }, ids: LoanApplicationIds) {
+  const data = await apiPost<{ loan: Record<string, unknown> }>('/api/admin/loans', loanApplicationForm(payload, ids));
   return { loan: mapLoan(data.loan) };
+}
+
+/** AI reads a borrower's or co-maker's ID picked in the loan form. */
+export function readLoanId(file: File, holder: LoanIdHolder, source: 'upload' | 'camera') {
+  const form = new FormData();
+  form.append('holder', holder);
+  form.append('source', source);
+  form.append('idDocument', file);
+  return apiPost<{ readingId: number; reading: OcrIdReading; message: string }>('/api/loans/id-reading', form);
+}
+
+/** How the IDs read so far compare with the borrower and co-maker on the form. */
+export function previewLoanIdChecks(payload: { memberId?: number; borrowerIdReading?: number | null; coMakerIdReading?: number | null; borrowerAddress: string; borrowerAge: string; coMakerName: string; coMakerAddress: string }) {
+  return apiPost<{ checks: VerificationCheck[] }>('/api/loans/id-checks', payload);
 }
 
 export const reviewAdminLoanRequest = (id: number, status: 'approved' | 'declined', reason?: string) =>
@@ -336,8 +393,8 @@ export async function fetchMyMemberData(): Promise<MyMemberData> {
   };
 }
 
-export function createMyLoanRequest(payload: { loanType: string; amount: string | number; term: string | number; purpose: string; [key: string]: unknown }) {
-  return apiPost<{ request: Record<string, unknown> }>('/api/members/me/loan-requests', payload);
+export function createMyLoanRequest(payload: { loanType: string; amount?: string | number; cashAmount?: string; term: string | number; purpose: string; [key: string]: unknown }, ids: LoanApplicationIds) {
+  return apiPost<{ request: Record<string, unknown> }>('/api/members/me/loan-requests', loanApplicationForm(payload, ids));
 }
 
 export interface MemberSuggestion {
