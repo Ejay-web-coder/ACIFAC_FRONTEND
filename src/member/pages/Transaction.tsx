@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye, PiggyBank, Tractor } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye, PiggyBank, Tractor, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
@@ -11,7 +11,7 @@ interface TransactionProps {
   userRole: UserRole;
 }
 
-type TransactionType = 'savings' | 'payment' | 'debt' | 'rental';
+type TransactionType = 'savings' | 'withdrawal' | 'payment' | 'debt' | 'rental';
 type TransactionStatus = 'completed' | 'pending' | 'approved' | 'declined' | 'scheduled' | 'ongoing';
 
 interface Transaction {
@@ -34,6 +34,7 @@ interface Transaction {
 // How each kind of entry looks. `sign` is what it means for the member.
 const TYPE_STYLE: Record<TransactionType, { label: string; icon: typeof ArrowUpRight; chip: string; text: string; amount: string; sign: string }> = {
   savings: { label: 'Savings', icon: PiggyBank, chip: 'bg-green-100', text: 'text-green-800', amount: 'text-green-600', sign: '+' },
+  withdrawal: { label: 'Savings Withdrawal', icon: Wallet, chip: 'bg-amber-100', text: 'text-amber-800', amount: 'text-amber-600', sign: '-' },
   payment: { label: 'Loan Payment', icon: ArrowUpRight, chip: 'bg-red-100', text: 'text-red-800', amount: 'text-red-600', sign: '-' },
   debt: { label: 'Loan', icon: ArrowDownLeft, chip: 'bg-orange-100', text: 'text-orange-800', amount: 'text-orange-600', sign: '+' },
   rental: { label: 'Rental', icon: Tractor, chip: 'bg-blue-100', text: 'text-blue-800', amount: 'text-blue-600', sign: '' },
@@ -138,8 +139,6 @@ async function downloadReceiptPdf(txn: Transaction) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(102);
-  doc.text('Thank you for your transaction!', center, y, { align: 'center' });
-  y += 5.5;
   doc.text('This is a computer-generated receipt. No signature is required.', center, y, { align: 'center' });
   y += 9;
   doc.setFontSize(9);
@@ -169,20 +168,22 @@ export function Transaction({ userRole }: TransactionProps) {
     return <div className="p-4 md:p-8 text-sm text-gray-500">Loading your transactions...</div>;
   }
 
-  // Savings deposits carry the running savings total after each deposit.
+  // Savings deposits and withdrawals carry the savings balance after each entry.
   let savingsRunning = 0;
   const savingsRows: Transaction[] = [...memberData.savings.transactions]
     .sort((a, b) => dateOnlySortValue(a.date) - dateOnlySortValue(b.date) || a.id - b.id)
     .map((deposit) => {
-      savingsRunning += Number(deposit.amount);
+      const withdrawal = deposit.type === 'Withdrawal';
+      const category = withdrawal ? 'Savings Withdrawal' : 'Savings Deposit';
+      savingsRunning += withdrawal ? -Number(deposit.amount) : Number(deposit.amount);
       return {
         id: `SAV-${deposit.id}`,
         date: deposit.date,
-        type: 'savings' as const,
-        category: 'Savings Deposit',
-        description: deposit.notes ? `Savings Deposit - ${deposit.notes}` : 'Savings Deposit',
+        type: withdrawal ? 'withdrawal' as const : 'savings' as const,
+        category,
+        description: deposit.notes ? `${category} - ${deposit.notes}` : category,
         amount: Number(deposit.amount),
-        balance: savingsRunning,
+        balance: typeof deposit.balance === 'number' ? deposit.balance : savingsRunning,
         balanceLabel: 'Savings Balance',
         status: 'completed' as const,
         paymentMethod: deposit.paymentMethod || 'Recorded by ACIFAC Admin',
@@ -303,6 +304,7 @@ export function Transaction({ userRole }: TransactionProps) {
               >
                 <option value="all">All Transactions</option>
                 <option value="savings">Savings Deposits</option>
+                <option value="withdrawal">Savings Withdrawals</option>
                 <option value="rental">Machinery Rentals</option>
                 <option value="payment">Loan Payments</option>
                 <option value="debt">Loan Disbursements</option>
@@ -490,7 +492,6 @@ export function Transaction({ userRole }: TransactionProps) {
               </div>
 
               <div className="text-center text-sm text-gray-600 space-y-2 py-6 border-t border-gray-200">
-                <p>Thank you for your transaction!</p>
                 <p>This is a computer-generated receipt. No signature is required.</p>
                 <p className="text-xs text-gray-500 mt-4">Printed on {formatDateTime(new Date())}</p>
               </div>

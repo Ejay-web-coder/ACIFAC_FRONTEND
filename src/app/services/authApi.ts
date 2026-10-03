@@ -317,6 +317,28 @@ export interface LoanQuote {
   withinLimit: boolean;
 }
 
+/** When the office receives loan payments: ISO weekdays (1 = Monday) and open/close in minutes after midnight, Manila time. */
+export interface PaymentHours { days: number[]; open: number; close: number; label: string; openNow: boolean }
+
+export async function fetchPaymentHours(): Promise<PaymentHours> {
+  return (await apiGet<{ policy: { paymentHours: PaymentHours } }>('/api/loans/policy')).policy.paymentHours;
+}
+
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+/** ISO weekday (1 = Monday) of a YYYY-MM-DD date. */
+export const isoWeekday = (date: string) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+export const weekdayName = (date: string) => WEEKDAYS[isoWeekday(date) - 1];
+export const isPaymentDay = (hours: PaymentHours, date: string) => hours.days.includes(isoWeekday(date));
+
+/** Whether the office is open at `now`, in Manila time (the server checks again). */
+export function officeOpenAt(hours: PaymentHours, now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(now).map((part) => [part.type, part.value]));
+  const day = WEEKDAYS.findIndex((name) => name.startsWith(parts.weekday)) + 1;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  return hours.days.includes(day) && minutes >= hours.open && minutes < hours.close;
+}
+
 export async function fetchLoanQuote(payload: { farmArea: string; amount: string; term: string | number }): Promise<LoanQuote> {
   const data = await apiPost<{ quote: Record<string, unknown> }>('/api/loans/quote', payload);
   return {
@@ -394,7 +416,8 @@ export interface MyMemberData {
   loanRequests: AdminLoanRequest[];
   payments: AdminPayment[];
   rentalRequests: MemberRentalRequest[];
-  savings: { total: number; transactions: Array<{ id: number; amount: number; date: string; paymentMethod: string | null; reference: string | null; notes: string }> };
+  /** total is the deposits minus the withdrawals; balance is the savings after each entry. */
+  savings: { total: number; transactions: Array<{ id: number; type?: 'Deposit' | 'Withdrawal'; amount: number; balance?: number; date: string; paymentMethod: string | null; reference: string | null; notes: string }> };
 }
 
 export async function fetchMyMemberData(): Promise<MyMemberData> {

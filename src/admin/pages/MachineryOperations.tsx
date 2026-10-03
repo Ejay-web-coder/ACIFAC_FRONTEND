@@ -13,6 +13,7 @@ import { ServicesPanel } from '../components/machinery/ServicesPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
 import { PhilmechReportPanel } from '../components/machinery/PhilmechReportPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
+import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
 
 interface MachineryOperationsProps {
@@ -32,6 +33,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const tab: TabId = TABS.some((entry) => entry.id === searchParams.get('tab')) ? searchParams.get('tab') as TabId : 'rentals';
   const selectTab = (id: TabId) => setSearchParams(id === 'rentals' ? {} : { tab: id }, { replace: true });
   const [settingsMachine, setSettingsMachine] = useState<Machinery | null>(null);
+  const [showAddMachine, setShowAddMachine] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -337,9 +339,17 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
 
       <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
-          <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
+        <div className="flex flex-col gap-3 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
+            <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
+          </div>
+          {canEdit && (
+            <button type="button" onClick={() => setShowAddMachine(true)} className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-green-600 px-4 text-sm font-semibold text-green-700 hover:bg-green-50">
+              <Plus className="h-4 w-4" />
+              Add Machine
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-4">
           {machineryPages.pageItems.map((machine) => (
@@ -450,6 +460,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
       {settingsMachine && (
         <MachineSettingsModal machine={settingsMachine} machinery={machinery} onClose={() => setSettingsMachine(null)} onChanged={() => { void loadData(); }} />
+      )}
+      {showAddMachine && (
+        <AddMachineModal machinery={machinery} onClose={() => setShowAddMachine(false)} onAdded={() => { setShowAddMachine(false); void loadData(); }} />
       )}
 
       {showReport && (

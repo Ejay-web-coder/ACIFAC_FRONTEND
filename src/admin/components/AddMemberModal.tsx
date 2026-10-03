@@ -337,6 +337,7 @@ export function MemberForm({
   const readOnly = mode === 'view';
   const isAdd = mode === 'add';
   const [form, setForm] = useState<MemberDraftData>(initial);
+  const isSingle = form.civilStatus === 'Single';
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -497,6 +498,8 @@ export function MemberForm({
     const certified = (orNumber: string, certifiedBy: string, previous: string) => orNumber.trim() || certifiedBy.trim() ? 'Yes' : (isAdd ? 'No' : previous);
     const payload: MemberDraftData = {
       ...form,
+      // A single member has no spouse: anything typed before Single was chosen is dropped.
+      ...(isSingle ? { spouseName: '', spouseAge: '', spouseContact: '' } : {}),
       fullName: [form.firstName, form.middleName, form.lastName].map((part) => part.trim()).filter(Boolean).join(' '),
       phone: form.cpNo.trim(),
       address,
@@ -658,12 +661,15 @@ export function MemberForm({
         </FormTable>
 
         <SectionTitle>Family Members</SectionTitle>
-        <FormTable cols="grid-cols-1 sm:grid-cols-[1.4fr_0.6fr_1.2fr]">
-          <Cell label="Spouse Name">{input('spouseName')}</Cell>
-          <Cell label="Age">{input('spouseAge', { type: 'number', min: '0' })}</Cell>
-          <Cell label="Contact No.">{input('spouseContact')}</Cell>
-        </FormTable>
-        <FormTable cols="grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_1fr]" className="mt-2">
+        {/* No spouse for a single member */}
+        {!isSingle && (
+          <FormTable cols="grid-cols-1 sm:grid-cols-[1.4fr_0.6fr_1.2fr]" className="mb-2">
+            <Cell label="Spouse Name">{input('spouseName')}</Cell>
+            <Cell label="Age">{input('spouseAge', { type: 'number', min: '0' })}</Cell>
+            <Cell label="Contact No.">{input('spouseContact')}</Cell>
+          </FormTable>
+        )}
+        <FormTable cols="grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_1fr]">
           <div className="flex items-center bg-slate-100 p-2 text-[11px] font-bold uppercase tracking-wide text-slate-700">Mother&apos;s Maiden Name</div>
           <Cell label="Last Name">{input('motherLastName')}</Cell>
           <Cell label="First Name">{input('motherFirstName')}</Cell>

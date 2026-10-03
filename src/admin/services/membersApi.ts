@@ -230,7 +230,7 @@ export interface SavingsRecord {
   memberNumber: string;
   date: string;
   amount: number;
-  type: 'Deposit' | 'Savings Contribution';
+  type: 'Deposit' | 'Withdrawal';
   createdAt?: string;
   paymentMethod: string;
   reference: string;
@@ -238,7 +238,8 @@ export interface SavingsRecord {
   status: 'Completed' | 'Pending';
 }
 
-export interface SavingsSummary { totalAmount: number; totalRecords: number; members: number; today: number; thisMonth: number }
+/** totalAmount is the savings balance (deposits minus withdrawals); today and thisMonth are deposits. */
+export interface SavingsSummary { totalAmount: number; totalRecords: number; members: number; today: number; thisMonth: number; withdrawals?: number }
 
 export function fetchSavingsRecords(params: { page?: number; limit?: number; search?: string; memberId?: number; date?: string } = {}) {
   const search = new URLSearchParams();
@@ -248,6 +249,53 @@ export function fetchSavingsRecords(params: { page?: number; limit?: number; sea
 
 export function createSavingsRequest(payload: { memberId: number; amount: string; date: string; paymentMethod?: string; reference?: string; notes?: string }) {
   return apiPost<ApiResponse<SavingsRecord> & { memberTotal: number }>('/api/members/savings', payload);
+}
+
+/** Takes money out of a member's savings; the server refuses more than the balance. */
+export function createSavingsWithdrawal(payload: { memberId: number; amount: string; date: string; paymentMethod?: string; reference?: string; notes?: string }) {
+  return apiPost<ApiResponse<SavingsRecord> & { memberTotal: number }>('/api/members/savings/withdrawals', payload);
+}
+
+/** A member with savings entries: the balance (deposits minus withdrawals) and the totals. */
+export interface SavingsMember {
+  id: number;
+  memberNumber: string;
+  memberName: string;
+  balance: number;
+  deposits: number;
+  withdrawals: number;
+  transactions: number;
+  lastTransactionDate: string | null;
+}
+
+/** Members with savings, by name; search matches the name or the member ID. */
+export function fetchSavingsMembers(params: { search?: string; page?: number; limit?: number } = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '' && value !== null) search.set(key, String(value));
+  return apiGet<ApiResponse<SavingsMember[]> & { pagination: Pagination }>(`/api/members/savings/members${search.toString() ? `?${search}` : ''}`);
+}
+
+/** One entry of a member's savings history, with the balance after it. */
+export interface MemberSavingsEntry {
+  id: number;
+  type: 'Deposit' | 'Withdrawal';
+  amount: number;
+  balance: number;
+  date: string;
+  paymentMethod: string;
+  reference: string;
+  notes: string;
+  recordedBy: string | null;
+  createdAt?: string;
+}
+
+export interface MemberSavingsSummary { balance: number; deposits: number; withdrawals: number; transactions: number }
+
+/** One member's savings history, newest first. */
+export function fetchMemberSavings(id: number, params: { page?: number; limit?: number } = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value !== undefined) search.set(key, String(value));
+  return apiGet<ApiResponse<MemberSavingsEntry[]> & { member: { id: number; memberNumber: string; memberName: string; status: string }; summary: MemberSavingsSummary; pagination: Pagination }>(`/api/members/${id}/savings${search.toString() ? `?${search}` : ''}`);
 }
 
 export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'photo' | `signature-${1 | 2 | 3}`) => `/api/members/${memberId}/documents/${kind}`;

@@ -15,7 +15,7 @@ export function useMyMemberData() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'share_contributions', 'rental_requests', 'machinery_operations'], load);
+  useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'share_contributions', 'savings_transactions', 'rental_requests', 'machinery_operations'], load);
 
   return { memberData, error, reload: load };
 }

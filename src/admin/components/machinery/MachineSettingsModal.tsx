@@ -12,6 +12,9 @@ import { Modal, inputClass, labelClass, primaryButton, secondaryButton } from '.
 
 export function MachineSettingsModal({ machine, machinery, onClose, onChanged }: { machine: Machinery; machinery: Machinery[]; onClose: () => void; onChanged: () => void }) {
   const [details, setDetails] = useState({
+    name: machine.name,
+    type: machine.type,
+    dailyFee: machine.dailyFee ? machine.dailyFee.toFixed(2) : '',
     deliveryDate: machine.deliveryDate ?? '',
     condition: (machine.condition ?? '') as MachineCondition | '',
     pricingMode: (machine.pricingMode ?? 'per_day') as PricingMode,
@@ -31,9 +34,18 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
 
   const saveDetails = async (event: FormEvent) => {
     event.preventDefault();
+    const fee = details.dailyFee.trim();
+    if (!details.name.trim() || !details.type.trim()) { toast.error('Name and type are required.'); return; }
+    if (details.pricingMode === 'per_day' ? !(/^\d+(\.\d{1,2})?$/.test(fee) && Number(fee) > 0) : (fee !== '' && !/^\d+(\.\d{1,2})?$/.test(fee))) {
+      toast.error(details.pricingMode === 'per_day' ? 'Enter the rental fee per day.' : 'Enter a valid daily fee or leave it blank.');
+      return;
+    }
     setBusy(true);
     try {
       await updateMachine(machine.id, {
+        name: details.name.trim(),
+        type: details.type.trim(),
+        dailyFee: fee || '0',
         deliveryDate: details.deliveryDate || null,
         condition: details.condition || null,
         pricingMode: details.pricingMode,
@@ -92,6 +104,15 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
     <Modal title={`${machine.name} · ${machine.id}`} description="Details for the PhilMech report and the rates charged per service." onClose={onClose} wide
       footer={<button type="button" onClick={onClose} className={secondaryButton}>Close</button>}>
       <form onSubmit={saveDetails} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <label className={`${labelClass} lg:col-span-2`}>Name
+          <input value={details.name} onChange={(event) => setDetails({ ...details, name: event.target.value })} className={inputClass} />
+        </label>
+        <label className={labelClass}>Type
+          <input value={details.type} onChange={(event) => setDetails({ ...details, type: event.target.value })} className={inputClass} />
+        </label>
+        <label className={labelClass}>Rental fee per day
+          <input inputMode="decimal" value={details.dailyFee} onChange={(event) => setDetails({ ...details, dailyFee: event.target.value })} className={inputClass} placeholder={details.pricingMode === 'per_day' ? '0.00' : 'Optional'} />
+        </label>
         <label className={labelClass}>Date of delivery
           <input type="date" value={details.deliveryDate} onChange={(event) => setDetails({ ...details, deliveryDate: event.target.value })} className={inputClass} />
         </label>

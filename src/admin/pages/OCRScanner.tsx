@@ -7,6 +7,7 @@ import { UserRole } from '../../app/App';
 import { Pagination, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { openProtectedFile } from '../../lib/api';
+import { useLiveRefresh } from '../../lib/liveUpdates';
 import { DocumentScannerModal } from '../components/DocumentScannerModal';
 import { FormPhotoPanel } from '../components/FormPhotoPanel';
 import { IdDocumentPanel } from '../components/IdDocumentPanel';
@@ -131,6 +132,9 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       .then(({ data, autoPost: enabled, requiredIdSignatures: signatures }) => { setForms(data); setAutoPost(enabled); if (signatures) setRequiredIdSignatures(signatures); })
       .catch(() => undefined);
   }, []);
+
+  // Scans saved or posted elsewhere (another admin, another tab) appear in the list.
+  useLiveRefresh(['document_scans'], () => { fetchDocumentScans().then(({ data }) => setScans(data)).catch(() => undefined); });
 
   const showScan = (scan: OcrScan) => {
     if (scan.id !== activeScan?.id) setRequirementsOpen(false);

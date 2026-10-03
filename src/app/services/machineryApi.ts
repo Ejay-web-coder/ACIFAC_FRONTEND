@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, toNumber } from '../../lib/api';
-import type { Pagination } from './authApi';
+import type { Machinery, Pagination } from './authApi';
 
 // ----- Per-service machinery work (PhilMech utilization report) ---------------------------
 // Amounts, areas and bags arrive as exact decimal strings and are turned into
@@ -220,8 +220,17 @@ export async function fetchPeriodBalances(croppingPeriod: CroppingPeriod, year: 
 export const savePeriodBalance = (payload: { machineryId: string; croppingPeriod: CroppingPeriod; year: number; beginningCash: string; otherIncome: string; notes?: string }) =>
   apiPut<{ balance: PeriodBalance }>('/api/machinery/period-balances', payload);
 
-export const updateMachine = (id: string, payload: Partial<{ deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null; pricingMode: PricingMode; dailyFee: string }>) =>
+export const updateMachine = (id: string, payload: Partial<{ name: string; type: string; deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null; pricingMode: PricingMode; dailyFee: string }>) =>
   apiPatch<{ machinery: Record<string, unknown> }>(`/api/machinery/${encodeURIComponent(id)}`, payload);
+
+/** Adds a machine to the fleet; the server gives it the next M-### id. A blank daily fee is allowed for per-service machines. */
+export async function createMachine(payload: {
+  name: string; type: string; pricingMode: PricingMode; dailyFee: string; status: 'available' | 'maintenance'; acquisitionDate: string;
+  deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null;
+}): Promise<Machinery> {
+  const { machinery } = await apiPost<{ machinery: Record<string, unknown> }>('/api/machinery', payload);
+  return { ...(machinery as unknown as Machinery), dailyFee: toNumber(machinery.dailyFee) };
+}
 
 // ----- PhilMech report ------------------------------------------------------------------------------
 
