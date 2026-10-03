@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, loanIdPath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
+import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, loanIdPath, loanSignaturePath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 import { escapeHtml } from '../../utils/html';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { LoanApplicationForm, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
+import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
 import type { Member } from './MembershipManagement';
 
 type Loan = AdminLoan;
@@ -23,6 +23,9 @@ const openLoanId = (kind: 'loans' | 'loan-requests', id: number, holder: LoanIdH
   openProtectedFile(loanIdPath(kind, id, holder)).catch((error: Error) => toast.error('Unable to open the ID', { description: error.message }));
 };
 const hasIds = (documents?: LoanIdDocuments) => Boolean(documents && Object.keys(documents).length);
+const openLoanSignature = (kind: 'loans' | 'loan-requests', id: number) => {
+  openProtectedFile(loanSignaturePath(kind, id)).catch((error: Error) => toast.error('Unable to open the signature', { description: error.message }));
+};
 
 // The borrower's and co-maker's valid IDs that came with an application: what AI
 // read, anything it flagged, and the file itself.
@@ -402,6 +405,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         {hasIds(loan.idDocuments) && (['borrower', 'coMaker'] as const).filter((holder) => loan.idDocuments?.[holder]).map((holder) => (
                           <button key={holder} type="button" onClick={() => openLoanId('loans', loan.databaseId, holder)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><IdCard className="h-3.5 w-3.5" />{ID_LABELS[holder]}</button>
                         ))}
+                        {loan.borrowerSignature && <button type="button" onClick={() => openLoanSignature('loans', loan.databaseId)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><PenLine className="h-3.5 w-3.5" />Borrower&apos;s signature</button>}
                       </p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                         <div>
@@ -556,6 +560,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       </div>
                     )}
                     {hasIds(request.idDocuments) && <LoanIdSummary requestId={request.id} documents={request.idDocuments!} />}
+                    {request.borrowerSignature && (
+                      <p className="mt-2 text-xs text-gray-700"><PenLine className="mr-1 inline h-4 w-4 align-[-3px]" /><span className="font-semibold">Borrower signature:</span> signed {formatDate(request.borrowerSignature.signedOn)}
+                        <button type="button" onClick={() => openLoanSignature('loan-requests', request.id)} className="ml-2 inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline"><Eye className="h-3.5 w-3.5" />View</button>
+                      </p>
+                    )}
                   </div>
                   <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
                     <button type="button" onClick={() => updateLoanRequestStatus(request, 'declined')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 sm:flex-none"><XCircle className="h-4 w-4" />
@@ -577,18 +586,15 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
       {/* Add Loan Modal */}
       {showAddLoanModal && (
-        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
-          <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <LoanApplicationForm
-              allowMemberLookup
-              approvedBy={approverName || 'Administrator'}
-              photoPath={memberPhotoPath}
-              submitLabel="Approve and release loan"
-              onCancel={() => setShowAddLoanModal(false)}
-              onSubmit={handleAgriculturalApplication}
-            />
-          </div>
-        </div>
+        <LoanApplicationModal
+          title="New Loan"
+          allowMemberLookup
+          approvedBy={approverName || 'Administrator'}
+          photoPath={memberPhotoPath}
+          submitLabel="Approve and release loan"
+          onCancel={() => setShowAddLoanModal(false)}
+          onSubmit={handleAgriculturalApplication}
+        />
       )}
       {/* Payment Recording Modal */}
       {showPaymentModal && selectedLoanForPayment && (

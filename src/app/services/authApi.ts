@@ -85,6 +85,17 @@ export type LoanIdDocuments = Partial<Record<LoanIdHolder, LoanIdDocument>>;
 
 export const loanIdPath = (kind: 'loans' | 'loan-requests', id: number | string, holder: LoanIdHolder) => `/api/admin/${kind}/${id}/id-documents/${holder}`;
 
+/** The borrower's signature from the form's Borrower Signature line. Scanned paper forms have none. */
+export interface LoanSignature {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  /** The date on the Borrower Signature line. */
+  signedOn: string;
+}
+
+export const loanSignaturePath = (kind: 'loans' | 'loan-requests', id: number | string) => `/api/admin/${kind}/${id}/borrower-signature`;
+
 export interface AdminLoan {
   databaseId: number;
   id: string;
@@ -112,6 +123,7 @@ export interface AdminLoan {
   purpose?: string | null;
   farmArea?: number | null;
   idDocuments?: LoanIdDocuments;
+  borrowerSignature?: LoanSignature | null;
 }
 
 export interface AdminPayment {
@@ -151,6 +163,7 @@ export interface AdminLoanRequest {
   coMakerName?: string | null;
   collateralType?: string | null;
   idDocuments?: LoanIdDocuments;
+  borrowerSignature?: LoanSignature | null;
 }
 
 export interface LoanSummary {
@@ -244,16 +257,18 @@ export async function fetchAdminLoanDetail(id: number) {
   };
 }
 
-/** The borrower's and co-maker's ID files, with the readings AI made of them in the form. */
+/** The borrower's and co-maker's ID files, with the readings AI made of them in the form, and the borrower's signature. */
 export interface LoanApplicationIds {
   borrower: { file: File; readingId: number };
   coMaker: { file: File; readingId: number };
+  /** A picture of the signature on the form's Borrower Signature line. */
+  borrowerSignature: File;
   /** An admin releasing the loan confirms the flagged ID details were compared. */
   acknowledgeIdWarnings?: boolean;
 }
 
 // The application (paper-form layout: cashAmount, the server adds the in-kind
-// farm inputs) with the borrower's and co-maker's ID files.
+// farm inputs) with the borrower's and co-maker's ID files and the borrower's signature.
 function loanApplicationForm(payload: Record<string, unknown>, ids: LoanApplicationIds) {
   const form = new FormData();
   form.append('application', JSON.stringify(payload));
@@ -261,6 +276,7 @@ function loanApplicationForm(payload: Record<string, unknown>, ids: LoanApplicat
     form.append(`${holder}IdReading`, String(ids[holder].readingId));
     form.append(`${holder}Id`, ids[holder].file);
   }
+  form.append('borrowerSignature', ids.borrowerSignature);
   if (ids.acknowledgeIdWarnings) form.append('acknowledgeIdWarnings', 'true');
   return form;
 }

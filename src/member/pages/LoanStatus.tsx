@@ -6,7 +6,7 @@ import { UserRole } from '../../app/App';
 import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authApi';
 import { toast } from 'sonner';
 import { formatDate, formatDateTime } from '../../utils/dateTime';
-import { LoanApplicationForm, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
+import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
 import type { Member } from '../../admin/pages/MembershipManagement';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { sumMoney } from '../../utils/money';
@@ -362,24 +362,21 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         </div>
       </div>
 
-      {showApplyLoanForm && (
-        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-2 sm:p-4">
-          <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            {applicationMember && <LoanApplicationForm
-              initialMember={applicationMember}
-              hideEmail
-              photoPath={ownPhotoPath}
-              submitLabel="Submit application"
-              onCancel={() => setShowApplyLoanForm(false)}
-              onSubmit={async (application: LoanApplicationPayload, ids) => {
-                await createMyLoanRequest(application, ids);
-                setShowApplyLoanForm(false);
-                void loadLoanData().catch(() => undefined);
-                toast.success('Loan application submitted', { description: 'The cooperative team will review your request.' });
-              }}
-            />}
-          </div>
-        </div>
+      {showApplyLoanForm && applicationMember && (
+        <LoanApplicationModal
+          title="Apply for a Loan"
+          initialMember={applicationMember}
+          hideEmail
+          photoPath={ownPhotoPath}
+          submitLabel="Submit application"
+          onCancel={() => setShowApplyLoanForm(false)}
+          onSubmit={async (application: LoanApplicationPayload, ids) => {
+            await createMyLoanRequest(application, ids);
+            setShowApplyLoanForm(false);
+            void loadLoanData().catch(() => undefined);
+            toast.success('Loan application submitted', { description: 'The cooperative team will review your request.' });
+          }}
+        />
       )}
     </div>
   );
