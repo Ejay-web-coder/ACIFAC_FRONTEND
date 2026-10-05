@@ -260,7 +260,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
       {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
-      {canEdit && tab === 'report' && <PhilmechReportPanel machinery={machinery} />}
+      {canEdit && tab === 'report' && <PhilmechReportPanel machinery={machinery} onEditMachine={setSettingsMachine} />}
 
       {tab === 'rentals' && (<>
       {/* Header */}

@@ -308,3 +308,96 @@ export async function fetchPhilmechReport(params: { croppingPeriod: CroppingPeri
   const data = await apiGet<{ report: PhilmechReport }>(`/api/machinery/reports/philmech${query(params)}`);
   return numbersIn(data.report);
 }
+
+// ----- PhilMech report form: header, feedback and signatories per cropping --------------------------
+
+export type ReportProblem =
+  | 'low_acceptability' | 'officer_conflict' | 'management_training'
+  | 'frequent_breakdown' | 'high_maintenance_cost' | 'not_compatible'
+  | 'unpaid_collectibles' | 'lack_operating_capital' | 'poor_fund_management';
+
+export type ProblemOthersField = 'organizationOthers' | 'technicalOthers' | 'financialOthers';
+
+/** The "Problems Encountered" boxes of the paper form, in its order and wording. */
+export const PROBLEM_GROUPS: Array<{ title: string; othersField: ProblemOthersField; items: Array<{ code: ReportProblem; label: string }> }> = [
+  {
+    title: 'Organization and Management Issues',
+    othersField: 'organizationOthers',
+    items: [
+      { code: 'low_acceptability', label: 'Low acceptability of machine/lack of awareness' },
+      { code: 'officer_conflict', label: 'Conflict among Officers/members' },
+      { code: 'management_training', label: 'The management team lacks training' },
+    ],
+  },
+  {
+    title: 'Technical Issues',
+    othersField: 'technicalOthers',
+    items: [
+      { code: 'frequent_breakdown', label: 'Frequent Breakdown of machine' },
+      { code: 'high_maintenance_cost', label: 'High maintenance cost of machine' },
+      { code: 'not_compatible', label: 'Non-compatibility of machine in the area' },
+    ],
+  },
+  {
+    title: 'Financial Issues',
+    othersField: 'financialOthers',
+    items: [
+      { code: 'unpaid_collectibles', label: 'Unpaid collectibles' },
+      { code: 'lack_operating_capital', label: 'Lack of operating capital' },
+      { code: 'poor_fund_management', label: 'Poor management of funds' },
+    ],
+  },
+];
+
+/** Prices stay text so the inputs keep what was typed; '' means not given. */
+export interface ReportForm {
+  croppingPeriod: CroppingPeriod;
+  year: number;
+  fromMonth: number | null;
+  toMonth: number | null;
+  submissionDate: string;
+  fcaName: string;
+  address: string;
+  contactPerson: string;
+  contactNumber: string;
+  landPreparation: boolean;
+  harvestingThreshing: boolean;
+  palayPriceFresh: string;
+  palayPriceDry: string;
+  problems: ReportProblem[];
+  organizationOthers: string;
+  technicalOthers: string;
+  financialOthers: string;
+  otherProblems: string;
+  suggestedSolutions: string;
+  otherComments: string;
+  preparedBy: string;
+  preparedByPosition: string;
+  approvedBy: string;
+  approvedByPosition: string;
+  saved: boolean;
+}
+
+const mapReportForm = (row: Record<string, unknown>): ReportForm => ({
+  ...(row as unknown as ReportForm),
+  year: toNumber(row.year),
+  fromMonth: numberOrNull(row.fromMonth),
+  toMonth: numberOrNull(row.toMonth),
+  submissionDate: (row.submissionDate as string | null) ?? '',
+  palayPriceFresh: row.palayPriceFresh === null || row.palayPriceFresh === undefined ? '' : String(row.palayPriceFresh),
+  palayPriceDry: row.palayPriceDry === null || row.palayPriceDry === undefined ? '' : String(row.palayPriceDry),
+  problems: (row.problems as ReportProblem[] | null) ?? [],
+  saved: Boolean(row.saved),
+});
+
+/** The saved form of a cropping, or a new one with the last form's header and signatories. */
+export async function fetchReportForm(croppingPeriod: CroppingPeriod, year: number) {
+  const data = await apiGet<{ form: Record<string, unknown> }>(`/api/machinery/reports/philmech/form${query({ croppingPeriod, year })}`);
+  return mapReportForm(data.form);
+}
+
+export async function saveReportForm(form: ReportForm) {
+  const { saved: _saved, ...payload } = form;
+  const data = await apiPut<{ form: Record<string, unknown> }>('/api/machinery/reports/philmech/form', { ...payload, submissionDate: form.submissionDate || null });
+  return mapReportForm(data.form);
+}
