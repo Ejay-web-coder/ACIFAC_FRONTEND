@@ -357,8 +357,8 @@ export function CashflowSheet({ report, form, cash, cashChanged, savingCash, onC
       <div className="mt-2 flex flex-col gap-2 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
         <p>
           Type each machine&apos;s operating cash at the beginning and other income in the highlighted boxes. Service fees come from{' '}
-          <Link to="?tab=services" className="font-semibold text-emerald-700 hover:underline">Services</Link> and expenses from{' '}
-          <Link to="?tab=expenses" className="font-semibold text-emerald-700 hover:underline">Expenses</Link>.
+          <Link to="/machinery?tab=services" className="font-semibold text-emerald-700 hover:underline">Services</Link> and expenses from{' '}
+          <Link to="/machinery?tab=expenses" className="font-semibold text-emerald-700 hover:underline">Expenses</Link>.
         </p>
         <button type="button" onClick={onSaveCash} disabled={!cashChanged || savingCash} className={`${primaryButton} shrink-0`}>{savingCash ? 'Saving…' : 'Save cash amounts'}</button>
       </div>
@@ -380,7 +380,7 @@ export function ClientsSheet({ report, form }: { report: PhilmechReport; form: R
           <Title>{CLIENTS_TITLE}</Title>
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
             <p className="text-sm font-bold text-slate-800">Farm Machinery: <span className="ml-1 border-b border-slate-500 px-2 uppercase">{machine.name}</span></p>
-            <Link to="?tab=services" className="text-xs font-semibold text-emerald-700 hover:underline">Add or correct services</Link>
+            <Link to="/machinery?tab=services" className="text-xs font-semibold text-emerald-700 hover:underline">Add or correct services</Link>
           </div>
           <GridTable grid={clientGrid(machine)} className="min-w-[900px]" empty="No services recorded for this machine in this cropping." />
           <Signatures form={form} />

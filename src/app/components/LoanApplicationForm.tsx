@@ -183,7 +183,7 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
     if (!allowMemberLookup || selectedMember || memberSearch.trim().length < 2) { setMatches([]); return; }
     const timer = window.setTimeout(async () => {
       setSearching(true); setLookupMessage('');
-      try { const response = await fetchMembers(memberSearch, 8); setMatches(response.data); setLookupMessage(response.data.length ? '' : 'Member not found. Check the Member / Associate ID or search by name.'); }
+      try { const response = await fetchMembers(memberSearch, 8); setMatches(response.data); setLookupMessage(response.data.length ? '' : 'Member not found. Check the Member ID or search by name.'); }
       catch { setMatches([]); setLookupMessage('Member search is currently unavailable.'); }
       finally { setSearching(false); }
     }, 250);
@@ -406,7 +406,7 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
             <FormTable cols="grid-cols-1 sm:grid-cols-2">
               <Cell label="Borrower Name"><p className="mt-1 min-h-[2rem] py-1.5 text-sm font-semibold text-slate-900">{borrowerName || <span className="font-normal text-slate-400">From the member record</span>}</p></Cell>
               <Cell label="Occupation">{input('borrowerOccupation', { placeholder: 'e.g. Farmer' })}</Cell>
-              <Cell label="Associate No."><p className="mt-1 min-h-[2rem] py-1.5 text-sm font-semibold text-slate-900">{selectedMember?.memberId || <span className="font-normal text-slate-400">From the member record</span>}</p></Cell>
+              <Cell label="Member No."><p className="mt-1 min-h-[2rem] py-1.5 text-sm font-semibold text-slate-900">{selectedMember?.memberId || <span className="font-normal text-slate-400">From the member record</span>}</p></Cell>
               <Cell label="Years of Farming" error={errors.yearsFarming}>{input('yearsFarming', { inputMode: 'decimal', placeholder: '0' })}</Cell>
             </FormTable>
             <FormTable cols="grid-cols-2 sm:grid-cols-[0.6fr_1fr_1.4fr]" className="mt-2">

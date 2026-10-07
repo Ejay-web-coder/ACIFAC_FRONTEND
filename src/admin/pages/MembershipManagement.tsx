@@ -1,15 +1,16 @@
 import { useMemo, useEffect, useState } from 'react';
-import { Search, Plus, Edit, Archive, RotateCcw, Eye, X, Users, UserPlus, PiggyBank, ChevronDown } from 'lucide-react';
+import { Search, Plus, Edit, RotateCcw, Eye, X, Users, UserPlus, UserX, PiggyBank, ChevronDown } from 'lucide-react';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { AddMemberModal, draftFromMember, MemberForm, MemberFormModal, useSavedMemberFiles, type MemberDraftData, type MemberFormFiles } from '../components/AddMemberModal';
 import { MemberImportModal } from '../components/MemberImportModal';
+import { TerminationModal, terminationSummary } from '../components/TerminationModal';
 import { openProtectedFile, errorMessage } from '../../lib/api';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { memberDocumentPath, addShareContributionRequest, archiveMemberRequest, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, replaceMemberDocumentsRequest, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
+import { memberDocumentPath, addShareContributionRequest, terminateMemberRequest, type MemberTermination, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, replaceMemberDocumentsRequest, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
 export interface Member {
@@ -24,6 +25,8 @@ export interface Member {
   status: 'active' | 'inactive' | 'suspended' | 'archived';
   archivedAt?: string | null;
   archivedBy?: string | null;
+  /** Why the membership was terminated (terminated members only). */
+  termination?: MemberTermination | null;
   idDocumentName?: string | null;
   idDocumentType?: string | null;
   idDocumentSize?: number | null;
@@ -121,8 +124,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
-  const [memberToArchive, setMemberToArchive] = useState<Member | null>(null);
+  // Termination of membership: the member moves to Terminated Members.
+  const [memberToTerminate, setMemberToTerminate] = useState<Member | null>(null);
+  const [terminating, setTerminating] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [memberToRestore, setMemberToRestore] = useState<Member | null>(null);
   const [showArchivedMembers, setShowArchivedMembers] = useState(false);
@@ -244,11 +248,13 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   };
 
   const [savingDraft, setSavingDraft] = useState(false);
-  const handleDraftSubmit = async (draft: MemberDraftData, photoFile: File | null, idDocumentFile: File | null, signatureFiles: File[]) => {
+  const handleDraftSubmit = async (draft: MemberDraftData, files: MemberFormFiles) => {
+    // The form is saved only with the signed ID copy AI read.
+    if (!files.idDocument) return;
     const payload = buildDraftPayload(draft);
     setSavingDraft(true);
     try {
-      const { data: newMember } = await createMemberRequest(payload, idDocumentFile, photoFile, signatureFiles);
+      const { data: newMember } = await createMemberRequest(payload, files.idDocument, files.photo);
       setMembers((current) => [newMember, ...current]);
       void loadMembers();
       setShowAddModal(false);
@@ -298,7 +304,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         palay_area_ha: profile.palayArea || null,
         emergency_contact: profile.emergencyContact || null,
       });
-      if (files.photo || files.idDocument || files.signatures.some(Boolean)) {
+      if (files.photo || files.idDocument) {
         await replaceMemberDocumentsRequest(editingMember.id, files);
       }
       void loadMembers();
@@ -315,24 +321,20 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     });
   };
 
-  const handleArchiveMember = (member: Member) => {
-    setMemberToArchive(member);
-    setShowArchiveConfirm(true);
-  };
-
-  const confirmArchive = async () => {
-    if (memberToArchive) {
-      try {
-        await archiveMemberRequest(memberToArchive.id);
-        void loadMembers();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : 'Unable to archive member.');
-        return;
-      }
-      setShowArchiveConfirm(false);
-      setMemberToArchive(null);
-      toast.success('Member archived successfully.');
+  const confirmTermination = async (termination: Parameters<typeof terminateMemberRequest>[1]) => {
+    if (!memberToTerminate) return;
+    setTerminating(true);
+    try {
+      await terminateMemberRequest(memberToTerminate.id, termination);
+      void loadMembers();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to terminate the membership.');
+      return;
+    } finally {
+      setTerminating(false);
     }
+    toast.success('Membership terminated.', { description: `${memberToTerminate.name} · ${terminationSummary(termination)}` });
+    setMemberToTerminate(null);
   };
 
   const handleRestoreMember = (member: Member) => {
@@ -359,16 +361,16 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-600">{showArchivedMembers ? 'Archived associates can be reviewed and restored.' : 'Manage cooperative members and registrations'}</p>
+        <p className="text-sm text-gray-600">{showArchivedMembers ? 'Members whose membership was terminated can be reviewed and restored.' : 'Manage cooperative members and registrations'}</p>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <button
             type="button"
             onClick={() => setShowArchivedMembers((current) => !current)}
             className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${canEdit && !showArchivedMembers ? '' : 'col-span-2'}`}
           >
-            {showArchivedMembers ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-            <span className="sm:hidden">{showArchivedMembers ? 'Back' : 'Archived'}</span>
-            <span className="hidden sm:inline">{showArchivedMembers ? 'Back to Associates' : 'Archived Members'}</span>
+            {showArchivedMembers ? <RotateCcw className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+            <span className="sm:hidden">{showArchivedMembers ? 'Back' : 'Terminated'}</span>
+            <span className="hidden sm:inline">{showArchivedMembers ? 'Back to Members' : 'Terminated Members'}</span>
           </button>
           {canEdit && !showArchivedMembers && (
             <button
@@ -388,7 +390,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         <StatCard label="Total Members" value={statistics.totalMembers.toLocaleString('en-PH')} icon={Users} tone="dark" loading={isLoading && statistics.totalMembers === 0} />
         <StatCard label="Total Share Capital" value={`₱${statistics.totalShareCapital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={PiggyBank} loading={isLoading && statistics.totalMembers === 0} />
         <div className="col-span-2 md:col-span-1">
-          <StatCard label={showArchivedMembers ? 'Archived Members' : 'New This Month'} value={showArchivedMembers ? statistics.archivedMembers : statistics.newThisMonth} icon={showArchivedMembers ? Archive : UserPlus} tone="soft" loading={isLoading && statistics.totalMembers === 0} />
+          <StatCard label={showArchivedMembers ? 'Terminated Members' : 'New This Month'} value={showArchivedMembers ? statistics.archivedMembers : statistics.newThisMonth} icon={showArchivedMembers ? UserX : UserPlus} tone="soft" loading={isLoading && statistics.totalMembers === 0} />
         </div>
       </div>
 
@@ -399,7 +401,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
           <input
             type="search"
-            placeholder={showArchivedMembers ? 'Search archived members...' : 'Search by name or member ID...'}
+            placeholder={showArchivedMembers ? 'Search terminated members...' : 'Search by name or member ID...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 text-sm"
@@ -410,7 +412,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       {/* Members list */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-5">
-          <h2 className="text-base font-semibold text-gray-900">{showArchivedMembers ? 'Archived Members' : 'Associates'}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{showArchivedMembers ? 'Terminated Members' : 'Members'}</h2>
           {!isLoading && !loadError && <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-800 ring-1 ring-green-200">{filteredMembers.length} shown</span>}
         </div>
 
@@ -422,7 +424,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           </div>
         )}
         {!isLoading && !loadError && filteredMembers.length === 0 && (
-          <EmptyState icon={Users} title={searchTerm ? 'No members match your search' : showArchivedMembers ? 'No archived members' : 'No members yet'} message={searchTerm ? 'Try a different name or member ID.' : showArchivedMembers ? 'Members you archive will be listed here.' : 'Registered associates will appear here once added.'} />
+          <EmptyState icon={Users} title={searchTerm ? 'No members match your search' : showArchivedMembers ? 'No terminated members' : 'No members yet'} message={searchTerm ? 'Try a different name or member ID.' : showArchivedMembers ? 'Members whose membership you terminate will be listed here.' : 'Registered members will appear here once added.'} />
         )}
 
         {!isLoading && !loadError && filteredMembers.length > 0 && (
@@ -438,7 +440,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <span className="block truncate font-semibold text-gray-900">{member.name}</span>
                         <span className="block truncate text-sm text-gray-500">{member.memberId}</span>
                       </span>
-                      <span className="hidden min-[400px]:block"><StatusBadge status={member.status} /></span>
+                      <span className="hidden min-[400px]:block"><MemberStatus member={member} /></span>
                       <ChevronDown className="h-5 w-5 shrink-0 text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true" />
                     </summary>
                     <div className="space-y-3 bg-gray-50/70 px-4 pb-4 pt-1">
@@ -447,8 +449,9 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         <div className="min-w-0"><dt className="text-xs text-gray-500">Phone</dt><dd className="text-gray-900">{member.phone || '—'}</dd></div>
                         <div className="min-w-0 min-[480px]:col-span-2"><dt className="text-xs text-gray-500">Address</dt><dd className="text-gray-900">{member.address || '—'}</dd></div>
                         <div className="min-w-0"><dt className="text-xs text-gray-500">Share Capital</dt><dd className="font-semibold tabular-nums text-gray-900">₱{member.shareCapital.toLocaleString()}</dd></div>
-                        <div className="min-w-0"><dt className="text-xs text-gray-500">Status</dt><dd><StatusBadge status={member.status} /></dd></div>
-                        {showArchivedMembers && <div className="min-w-0"><dt className="text-xs text-gray-500">Archived Date</dt><dd className="text-gray-900">{member.archivedAt ? formatDateTime(member.archivedAt) : '—'}</dd></div>}
+                        <div className="min-w-0"><dt className="text-xs text-gray-500">Status</dt><dd><MemberStatus member={member} /></dd></div>
+                        {showArchivedMembers && <div className="min-w-0"><dt className="text-xs text-gray-500">Termination Date</dt><dd className="text-gray-900">{terminationDate(member)}</dd></div>}
+                        {showArchivedMembers && <div className="min-w-0"><dt className="text-xs text-gray-500">Termination</dt><dd className="text-gray-900">{terminationSummary(member.termination) || 'Kind not recorded'}</dd></div>}
                       </dl>
                       <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => void viewMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-3 text-sm font-semibold text-white hover:bg-green-700" aria-label={`View ${member.name}`}>
@@ -459,8 +462,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                             <button type="button" onClick={() => handleEditMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50" aria-label={`Update ${member.name}`}>
                               <Edit className="h-4 w-4" />Update
                             </button>
-                            <button type="button" onClick={() => handleArchiveMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50" aria-label={`Delete ${member.name}`}>
-                              <Archive className="h-4 w-4" />Archive
+                            <button type="button" onClick={() => setMemberToTerminate(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50" aria-label={`Termination of ${member.name}'s membership`}>
+                              <UserX className="h-4 w-4" />Termination
                             </button>
                           </>
                         )}
@@ -483,12 +486,12 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   <tr className="border-b border-gray-200">
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member</th>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member ID</th>
-                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Contact</th>
+                    {/* Terminated members show the termination instead; contact details are in View. */}
+                    <th className={`px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 ${showArchivedMembers ? 'hidden 2xl:table-cell' : ''}`}>Contact</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Share Capital</th>
                     {showArchivedMembers && (
                       <>
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Archived Date</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Termination</th>
                       </>
                     )}
                     <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
@@ -507,15 +510,17 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-5 py-3.5 font-medium text-gray-900">{member.memberId}</td>
-                      <td className="px-5 py-3.5">
+                      <td className={`px-5 py-3.5 ${showArchivedMembers ? 'hidden 2xl:table-cell' : ''}`}>
                         <div className="whitespace-nowrap text-gray-900">{member.phone}</div>
                         <div className="max-w-[18rem] truncate text-gray-500" title={member.address}>{member.address}</div>
                       </td>
                       <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold tabular-nums text-gray-900">₱{member.shareCapital.toLocaleString()}</td>
                       {showArchivedMembers && (
                         <>
-                          <td className="whitespace-nowrap px-5 py-3.5 text-gray-900">{member.archivedAt ? formatDateTime(member.archivedAt) : '—'}</td>
-                          <td className="whitespace-nowrap px-5 py-3.5"><StatusBadge status={member.status} /></td>
+                          <td className="px-5 py-3.5">
+                            <div className="whitespace-nowrap text-gray-900">{terminationDate(member)}</div>
+                            <div className="max-w-[15rem] text-gray-500">{terminationSummary(member.termination) || 'Kind not recorded'}</div>
+                          </td>
                         </>
                       )}
                       <td className="whitespace-nowrap px-5 py-3.5 text-right">
@@ -528,8 +533,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                               <button type="button" onClick={() => handleEditMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-600 hover:bg-gray-100" title="Update member" aria-label={`Update ${member.name}`}>
                                 <Edit className="h-5 w-5" />
                               </button>
-                              <button type="button" onClick={() => handleArchiveMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-red-600 hover:bg-red-50" title="Archive member" aria-label={`Delete ${member.name}`}>
-                                <Archive className="h-5 w-5" />
+                              <button type="button" onClick={() => setMemberToTerminate(member)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-red-600 hover:bg-red-50" title="Termination of membership" aria-label={`Termination of ${member.name}'s membership`}>
+                                <UserX className="h-4 w-4" />Termination
                               </button>
                             </>
                           )}
@@ -563,9 +568,10 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   <h2 className="text-2xl font-bold">{selectedMember.name}</h2>
                   <p className="text-blue-100 mt-1">ID: {selectedMember.memberId}</p>
                   <div className="mt-2 flex flex-wrap gap-3 text-sm text-blue-100">
-                    <span>Status: <strong className="text-white capitalize">{selectedMember.status}</strong></span>
-                    {selectedMember.archivedAt && <span>Archived: {formatDateTime(selectedMember.archivedAt)}</span>}
-                    {selectedMember.archivedBy && <span>Archived by: {selectedMember.archivedBy}</span>}
+                    <span>Status: <strong className="text-white capitalize">{selectedMember.status === 'archived' ? 'Terminated' : selectedMember.status}</strong></span>
+                    {selectedMember.termination && <span>Termination: <strong className="text-white">{terminationSummary(selectedMember.termination)}</strong></span>}
+                    {selectedMember.archivedAt && <span>Terminated: {formatDateTime(selectedMember.archivedAt)}</span>}
+                    {selectedMember.archivedBy && <span>Terminated by: {selectedMember.archivedBy}</span>}
                   </div>
                   </div>
                 </div>
@@ -678,33 +684,14 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         />
       )}
 
-      {/* Archive Confirmation Modal */}
-      {showArchiveConfirm && memberToArchive && (
-        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6 text-center">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Archive Member</h2>
-              <p className="text-gray-600 mb-4">
-                Are you sure you want to archive this member?
-              </p>
-              <p className="text-sm text-gray-500">Archived members will no longer appear in the active Associates list, but their records and transaction history will be preserved.</p>
-            </div>
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setShowArchiveConfirm(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void confirmArchive()}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
-              >
-                Archive Member
-              </button>
-            </div>
-          </div>
-        </div>
+      {memberToTerminate && (
+        <TerminationModal
+          key={memberToTerminate.id}
+          memberName={`${memberToTerminate.name} · ${memberToTerminate.memberId}`}
+          submitting={terminating}
+          onCancel={() => setMemberToTerminate(null)}
+          onConfirm={(termination) => void confirmTermination(termination)}
+        />
       )}
 
       {showRestoreConfirm && memberToRestore && (
@@ -712,7 +699,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6 text-center">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Restore Member</h2>
-              <p className="text-gray-600">Are you sure you want to restore this member?</p>
+              <p className="text-gray-600">Are you sure you want to restore this member? The termination and the Separation date are cleared.</p>
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
               <button onClick={() => setShowRestoreConfirm(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancel</button>
@@ -723,4 +710,15 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       )}
     </div>
   );
+}
+
+// The day the membership was terminated; members archived before
+// terminations were recorded show when they were archived.
+function terminationDate(member: Member) {
+  return member.termination?.date ? formatDate(member.termination.date) : formatDateTime(member.archivedAt);
+}
+
+// A terminated membership is stored as status "archived".
+function MemberStatus({ member }: { member: Member }) {
+  return <StatusBadge status={member.status} label={member.status === 'archived' ? 'Terminated' : undefined} />;
 }

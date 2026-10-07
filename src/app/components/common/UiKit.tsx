@@ -8,12 +8,14 @@ import {
 
 type IconType = ComponentType<{ className?: string }>;
 
-export function StatCard({ label, value, icon: Icon, detail, href, loading, tone = 'green' }: {
+export function StatCard({ label, value, icon: Icon, detail, href, onClick, loading, tone = 'green' }: {
   label: string;
   value: ReactNode;
   icon?: IconType;
   detail?: ReactNode;
   href?: string;
+  /** Makes the card a button, e.g. to open a window with the details. */
+  onClick?: () => void;
   loading?: boolean;
   tone?: 'green' | 'dark' | 'soft' | 'warning';
 }) {
@@ -36,6 +38,9 @@ export function StatCard({ label, value, icon: Icon, detail, href, loading, tone
   const className = 'group block h-full min-w-0 rounded-2xl border border-gray-200 bg-white p-3.5 shadow-[var(--shadow-card)] sm:p-5';
   if (href) {
     return <Link to={href} className={`${className} hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[var(--shadow-raised)]`} aria-label={`Open ${label}`}>{body}</Link>;
+  }
+  if (onClick) {
+    return <button type="button" onClick={onClick} disabled={loading} className={`${className} w-full text-left hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[var(--shadow-raised)] disabled:cursor-default`} aria-haspopup="dialog">{body}</button>;
   }
   return <div className={className}>{body}</div>;
 }

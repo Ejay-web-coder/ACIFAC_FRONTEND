@@ -187,7 +187,7 @@ export function MemberImportModal({ onClose, onImported }: { onClose: () => void
       <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Associate membership</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Membership</p>
             <h2 className="mt-1 text-lg font-bold text-slate-900 sm:text-xl">Import Members</h2>
             <p className="text-sm text-slate-500">Upload an Excel file. Each member is saved and given the next ACIFAC member ID automatically.</p>
           </div>

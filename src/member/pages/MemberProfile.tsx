@@ -1,6 +1,8 @@
-import { User, Phone, MapPin, Calendar, CreditCard } from 'lucide-react';
+import { useState } from 'react';
+import { User, Phone, MapPin, Calendar, CreditCard, PiggyBank, Percent } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
+import { MemberDividendSection, peso, percent, useMyDividend } from '../components/MemberDividend';
 import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
 
@@ -10,6 +12,8 @@ interface MemberProfileProps {
 
 export function MemberProfile({ userRole }: MemberProfileProps) {
   const { memberData, error } = useMyMemberData();
+  const [dividendYear, setDividendYear] = useState<number | undefined>(undefined);
+  const { dividend, error: dividendError } = useMyDividend(dividendYear, userRole === 'member');
 
   if (userRole !== 'member') {
     return <div className="p-8">Access restricted to members only</div>;
@@ -101,27 +105,25 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
             </p>
           </div>
 
-          <div className="p-4 bg-purple-50 rounded-lg">
+          <a href="#my-dividend" className="block p-4 bg-purple-50 rounded-lg hover:bg-purple-100">
             <div className="flex items-center gap-2 mb-2">
-              <CreditCard className="w-5 h-5 text-purple-600" />
-              <p className="text-sm text-purple-700">Dividends Earned</p>
+              <PiggyBank className="w-5 h-5 text-purple-600" />
+              <p className="text-sm text-purple-700">Estimated Dividend{dividend ? ` (${dividend.year})` : ''}</p>
             </div>
-            <p className="text-2xl font-bold text-purple-900">
-              ₱{totalLoanBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-            </p>
-          </div>
+            <p className="text-2xl font-bold text-purple-900">{dividend ? peso(dividend.dividend) : '—'}</p>
+          </a>
 
           <div className="p-4 bg-orange-50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-5 h-5 text-orange-600" />
-              <p className="text-sm text-orange-700">Last Dividend</p>
+              <Percent className="w-5 h-5 text-orange-600" />
+              <p className="text-sm text-orange-700">Share of Paid-up Capital</p>
             </div>
-            <p className="text-lg font-bold text-orange-900">
-              {loans.length} loan{loans.length === 1 ? '' : 's'}
-            </p>
+            <p className="text-2xl font-bold text-orange-900">{dividend ? percent(dividend.shareRatio) : '—'}</p>
           </div>
         </div>
       </div>
+
+      <MemberDividendSection dividend={dividend} error={dividendError} year={dividendYear} onYearChange={setDividendYear} />
 
       <div className="rounded-lg border border-green-200 bg-green-50 p-6 shadow-sm">
         <h2 className="text-lg font-bold text-green-900">My Share Contributions</h2>

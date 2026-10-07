@@ -1,40 +1,22 @@
-import { Users, PhilippinePeso, Tractor, Store, AlertCircle, AlertTriangle, Info, CheckCircle2, RefreshCw, Activity, UserPlus, ScanLine, BarChart3, ChevronRight } from 'lucide-react';
+import { Users, PhilippinePeso, TrendingUp, Store, Tractor, X, AlertCircle, AlertTriangle, Info, CheckCircle2, RefreshCw, Activity, UserPlus, ScanLine, BarChart3, ChevronRight } from 'lucide-react';
 import { EmptyState, ListSkeleton, SectionCard, Skeleton, StatCard } from '../../app/components/common/UiKit';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
-import { fetchAdminDashboard } from '../../app/services/authApi';
+import { fetchAdminDashboard, type AdminDashboardData } from '../../app/services/authApi';
 import { formatDateTime } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 
-const stats = [
-  {
-    name: 'Total Loans',
-    
-    changeType: 'increase',
-    icon: PhilippinePeso,
-    href: '/admin/loans',
-    color: 'orange',
-    borderColor: 'border-l-4 border-l-orange-500'
-  },
-  {
-    name: 'Machinery Operations',
-    
-    changeType: 'increase',
-    icon: Tractor,
-    href: '/admin/machinery',
-    color: 'blue',
-    borderColor: 'border-l-4 border-l-blue-500'
-  },
-  {
-    name: 'Kadiwa Revenues',
-    
-    changeType: 'increase',
-    icon: Store,
-    href: '/admin/kadiwa',
-    color: 'purple',
-    borderColor: 'border-l-4 border-l-purple-500'
-  },
-];
+type NetIncome = { total: number; parts: AdminDashboardData['stats']['netIncomeBreakdown']; funds: AdminDashboardData['stats']['statutoryFunds'] };
+
+// Where the net income comes from, as shown when the Net Income card is clicked.
+const INCOME_SOURCES = [
+  { key: 'kadiwa', title: 'Kadiwa Store income', text: 'Net sales: sales less the expenses entered with each sale.', href: '/admin/kadiwa', module: 'Kadiwa Store', icon: Store },
+  { key: 'machinery', title: 'Machinery income', text: 'Rental fees of rentals that have started, service fees collected and other income, less machinery expenses.', href: '/admin/machinery', module: 'Machinery Operations', icon: Tractor },
+  { key: 'loans', title: 'Loan income', text: 'Interest collected from loan payments. Principal repaid is not income.', href: '/admin/loans', module: 'Loans & Payments', icon: PhilippinePeso },
+] as const;
+
+// Shorter names for the narrow card.
+const FUND_NAMES: Record<string, string> = { reserve: 'Reserve Fund', education: 'Education & Training', community: 'Community Development', optional: 'Optional Fund' };
 
 type DashboardAlert = { id: string; message: string; type: 'warning' | 'info' | 'success' };
 type DashboardActivity = { id: string; type: string; action: string; time: string };
@@ -42,8 +24,8 @@ type DashboardActivity = { id: string; type: string; action: string; time: strin
 export function AdminDashboard() {
   const [totalMembers, setTotalMembers] = useState<number | null>(null);
   const [totalLoans, setTotalLoans] = useState<number | null>(null);
-  const [machineryOperations, setMachineryOperations] = useState<number | null>(null);
-  const [kadiwaRevenue, setKadiwaRevenue] = useState<number | null>(null);
+  const [netIncome, setNetIncome] = useState<NetIncome | null>(null);
+  const [showIncome, setShowIncome] = useState(false);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
   const [recentActivities, setRecentActivities] = useState<DashboardActivity[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -54,8 +36,7 @@ export function AdminDashboard() {
       .then(({ stats, alerts: serverAlerts, recentActivities: activities }) => {
         setTotalMembers(stats.totalMembers);
         setTotalLoans(stats.outstandingLoans);
-        setMachineryOperations(stats.machineryOperations);
-        setKadiwaRevenue(stats.kadiwaRevenue);
+        setNetIncome({ total: stats.netIncome, parts: stats.netIncomeBreakdown, funds: stats.statutoryFunds });
         setAlerts(serverAlerts);
         setRecentActivities(activities.map((activity) => ({ id: activity.id, type: activity.type, action: activity.action, time: formatDateTime(activity.at) })));
         setLoadError('');
@@ -64,16 +45,29 @@ export function AdminDashboard() {
   }, []);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
-  useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'rental_requests', 'machinery_operations', 'kadiwa_sales', 'kadiwa_inventory'], loadDashboard, 1000);
+  useLiveRefresh([
+    'members', 'loans', 'loan_payments', 'loan_requests', 'rental_requests', 'machinery_operations', 'kadiwa_sales', 'kadiwa_inventory',
+    'machinery_services', 'machinery_service_payments', 'machinery_expenses', 'machinery_period_balances',
+  ], loadDashboard, 1000);
 
   const formatCurrency = (value: number | null) => value === null ? '—' : `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const loading = totalMembers === null && !loadError;
+  // The statutory funds set aside from the net income, under its total.
+  const netIncomeFunds = netIncome && (
+    <span className="mt-1 grid gap-0.5">
+      {netIncome.funds.map((fund) => (
+        <span key={fund.key} className="flex justify-between gap-3">
+          <span>{FUND_NAMES[fund.key] ?? fund.label} ({fund.percent}%)</span>
+          <span className="tabular-nums text-gray-700">{formatCurrency(fund.amount)}</span>
+        </span>
+      ))}
+    </span>
+  );
   const dashboardStats = [
-    { name: 'Total Members', value: totalMembers === null ? '—' : totalMembers.toLocaleString('en-PH'), icon: Users, href: '/admin/members', detail: 'Registered associates', tone: 'dark' as const },
-    { name: stats[0].name, value: formatCurrency(totalLoans), icon: stats[0].icon, href: stats[0].href, detail: 'Outstanding balance', tone: 'green' as const },
-    { name: stats[1].name, value: machineryOperations === null ? '—' : machineryOperations.toLocaleString('en-PH'), icon: stats[1].icon, href: stats[1].href, detail: 'Recorded operations', tone: 'soft' as const },
-    { name: stats[2].name, value: formatCurrency(kadiwaRevenue), icon: stats[2].icon, href: stats[2].href, detail: 'Store revenue', tone: 'green' as const },
+    { name: 'Total Members', value: totalMembers === null ? '—' : totalMembers.toLocaleString('en-PH'), icon: Users, href: '/admin/members', detail: 'Registered members', tone: 'dark' as const },
+    { name: 'Total Loans', value: formatCurrency(totalLoans), icon: PhilippinePeso, href: '/admin/loans', detail: 'Outstanding balance', tone: 'green' as const },
+    { name: 'Net Income', value: formatCurrency(netIncome?.total ?? null), icon: TrendingUp, detail: netIncomeFunds || 'Statutory funds from the net income', tone: 'soft' as const, wide: true, onClick: () => setShowIncome(true) },
   ];
 
   const quickActions = [
@@ -97,10 +91,12 @@ export function AdminDashboard() {
         </div>
       )}
 
-      {/* Key figures: 1 column on small phones, 2 on large phones/tablets, 4 on desktops */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5">
+      {/* Key figures: 2 columns on phones and tablets (net income full width), 3 on desktops */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-5">
         {dashboardStats.map((stat) => (
-          <StatCard key={stat.name} label={stat.name} value={stat.value} icon={stat.icon} href={stat.href} detail={stat.detail} tone={stat.tone} loading={loading} />
+          <div key={stat.name} className={'wide' in stat ? 'col-span-2 lg:col-span-1' : undefined}>
+            <StatCard label={stat.name} value={stat.value} icon={stat.icon} href={'href' in stat ? stat.href : undefined} onClick={'onClick' in stat ? stat.onClick : undefined} detail={stat.detail} tone={stat.tone} loading={loading} />
+          </div>
         ))}
       </div>
 
@@ -171,6 +167,42 @@ export function AdminDashboard() {
           </div>
         </div>
       </div>
+      {showIncome && netIncome && (
+        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="net-income-title" onClick={(event) => { if (event.target === event.currentTarget) setShowIncome(false); }}>
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
+              <div>
+                <h2 id="net-income-title" className="text-xl font-bold text-gray-900">Net Income</h2>
+                <p className="mt-0.5 text-sm text-gray-600">All records to date, by source</p>
+              </div>
+              <button type="button" onClick={() => setShowIncome(false)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close net income window"><X className="h-5 w-5" /></button>
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {INCOME_SOURCES.map((source) => {
+                const amount = netIncome.parts[source.key];
+                const Icon = source.icon;
+                return (
+                  <li key={source.key} className="flex items-start gap-3 px-5 py-4">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700 ring-1 ring-green-100"><Icon className="h-5 w-5" /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="font-semibold text-gray-900">{source.title}</p>
+                        <p className={`shrink-0 text-lg font-bold tabular-nums ${amount < 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatCurrency(amount)}</p>
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-500">{source.text}</p>
+                      <Link to={source.href} className="mt-1 inline-flex items-center gap-0.5 text-xs font-semibold text-green-700 hover:underline">Open {source.module}<ChevronRight className="h-3.5 w-3.5" /></Link>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="flex items-baseline justify-between gap-3 border-t-2 border-gray-200 bg-gray-50 px-5 py-4">
+              <p className="font-bold text-gray-900">Total Net Income</p>
+              <p className={`text-2xl font-bold tabular-nums ${netIncome.total < 0 ? 'text-red-600' : 'text-green-800'}`}>{formatCurrency(netIncome.total)}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

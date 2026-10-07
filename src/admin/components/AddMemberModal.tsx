@@ -1,7 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { dateOnlyToday } from '../../utils/dateTime';
 import { Camera, Check, FileSpreadsheet, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { DocumentScannerModal } from './DocumentScannerModal';
+import { IdDocumentPanel } from './IdDocumentPanel';
 import { SignaturePad } from './SignaturePad';
+import { previewMemberIdChecks, readMemberId, type MemberIdUpload } from '../services/membersApi';
+import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../services/ocrApi';
 import type { Member } from '../pages/MembershipManagement';
 
 export interface MemberDraftChild {
@@ -133,7 +137,15 @@ export const civilStatusOptions = ['Single', 'Married', 'Widowed', 'Separated', 
 export const educationOptions = ['Elementary', 'High School', 'Vocational', 'College', 'Graduate Studies'];
 export const membershipTypeOptions = ['Regular', 'Associate', 'Lifetime'];
 
+// Signatures drawn on screen by members added before the signed ID copy was required.
 export const SIGNATURE_COUNT = 3;
+
+// The applicant's valid ID, like a loan co-maker's: the front and back of the
+// ID on one page with the applicant's 3 specimen signatures, uploaded or
+// photographed. AI reads it as it is picked; the server checks it again.
+const REQUIRED_ID_SIGNATURES = 3;
+const APPLICANT_ID: OcrIdRequirement = { slot: 'holder', person: 'applicant', label: 'Applicant\'s valid ID', cardCapture: false };
+type PickedId = { file: File; source: 'upload' | 'camera'; readingId: number | null; reading: OcrIdReading | null; pending: boolean; error: string };
 
 function calculateAgeFromBirthday(birthday: string) {
   if (!birthday) return '';
@@ -211,8 +223,8 @@ export type MemberFormMode = 'add' | 'edit' | 'view';
 /** New files picked in the form. In Edit, null means "keep the one on file". */
 export interface MemberFormFiles {
   photo: File | null;
-  idDocument: File | null;
-  signatures: Array<File | null>;
+  /** The signed back-to-back ID copy AI read. */
+  idDocument: MemberIdUpload | null;
 }
 
 /** The member's files already on record, shown in Edit and View. */
@@ -220,6 +232,7 @@ export interface SavedMemberFiles {
   photoUrl: string | null;
   idDocumentName: string | null;
   onOpenIdDocument?: () => void;
+  /** Signatures drawn on screen by members added before the signed ID copy was required. */
   signatureUrls: Array<string | null>;
 }
 
@@ -341,8 +354,12 @@ export function MemberForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [idDocumentFile, setIdDocumentFile] = useState<File | null>(null);
-  const [signatures, setSignatures] = useState<Array<File | null>>(() => Array(SIGNATURE_COUNT).fill(null));
+  // The signed ID copy picked in the form, and how it compares with the applicant.
+  const [pickedId, setPickedId] = useState<PickedId | null>(null);
+  const [idChecks, setIdChecks] = useState<VerificationCheck[]>([]);
+  const [idChecksReading, setIdChecksReading] = useState<number | null>(null);
+  const [acknowledgeId, setAcknowledgeId] = useState(false);
+  const [idCamera, setIdCamera] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLFormElement>(null);
 
@@ -400,11 +417,6 @@ export function MemberForm({
     incomeSources: current.incomeSources.length > 1 ? current.incomeSources.filter((row) => row.id !== id) : current.incomeSources,
   }));
 
-  const setSignature = (index: number, file: File | null) => {
-    setSignatures((current) => current.map((item, position) => position === index ? file : item));
-    clearError(`signature${index}`);
-  };
-
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const inputFile = event.target.files?.[0] ?? null;
     event.target.value = '';
@@ -425,19 +437,61 @@ export function MemberForm({
     }
   };
 
-  const handleIdDocumentChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const inputFile = event.target.files?.[0] ?? null;
-    event.target.value = '';
+  // AI reads the ID as soon as it is picked.
+  const pickId = async (file: File, source: 'upload' | 'camera') => {
     try {
-      const nextFile = sanitizeIdDocument(inputFile);
-      if (!nextFile) return;
-      setIdDocumentFile(nextFile);
-      clearError('idDocument');
+      sanitizeIdDocument(file);
     } catch (error) {
-      setIdDocumentFile(null);
       setErrors((current) => ({ ...current, idDocument: error instanceof Error ? error.message : 'Invalid ID document file.' }));
+      return;
+    }
+    clearError('idDocument');
+    clearError('idAck');
+    setAcknowledgeId(false);
+    setPickedId({ file, source, readingId: null, reading: null, pending: true, error: '' });
+    const settle = (change: Partial<PickedId>) => setPickedId((current) => (current?.file === file ? { ...current, pending: false, ...change } : current));
+    try {
+      const { readingId, reading } = await readMemberId(file, source);
+      settle({ readingId, reading });
+    } catch (error) {
+      settle({ error: `The ID was not read: ${error instanceof Error ? error.message : 'please try again.'}` });
     }
   };
+
+  const handleIdFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void pickId(file, 'upload');
+  };
+
+  const viewPickedId = () => {
+    if (!pickedId) return;
+    const url = URL.createObjectURL(pickedId.file);
+    window.open(url, '_blank');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
+  // Edit: keep the ID on file instead.
+  const clearPickedId = () => {
+    setPickedId(null);
+    setAcknowledgeId(false);
+    clearError('idDocument');
+    clearError('idAck');
+  };
+
+  // How the ID read compares with the name, birthday and ID No. on the form.
+  const idReadingId = pickedId?.readingId ?? null;
+  useEffect(() => {
+    if (!idReadingId) { setIdChecks([]); setIdChecksReading(null); return undefined; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      previewMemberIdChecks({ idReading: idReadingId, firstName: form.firstName, middleName: form.middleName, lastName: form.lastName, dateOfBirth: form.birthday, idNumber: form.idNumber })
+        .then(({ checks }) => { if (!cancelled) { setIdChecks(checks); setIdChecksReading(idReadingId); } })
+        .catch(() => { if (!cancelled) setIdChecks([]); });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [idReadingId, form.firstName, form.middleName, form.lastName, form.birthday, form.idNumber]);
+  const idWarnings = idReadingId ? idChecks.filter((check) => check.status === 'warn') : [];
 
   useEffect(() => () => {
     if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
@@ -472,10 +526,17 @@ export function MemberForm({
       if (form.shareCapital !== '' && !(Number(form.shareCapital) >= 0)) next.shareCapital = 'Share capital must be zero or more.';
       if (form.membershipFee === '') next.membershipFee = 'Membership fee is required.';
       if (!photoFile) next.idPhoto = 'A 2×2 ID photo is required.';
-      if (!idDocumentFile) next.idDocument = 'Upload the valid ID.';
-      signatures.forEach((signature, index) => { if (!signature) next[`signature${index}`] = 'This signature is required.'; });
     } else if (![form.permanentAddress, form.barangay, form.municipality, form.province].some((part) => part.trim())) {
       next.barangay = 'Enter the address.';
+    }
+    // Add needs the signed ID copy; Edit checks one only when it is replaced.
+    if (isAdd || pickedId) {
+      if (!pickedId?.readingId) next.idDocument = pickedId?.pending ? 'Wait until AI has read the ID.' : `Submit the applicant's valid ID: the front and back on one page with ${REQUIRED_ID_SIGNATURES} specimen signatures.`;
+      else if (idChecksReading === pickedId.readingId) {
+        // Only checks made for the ID now on the form; the server checks it again on save.
+        if (idChecks.some((check) => check.status === 'fail')) next.idDocument = 'This ID did not pass the check above. Submit another.';
+        else if (idWarnings.length && !acknowledgeId) next.idAck = 'Confirm that you compared the flagged ID details with the applicant.';
+      }
     }
     return next;
   };
@@ -510,7 +571,8 @@ export function MemberForm({
       preMembershipSeminar: certified(form.seminarOrNumber, form.seminarCertifiedBy, form.preMembershipSeminar),
       paymentOfMembershipFee: certified(form.orNumber, form.feeCertifiedBy, form.paymentOfMembershipFee),
     };
-    await onSubmit(payload, { photo: photoFile, idDocument: idDocumentFile, signatures });
+    const idDocument = pickedId?.readingId ? { file: pickedId.file, readingId: pickedId.readingId, acknowledgeIdWarnings: acknowledgeId } : null;
+    await onSubmit(payload, { photo: photoFile, idDocument });
   };
 
   // Field helpers: an input while editing, the saved value as text in View.
@@ -547,7 +609,12 @@ export function MemberForm({
   const shownChildren = readOnly ? form.children.filter((child) => child.name || child.age) : form.children;
   const shownIncome = readOnly ? form.incomeSources.filter((row) => row.source || row.amount) : form.incomeSources;
   const photoShown = photoPreview || saved.photoUrl;
-  const idDocumentName = idDocumentFile?.name || saved.idDocumentName;
+  const savedIdRow = saved.idDocumentName ? (
+    <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+      <span className="flex min-w-0 items-center gap-2"><Check className="h-4 w-4 shrink-0" /><span className="truncate">{saved.idDocumentName}</span></span>
+      {saved.onOpenIdDocument && <button type="button" onClick={saved.onOpenIdDocument} className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">View ID</button>}
+    </div>
+  ) : <p className="mt-2 text-sm text-slate-400">No valid ID on file</p>;
   const TABLE_INPUT = `${INPUT} mt-0 border-transparent`;
 
   return (
@@ -601,7 +668,7 @@ export function MemberForm({
         </div>
 
         <div className="mt-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-          <label htmlFor={`${formId || 'member'}-number`} className="text-xs font-semibold italic text-slate-700">Membership No. (<span className="underline">Associate Member</span>)</label>
+          <label htmlFor={`${formId || 'member'}-number`} className="text-xs font-semibold italic text-slate-700">Membership No. (<span className="underline">Member</span>)</label>
           {isAdd ? (
             <input id={`${formId || 'member'}-number`} value={form.memberNumber} onChange={(event) => updateField('memberNumber', event.target.value)} className={`${INPUT} mt-0 sm:max-w-xs ${errors.memberNumber ? INPUT_ERROR : ''}`} placeholder="Leave blank to auto-generate" {...errorProps('memberNumber')} />
           ) : (
@@ -748,55 +815,63 @@ export function MemberForm({
           </FormTable>
         </div>
 
-        <SectionTitle>Valid ID and Specimen Signatures</SectionTitle>
-        <div className={`rounded-md border ${errors.idDocument ? 'border-red-300' : 'border-slate-400'} p-3`} {...errorProps('idDocument')}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">Valid ID{isAdd && <span className="text-red-500"> *</span>}</p>
-              {!readOnly && <p className="text-xs text-slate-500">Picture or PDF of the ID named above; front and back in one file. Max 5 MB.</p>}
-            </div>
-            {!readOnly && (
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-                <ImagePlus className="h-4 w-4" />
-                {idDocumentName ? 'Replace ID' : 'Upload Valid ID'}
-                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleIdDocumentChange} />
-              </label>
+        <SectionTitle>Valid ID with Specimen Signatures</SectionTitle>
+        {readOnly ? (
+          <div className="rounded-md border border-slate-400 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">Valid ID</p>
+            {savedIdRow}
+            {saved.signatureUrls.some(Boolean) && (
+              <div className="mt-3 grid gap-4 sm:grid-cols-3">
+                {saved.signatureUrls.map((url, index) => url && <SignaturePad key={index} label={`Signature ${index + 1}`} file={null} onChange={() => undefined} savedUrl={url} readOnly />)}
+              </div>
             )}
           </div>
-          {idDocumentName ? (
-            <div className={`mt-2 flex items-center justify-between gap-3 rounded-md border px-3 py-1.5 text-sm ${idDocumentFile ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-              <span className="flex min-w-0 items-center gap-2"><Check className="h-4 w-4 shrink-0" /><span className="truncate">{idDocumentName}</span>{idDocumentFile && saved.idDocumentName && <span className="shrink-0 text-xs">(new)</span>}</span>
-              {idDocumentFile ? (
-                <button type="button" onClick={() => setIdDocumentFile(null)} className="text-xs font-medium text-red-600 hover:underline">{saved.idDocumentName ? 'Undo' : 'Remove'}</button>
-              ) : saved.onOpenIdDocument && (
-                <button type="button" onClick={saved.onOpenIdDocument} className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">View ID</button>
-              )}
-            </div>
-          ) : readOnly && <p className="mt-2 text-sm text-slate-400">No valid ID on file</p>}
-          {errors.idDocument && <span className="mt-1 block text-xs text-red-600">{errors.idDocument}</span>}
-        </div>
-
-        <div className="mt-3 grid gap-4 rounded-md border border-slate-400 p-3 sm:grid-cols-3">
-          {signatures.map((signature, index) => (
-            <div key={index} {...errorProps(`signature${index}`)}>
-              <SignaturePad
-                label={`Signature ${index + 1}`}
-                file={signature}
-                onChange={(file) => setSignature(index, file)}
-                error={errors[`signature${index}`]}
-                savedUrl={saved.signatureUrls[index] || null}
-                readOnly={readOnly}
-                required={isAdd}
+        ) : (
+          <div className="space-y-3" {...errorProps('idDocument')}>
+            {isAdd || pickedId ? (
+              <IdDocumentPanel
+                requirement={APPLICANT_ID}
+                id={pickedId?.readingId && pickedId.reading ? { fileName: pickedId.file.name, mimeType: pickedId.file.type, size: pickedId.file.size, source: pickedId.source, reading: pickedId.reading } : null}
+                formName="membership form"
+                requiredSignatures={REQUIRED_ID_SIGNATURES}
+                checks={idReadingId && idChecksReading === idReadingId ? idChecks : []}
+                error={pickedId?.error || errors.idDocument}
+                editable
+                submitting={Boolean(pickedId?.pending)}
+                disabled={Boolean(pickedId?.pending)}
+                onUpload={(file) => void pickId(file, 'upload')}
+                onCapture={() => setIdCamera(true)}
+                onView={viewPickedId}
               />
-            </div>
-          ))}
-          {!readOnly && <p className="text-xs text-slate-500 sm:col-span-3">{isAdd ? 'The applicant signs three times, the same way each time. Draw with a finger, stylus or mouse, or upload a picture of each signature.' : 'A signature on file stays unless it is signed again or a new picture is uploaded.'}</p>}
-        </div>
+            ) : (
+              <div className="rounded-md border border-slate-400 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">Valid ID</p>
+                {savedIdRow}
+                <p className="mt-2 text-xs text-slate-500">To replace it, submit a picture of the front and back of the ID on one page with the applicant&apos;s {REQUIRED_ID_SIGNATURES} specimen signatures. AI checks it before it is saved.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700">
+                    <ImagePlus className="h-4 w-4" /> Upload picture
+                    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleIdFile} />
+                  </label>
+                  <button type="button" onClick={() => setIdCamera(true)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Camera className="h-4 w-4" /> Take a picture</button>
+                </div>
+              </div>
+            )}
+            {!isAdd && pickedId && <button type="button" onClick={clearPickedId} className="text-xs font-semibold text-red-600 hover:underline">Keep the ID on file instead</button>}
+            {idWarnings.length > 0 && (
+              <label className={`flex items-start gap-2 rounded-md border p-3 text-sm ${errors.idAck ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`} {...errorProps('idAck')}>
+                <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" checked={acknowledgeId} onChange={(event) => { setAcknowledgeId(event.target.checked); clearError('idAck'); }} />
+                <span>I compared the flagged ID details with the applicant, and the ID is theirs. <span className="text-red-500">*</span></span>
+              </label>
+            )}
+            {errors.idAck && <p className="text-xs text-red-600">{errors.idAck}</p>}
+          </div>
+        )}
 
         <SectionTitle>For Cooperative</SectionTitle>
         <div className="overflow-x-auto">
           <FormTable cols="min-w-[40rem] grid-cols-[1.4fr_1fr_1fr]">
-            <div className="flex items-center bg-white p-2 text-xs font-semibold uppercase text-slate-700">Certification of Associate Member</div>
+            <div className="flex items-center bg-white p-2 text-xs font-semibold uppercase text-slate-700">Certification of Member</div>
             <Cell label="Membership Fee" required={isAdd} error={errors.membershipFee}>{input('membershipFee', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}</Cell>
             <Cell label="Date Received">{input('dateReceived', { type: 'date', max: today() })}</Cell>
 
@@ -817,6 +892,15 @@ export function MemberForm({
           </FormTable>
         </div>
       </form>
+      {idCamera && (
+        <DocumentScannerModal
+          variant="idCopy"
+          person="applicant"
+          requiredSignatures={REQUIRED_ID_SIGNATURES}
+          onClose={() => setIdCamera(false)}
+          onScanned={(file) => { setIdCamera(false); void pickId(file, 'camera'); }}
+        />
+      )}
     </ReadOnlyContext.Provider>
   );
 }
@@ -879,7 +963,7 @@ export function MemberFormModal({
       <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Associate membership</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Membership</p>
             <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           </div>
           <div className="flex items-center gap-2">
@@ -925,7 +1009,7 @@ export function AddMemberModal({
   onClose: () => void;
   /** Opens the Excel bulk import; the button is hidden when omitted. */
   onImport?: () => void;
-  onSubmit: (payload: MemberDraftData, photoFile: File | null, idDocumentFile: File | null, signatureFiles: File[]) => Promise<void> | void;
+  onSubmit: (payload: MemberDraftData, files: MemberFormFiles) => Promise<void> | void;
   isSubmitting: boolean;
 }) {
   // A fresh blank form each time the window opens.
@@ -939,7 +1023,7 @@ export function AddMemberModal({
       onClose={onClose}
       onImport={onImport}
       isSubmitting={isSubmitting}
-      onSubmit={(payload, files) => onSubmit(payload, files.photo, files.idDocument, files.signatures.filter((file): file is File => Boolean(file)))}
+      onSubmit={onSubmit}
     />
   );
 }

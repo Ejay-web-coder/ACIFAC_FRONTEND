@@ -1,6 +1,7 @@
 import type { Member } from '../pages/MembershipManagement';
 import { apiFetch, apiGet, apiPatch, apiPost, apiPut } from '../../lib/api';
 import type { Pagination } from '../../app/services/authApi';
+import type { OcrIdReading, VerificationCheck } from './ocrApi';
 
 // Children were first saved as text: "Ana (7); Ben (Age not provided)".
 function parseChildrenText(text: string) {
@@ -19,7 +20,12 @@ function readAdditionalInfo(value: unknown): Record<string, unknown> {
   return {};
 }
 
-const rowList = <T extends Record<string, string>>(value: unknown, keys: Array<keyof T>): T[] => (Array.isArray(value) ? value : [])
+function readTermination(value: unknown): MemberTermination | null {
+  const termination = readAdditionalInfo(value);
+  return typeof termination.type === 'string' ? termination as unknown as MemberTermination : null;
+}
+
+const rowList =<T extends Record<string, string>>(value: unknown, keys: Array<keyof T>): T[] => (Array.isArray(value) ? value : [])
   .map((item) => Object.fromEntries(keys.map((key) => [key, String((item as Record<string, unknown>)?.[key as string] ?? '')])) as T);
 
 interface ApiResponse<T> {
@@ -73,6 +79,7 @@ function mapMember(record: Record<string, unknown>): Member {
     status: (record.status as Member['status']) || 'active',
     archivedAt: record.archived_at ? String(record.archived_at) : null,
     archivedBy: record.archived_by_username ? String(record.archived_by_username) : null,
+    termination: readTermination(record.termination ?? readAdditionalInfo(record.additional_info).termination),
     idDocumentName: record.id_document_name ? String(record.id_document_name) : null,
     idDocumentType: record.id_document_type ? String(record.id_document_type) : null,
     idDocumentSize: record.id_document_size ? Number(record.id_document_size) : null,
@@ -183,23 +190,48 @@ export function importMembersRequest(rows: MemberImportRow[]) {
   return apiPost<ApiResponse<{ imported: number; failed: number; results: MemberImportResult[] }>>('/api/members/import', { rows });
 }
 
-export function createMemberRequest(payload: Record<string, unknown>, document: File | null, profilePhoto: File | null = null, signatures: File[] = []) {
+/** The applicant's valid ID file (a back-to-back copy with 3 specimen signatures) and AI's reading of it in the form. */
+export interface MemberIdUpload {
+  file: File;
+  readingId: number;
+  /** The admin compared the flagged ID details with the applicant. */
+  acknowledgeIdWarnings: boolean;
+}
+
+function appendMemberId(form: FormData, id: MemberIdUpload) {
+  form.append('id_document_reading', String(id.readingId));
+  form.append('idDocument', id.file);
+  if (id.acknowledgeIdWarnings) form.append('acknowledge_id_warnings', 'true');
+}
+
+/** AI reads the applicant's valid ID picked in Add Member or Edit Member. */
+export function readMemberId(file: File, source: 'upload' | 'camera') {
+  const form = new FormData();
+  form.append('source', source);
+  form.append('idDocument', file);
+  return apiPost<{ readingId: number; reading: OcrIdReading; message: string }>('/api/members/id-reading', form);
+}
+
+/** How the ID read so far compares with the applicant on the form. */
+export function previewMemberIdChecks(payload: { idReading: number; firstName: string; middleName: string; lastName: string; dateOfBirth: string; idNumber: string }) {
+  return apiPost<{ checks: VerificationCheck[] }>('/api/members/id-checks', payload);
+}
+
+export function createMemberRequest(payload: Record<string, unknown>, idDocument: MemberIdUpload, profilePhoto: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
   });
-  if (document) form.append('idDocument', document);
+  appendMemberId(form, idDocument);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
-  signatures.forEach((signature) => form.append('signatures', signature));
   return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
-/** Edit Member: replaces the 2x2 photo, valid ID and/or single signatures; null keeps the file on record. */
-export function replaceMemberDocumentsRequest(id: number, files: { photo: File | null; idDocument: File | null; signatures: Array<File | null> }) {
+/** Edit Member: replaces the 2x2 photo and/or the valid ID; null keeps the file on record. */
+export function replaceMemberDocumentsRequest(id: number, files: { photo: File | null; idDocument: MemberIdUpload | null }) {
   const form = new FormData();
-  if (files.idDocument) form.append('idDocument', files.idDocument);
+  if (files.idDocument) appendMemberId(form, files.idDocument);
   if (files.photo) form.append('profilePhoto', files.photo);
-  files.signatures.forEach((signature, index) => { if (signature) form.append(`signature${index + 1}`, signature); });
   return apiFetch<ApiResponse<Record<string, unknown>>>(`/api/members/${id}/documents`, { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
@@ -207,8 +239,19 @@ export function updateMemberRequest(id: number, payload: Record<string, unknown>
   return apiPut<ApiResponse<Record<string, unknown>>>(`/api/members/${id}`, payload).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
-export function archiveMemberRequest(id: number) {
-  return apiPatch<{ success: boolean; message: string }>(`/api/members/${id}/archive`);
+/** Termination of membership under the by-laws: automatic, voluntary, or involuntary for one of the causes. */
+export type TerminationType = 'automatic' | 'voluntary' | 'involuntary';
+export type InvoluntaryCause = 'noPatronage' | 'failedObligations' | 'violatedBylaws' | 'injuriousAct';
+export interface MemberTermination {
+  type: TerminationType;
+  cause?: InvoluntaryCause;
+  /** The day the membership was terminated (also the Separation date on the form). */
+  date?: string;
+}
+
+/** Terminates the membership: the member moves to the terminated list. */
+export function terminateMemberRequest(id: number, termination: { type: TerminationType; cause?: InvoluntaryCause }) {
+  return apiPatch<{ success: boolean; message: string }>(`/api/members/${id}/archive`, { terminationType: termination.type, cause: termination.cause });
 }
 
 export function restoreMemberRequest(id: number) {

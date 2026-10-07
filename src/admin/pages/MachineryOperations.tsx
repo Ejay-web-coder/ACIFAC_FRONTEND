@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, Calendar, Check, X, ClipboardList, Download, FileText, Printer, Tractor, PhilippinePeso, Settings2 } from 'lucide-react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { Plus, Calendar, Check, X, ClipboardList, Tractor, PhilippinePeso, Settings2 } from 'lucide-react';
 import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
-import { dateOnlyToday, formatDate } from '../../utils/dateTime';
-import { escapeHtml } from '../../utils/html';
+import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
+import { formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
-import { PhilmechReportPanel } from '../components/machinery/PhilmechReportPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
@@ -24,7 +22,6 @@ const TABS = [
   { id: 'rentals', label: 'Fleet & Rentals' },
   { id: 'services', label: 'Services' },
   { id: 'expenses', label: 'Expenses' },
-  { id: 'report', label: 'PhilMech Report' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
@@ -34,10 +31,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const selectTab = (id: TabId) => setSearchParams(id === 'rentals' ? {} : { tab: id }, { replace: true });
   const [settingsMachine, setSettingsMachine] = useState<Machinery | null>(null);
   const [showAddMachine, setShowAddMachine] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [showReport, setShowReport] = useState(false);
-  const [reportMonth, setReportMonth] = useState(dateOnlyToday().slice(0, 7));
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
   const [operations, setOperations] = useState<MachineryOperation[]>([]);
   const [machinery, setMachinery] = useState<Machinery[]>([]);
@@ -58,68 +52,15 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     rentalFee: 0
   });
 
-  const filteredOperations = operations.filter(op =>
-    op.memberName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    op.machineryName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  const operationPages = usePagination(filteredOperations, { resetKey: searchTerm });
   const machineryPages = usePagination(machinery, { pageSize: 8 });
-  // Only requests awaiting a decision are listed. Approved ones continue as
-  // operations below; the records are kept for members' booking history.
+  // Only requests awaiting a decision are listed. Approved ones become
+  // operations (in the totals); the records are kept for members' booking history.
   const pendingRequests = rentalRequests.filter((request) => request.status === 'pending');
   const requestPages = usePagination(pendingRequests, { pageSize: 5 });
-  const reportOperations = operations.filter((operation) => operation.startDate.slice(0, 7) === reportMonth);
-  const reportRevenue = reportOperations.reduce((sum, operation) => sum + operation.rentalFee, 0);
-  const reportMonthLabel = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'long' }).format(new Date(`${reportMonth}-01T00:00:00+08:00`));
-
   const totalOperations = operations.length;
   const totalRevenue = operations.reduce((sum, op) => sum + op.rentalFee, 0);
 
   const canEdit = userRole === 'admin';
-
-  const escapeCsvValue = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
-
-  const downloadReport = () => {
-    const rows = [
-      ['Operation ID', 'Machinery', 'Member', 'Member ID', 'Purpose', 'Start Date', 'End Date', 'Duration (days)', 'Rental Fee', 'Status'],
-      ...reportOperations.map((operation) => [
-        operation.id,
-        operation.machineryName,
-        operation.memberName,
-        operation.memberId,
-        operation.purpose,
-        formatDate(operation.startDate),
-        formatDate(operation.endDate),
-        operation.duration,
-        operation.rentalFee.toFixed(2),
-        operation.status,
-      ]),
-    ];
-    const csv = rows.map((row) => row.map(escapeCsvValue).join(',')).join('\n');
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    link.download = `machinery-report-${reportMonth}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Machinery report downloaded.');
-  };
-
-  const printReport = () => {
-    // 'noopener' makes window.open return null, so the report window is opened
-    // normally and detached from this page afterwards.
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error('Unable to open the print window. Please allow pop-ups and try again.');
-      return;
-    }
-    printWindow.opener = null;
-    const tableRows = reportOperations.map((operation) => `<tr><td>${operation.id}</td><td>${escapeHtml(operation.machineryName)}</td><td>${escapeHtml(operation.memberName)}</td><td>${formatDate(operation.startDate)}</td><td>${formatDate(operation.endDate)}</td><td>${operation.duration}</td><td>₱${operation.rentalFee.toLocaleString()}</td><td>${operation.status}</td></tr>`).join('');
-    printWindow.document.write(`<html><head><title>Machinery Operations Report - ${reportMonthLabel}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{margin-bottom:4px}p{color:#555}table{border-collapse:collapse;width:100%;margin-top:24px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f3f4f6}.summary{font-weight:bold;margin-top:16px}</style></head><body><h1>Machinery Operations Report</h1><p>${reportMonthLabel}</p><p class="summary">${reportOperations.length} operation(s) · ₱${reportRevenue.toLocaleString()} total revenue</p><table><thead><tr><th>Operation</th><th>Machinery</th><th>Member</th><th>Start</th><th>End</th><th>Days</th><th>Rental Fee</th><th>Status</th></tr></thead><tbody>${tableRows || '<tr><td colspan="8">No operations found for this month.</td></tr>'}</tbody></table></body></html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-  };
 
   const loadData = useCallback(async () => {
     try {
@@ -135,16 +76,6 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
   useEffect(() => { void loadData(); }, [loadData]);
   useLiveRefresh(['machinery', 'rental_requests', 'machinery_operations'], () => { void loadData(); });
-
-  const completeOperation = async (id: number) => {
-    try {
-      await completeMachineryOperation(id);
-      void loadData();
-      toast.success('Operation marked completed');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to update operation.');
-    }
-  };
 
   const toggleMaintenance = async (machine: Machinery) => {
     try {
@@ -245,6 +176,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     setShowForm(false);
   };
 
+  // The PhilMech report moved to its own Report page.
+  if (searchParams.get('tab') === 'report') return <Navigate to="/reports" replace />;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {canEdit && (
@@ -260,32 +194,21 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
       {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
-      {canEdit && tab === 'report' && <PhilmechReportPanel machinery={machinery} onEditMachine={setSettingsMachine} />}
 
       {tab === 'rentals' && (<>
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-600">Track farm equipment and rental operations</p>
-        <div className={`grid gap-2 sm:flex ${canEdit ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {canEdit && (
           <button
             type="button"
-            onClick={() => setShowReport(true)}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            onClick={() => setShowForm(true)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
           >
-            <FileText className="h-4 w-4" />
-            Report
+            <Plus className="h-4 w-4" />
+            New Rental
           </button>
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
-            >
-              <Plus className="h-4 w-4" />
-              New Rental
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -332,7 +255,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             <div className="px-6 py-10 text-center">
               <ClipboardList className="mx-auto h-10 w-10 text-gray-300" />
               <p className="mt-3 text-sm font-medium text-gray-700">No pending rental requests</p>
-              <p className="mt-1 text-sm text-gray-500">New member booking requests will appear here for review. Approved requests move to the operations list.</p>
+              <p className="mt-1 text-sm text-gray-500">New member booking requests will appear here for review.</p>
             </div>
           )}
         </div>
@@ -389,73 +312,6 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </div>
         <Pagination page={machineryPages.page} totalPages={machineryPages.totalPages} total={machineryPages.total} pageSize={machineryPages.pageSize} onPageChange={machineryPages.setPage} onPageSizeChange={machineryPages.setPageSize} label="machines" />
       </div>
-
-      <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search operations..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6">
-          <div className="space-y-4">
-            {operationPages.pageItems.map((operation) => (
-              <div key={operation.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-bold text-gray-900">{operation.machineryName}</h3>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        operation.status === 'ongoing' ? 'bg-blue-100 text-blue-800' :
-                        operation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {operation.status}
-                      </span>
-                      {canEdit && operation.status === 'ongoing' && (
-                        <button type="button" onClick={() => void completeOperation(operation.id)} className="rounded-lg border border-green-600 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50">Mark completed</button>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-600 mb-3">Operation ID: {operation.id}</p>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-500">Member</p>
-                        <p className="text-sm font-medium text-gray-900">{operation.memberName}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Purpose</p>
-                        <p className="text-sm font-medium text-gray-900">{operation.purpose}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Duration</p>
-                        <p className="text-sm font-medium text-gray-900">{operation.duration} days</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Rental Fee</p>
-                        <p className="text-sm font-medium text-gray-900">₱{operation.rentalFee.toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center gap-4 text-sm text-gray-600">
-                      <span>From: {formatDate(operation.startDate)}</span>
-                      <span>To: {formatDate(operation.endDate)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <Pagination page={operationPages.page} totalPages={operationPages.totalPages} total={operationPages.total} pageSize={operationPages.pageSize} onPageChange={operationPages.setPage} onPageSizeChange={operationPages.setPageSize} label="operations" />
-      </div>
       </>)}
 
       {settingsMachine && (
@@ -463,52 +319,6 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
       {showAddMachine && (
         <AddMachineModal machinery={machinery} onClose={() => setShowAddMachine(false)} onAdded={() => { setShowAddMachine(false); void loadData(); }} />
-      )}
-
-      {showReport && (
-        <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white shadow-2xl">
-            <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white p-5">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Machinery Operations Report</h2>
-                <p className="mt-1 text-sm text-gray-600">{reportMonthLabel}</p>
-              </div>
-              <button onClick={() => setShowReport(false)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close report">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-5 p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <label className="text-sm font-medium text-gray-700">
-                  Filter by month
-                  <input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} className="mt-1 block rounded-xl border border-gray-300 px-3 py-2" />
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={downloadReport} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
-                    <Download className="h-4 w-4" /> Download CSV
-                  </button>
-                  <button onClick={printReport} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
-                    <Printer className="h-4 w-4" /> Print
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4"><p className="text-sm text-gray-500">Operations</p><p className="mt-1 text-2xl font-bold text-gray-900">{reportOperations.length}</p></div>
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4"><p className="text-sm text-gray-500">Total Days</p><p className="mt-1 text-2xl font-bold text-gray-900">{reportOperations.reduce((sum, operation) => sum + operation.duration, 0)}</p></div>
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4"><p className="text-sm text-gray-500">Rental Revenue</p><p className="mt-1 text-2xl font-bold text-green-700">₱{reportRevenue.toLocaleString()}</p></div>
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50"><tr><th className="px-4 py-3 text-left font-semibold text-gray-600">Operation</th><th className="px-4 py-3 text-left font-semibold text-gray-600">Machinery</th><th className="px-4 py-3 text-left font-semibold text-gray-600">Member</th><th className="px-4 py-3 text-left font-semibold text-gray-600">Schedule</th><th className="px-4 py-3 text-left font-semibold text-gray-600">Fee</th><th className="px-4 py-3 text-left font-semibold text-gray-600">Status</th></tr></thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {reportOperations.map((operation) => <tr key={operation.id}><td className="px-4 py-3">{operation.id}</td><td className="px-4 py-3">{operation.machineryName}</td><td className="px-4 py-3">{operation.memberName}</td><td className="px-4 py-3 whitespace-nowrap">{formatDate(operation.startDate)} to {formatDate(operation.endDate)}</td><td className="px-4 py-3">₱{operation.rentalFee.toLocaleString()}</td><td className="px-4 py-3 capitalize">{operation.status}</td></tr>)}
-                    {reportOperations.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-500">No operations found for this month.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* New Rental Modal Form */}

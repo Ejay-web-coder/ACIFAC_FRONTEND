@@ -432,6 +432,34 @@ export async function fetchMyMemberData(): Promise<MyMemberData> {
   };
 }
 
+/** The member's estimated dividend for a calendar year (to date for the current year). */
+export interface MemberDividend {
+  year: number;
+  from: string;
+  /** The day the figures run to: December 31, or today for the current year. */
+  asOf: string;
+  yearComplete: boolean;
+  /** The first year a dividend can be shown for (the year the member joined). */
+  firstYear: number;
+  rates: { statutory: number; dividendPool: number; patronageRefundPool: number };
+  netIncome: number;
+  netIncomeParts: { kadiwa: number; machinery: number; loans: number };
+  statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
+  statutoryTotal: number;
+  netSurplus: number;
+  dividendPool: number;
+  patronageRefundPool: number;
+  memberShareCapital: number;
+  totalShareCapital: number;
+  /** Member share capital / total paid-up share capital (0 to 1). */
+  shareRatio: number;
+  dividend: number;
+}
+
+export async function fetchMyDividend(year?: number) {
+  return (await apiGet<{ data: MemberDividend }>(`/api/members/me/dividend${year ? `?year=${year}` : ''}`)).data;
+}
+
 export function createMyLoanRequest(payload: { loanType: string; amount?: string | number; cashAmount?: string; term: string | number; purpose: string; [key: string]: unknown }, ids: LoanApplicationIds) {
   return apiPost<{ request: Record<string, unknown> }>('/api/members/me/loan-requests', loanApplicationForm(payload, ids));
 }
@@ -507,7 +535,15 @@ export function fetchAdminAuditLogs(params: { page?: number; limit?: number; sea
 // ----- Dashboard & analytics ---------------------------------------------------------
 
 export interface AdminDashboardData {
-  stats: { totalMembers: number; outstandingLoans: number; machineryOperations: number; kadiwaRevenue: number };
+  stats: {
+    totalMembers: number;
+    outstandingLoans: number;
+    /** All time: Kadiwa net sales + machinery income less expenses + loan interest collected. */
+    netIncome: number;
+    netIncomeBreakdown: { kadiwa: number; machinery: number; loans: number };
+    /** Reserve 10%, Education & Training 10%, Community Development 3%, Optional 7% of the net income. */
+    statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
+  };
   alerts: Array<{ id: string; message: string; type: 'warning' | 'info' }>;
   recentActivities: Array<{ id: string; type: string; action: string; at: string }>;
 }

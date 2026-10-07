@@ -9,6 +9,8 @@ import type { OcrIdDocument, OcrIdRequirement, VerificationCheck } from '../serv
 // - Loan form (scanned, or typed into the app): the borrower's and the
 //   co-maker's IDs, each a back-to-back copy with their specimen signatures,
 //   uploaded or photographed with the camera.
+// - Add Member and Edit Member: the applicant's ID, a back-to-back copy with
+//   the specimen signatures like a co-maker's, uploaded or photographed.
 
 interface IdDocumentPanelProps {
   requirement: OcrIdRequirement;

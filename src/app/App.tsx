@@ -27,6 +27,7 @@ const Savings = lazy(() => import('../admin/pages/Savings').then((module) => ({ 
 const RentalBooking = lazy(() => import('../member/pages/RentalBooking').then((module) => ({ default: module.RentalBooking })));
 const ActivityLog = lazy(() => import('../member/pages/ActivityLog').then((module) => ({ default: module.ActivityLog })));
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
+const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 
 export type UserRole = 'admin' | 'member';
 
@@ -143,6 +144,7 @@ export default function App() {
           <Route path="/machinery" element={<RoleRoute userRole={userRole} allowedRole="admin"><MachineryOperations userRole={userRole} /></RoleRoute>} />
           <Route path="/kadiwa" element={<RoleRoute userRole={userRole} allowedRole="admin"><KadiwaStore userRole={userRole} /></RoleRoute>} />
           <Route path="/analytics" element={<RoleRoute userRole={userRole} allowedRole="admin"><Analytics userRole={userRole} /></RoleRoute>} />
+          <Route path="/reports" element={<RoleRoute userRole={userRole} allowedRole="admin"><Reports /></RoleRoute>} />
           <Route path="/ocr" element={<RoleRoute userRole={userRole} allowedRole="admin"><OCRScanner userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/savings" element={<RoleRoute userRole={userRole} allowedRole="admin"><Savings userRole={userRole} view="total" /></RoleRoute>} />
           <Route path="/admin/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
@@ -151,6 +153,7 @@ export default function App() {
           <Route path="/admin/machinery" element={<RoleRoute userRole={userRole} allowedRole="admin"><MachineryOperations userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/kadiwa" element={<RoleRoute userRole={userRole} allowedRole="admin"><KadiwaStore userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/analytics" element={<RoleRoute userRole={userRole} allowedRole="admin"><Analytics userRole={userRole} /></RoleRoute>} />
+          <Route path="/admin/reports" element={<RoleRoute userRole={userRole} allowedRole="admin"><Reports /></RoleRoute>} />
           <Route path="/admin/ocr" element={<RoleRoute userRole={userRole} allowedRole="admin"><OCRScanner userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/settings" element={<RoleRoute userRole={userRole} allowedRole="admin"><Settings userRole={userRole} /></RoleRoute>} />
           <Route path="/member/dashboard" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberDashboard userRole={userRole} /></RoleRoute>} />

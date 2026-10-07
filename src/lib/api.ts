@@ -24,6 +24,8 @@ export class ApiError extends Error {
 export const SESSION_ENDED_EVENT = 'acifac:session-ended';
 export const PASSWORD_CHANGE_EVENT = 'acifac:password-change-required';
 export const SESSION_IDLE_MESSAGE = 'Your session expired because of inactivity. Please log in again.';
+// How long a request waits for the backend to come back after a restart.
+const BACKEND_RESTART_WAIT_MS = 30000;
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -36,9 +38,18 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (!headers.has(SESSION_ACTIVITY_HEADER) && !isUserActive()) headers.set(SESSION_ACTIVITY_HEADER, 'passive');
   const countsAsActivity = headers.get(SESSION_ACTIVITY_HEADER) !== 'passive';
 
+  const send = () => fetch(`${API_URL}${path}`, { ...options, credentials: 'include', headers });
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, { ...options, credentials: 'include', headers });
+    response = await send();
+    // In development the backend restarts when one of its files is saved. The
+    // Vite proxy then answers 503 with X-Backend-Unavailable: the request never
+    // reached the backend, so it is safe to send again until the backend is back.
+    const giveUpAt = Date.now() + BACKEND_RESTART_WAIT_MS;
+    while (response.status === 503 && response.headers.has('X-Backend-Unavailable') && Date.now() < giveUpAt) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      response = await send();
+    }
   } catch {
     throw new ApiError('Unable to reach the ACIFAC server. Check your connection and try again.', 0);
   }
