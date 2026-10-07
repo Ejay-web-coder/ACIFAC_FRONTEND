@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, Eye, Filter, LoaderCircle, Plus, Search, Users, Wallet, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock, Eye, Filter, LoaderCircle, Plus, Search, Users, Wallet, X } from 'lucide-react';
 import { EmptyState, Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { toast } from 'sonner';
@@ -13,6 +13,11 @@ import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 
 type SavingsView = 'total' | 'add' | 'history';
 type TransactionType = 'Deposit' | 'Withdrawal';
+type SavingsSection = 'members' | 'activity';
+const SECTIONS: Array<{ key: SavingsSection; label: string; icon: typeof Users }> = [
+  { key: 'members', label: 'Members with Savings', icon: Users },
+  { key: 'activity', label: 'Recent Savings Activity', icon: Clock },
+];
 interface SavingsRecord { id: string; date: string; memberId: string; memberName: string; type: TransactionType; amount: number; reference: string; notes: string; status: 'Completed' | 'Pending'; paymentMethod?: string; }
 // Savings deposits and withdrawals have their own ledger (savings_transactions); share capital is separate.
 const types: TransactionType[] = ['Deposit', 'Withdrawal'];
@@ -36,6 +41,7 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
   const [openMember, setOpenMember] = useState<{ id: number; memberNumber: string; memberName: string } | null>(null);
   // Bumped after every deposit or withdrawal so the members list reloads.
   const [refreshKey, setRefreshKey] = useState(0);
+  const [section, setSection] = useState<SavingsSection>('members');
 
   const [serverTotals, setServerTotals] = useState<{ total: number; today: number; month: number; members: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -131,8 +137,34 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
         <StatCard label="Deposits Today" value={peso(serverTotals?.today ?? 0)} icon={Plus} />
         <StatCard label="Deposits This Month" value={peso(serverTotals?.month ?? 0)} icon={Wallet} />
       </div>
-      <SavingsMembers refreshKey={refreshKey} onOpen={setOpenMember} />
-      <RecentActivity records={records} filtered={filtered} members={members} search={search} setSearch={setSearch} memberFilter={memberFilter} setMemberFilter={setMemberFilter} typeFilter={typeFilter} setTypeFilter={setTypeFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} />
+      <div className="no-scrollbar flex w-full gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 sm:w-fit" role="tablist" aria-label="Savings views">
+        {SECTIONS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            id={`savings-tab-${key}`}
+            aria-selected={section === key}
+            aria-controls={`savings-panel-${key}`}
+            onClick={() => setSection(key)}
+            className={`inline-flex min-h-10 flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-semibold transition-colors sm:flex-none ${
+              section === key
+                ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* Both panels stay mounted so each keeps its search, filters and page when switching. */}
+      <div role="tabpanel" id="savings-panel-members" aria-labelledby="savings-tab-members" hidden={section !== 'members'}>
+        <SavingsMembers refreshKey={refreshKey} onOpen={setOpenMember} />
+      </div>
+      <div role="tabpanel" id="savings-panel-activity" aria-labelledby="savings-tab-activity" hidden={section !== 'activity'}>
+        <RecentActivity records={records} filtered={filtered} members={members} search={search} setSearch={setSearch} memberFilter={memberFilter} setMemberFilter={setMemberFilter} typeFilter={typeFilter} setTypeFilter={setTypeFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} />
+      </div>
     </div>
     {openMember && <MemberSavingsModal member={openMember} refreshKey={refreshKey} onChanged={afterChange} onClose={() => setOpenMember(null)} />}
     {showAddModal && <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-savings-title">

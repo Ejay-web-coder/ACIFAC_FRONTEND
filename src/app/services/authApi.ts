@@ -686,64 +686,169 @@ export const createRentalRequest = (payload: { machineryId: string; startDate: s
 
 // ----- Kadiwa ------------------------------------------------------------------------------------
 
-export interface KadiwaSaleItem { inventoryId: string; name: string; quantity: number; unit: string; unitPrice: number; lineTotal: number }
+/** A store item sold from the inventory, with the cost price it had when sold (null for sales before costs were recorded). */
+export interface KadiwaSaleItem { inventoryId: string; name: string; quantity: number; unit: string; unitPrice: number; lineTotal: number; unitCost: number | null; lineCost: number | null }
+
+/**
+ * One line of the Kadiwa ng Pangulo daily sales form, or of the 15-day/monthly
+ * report: the good, its unit, price, quantity sold and total amount. A report
+ * line sold at more than one price has the lowest as `price` and the highest as `priceMax`.
+ */
+export interface KadiwaSalesLine { name: string; unit: string | null; category: KadiwaInventoryItem['category']; price: number | null; priceMax: number | null; quantity: number | null; amount: number }
+
+/** A good offered on the sale form, with the unit and price it was last sold at. */
+export interface KadiwaGood { name: string; unit: string | null; category: KadiwaInventoryItem['category']; price: number | null }
+
+/** One expense of a sale: what it was for and the amount. */
+export interface KadiwaSaleExpense { description: string; amount: number }
 
 export interface KadiwaSale {
   id: string;
+  /** Date of the sales (YYYY-MM-DD), as written on the form. */
+  saleDate: string;
+  /** When it was saved. */
   date: string;
-  encoder: string;
+  seller: string;
   groceries: number;
   vegetables: number;
   meat: number;
   totalExpenses: number;
+  /** Cost price of the store items sold. */
+  costOfGoods: number;
+  /** Net income: goods sold - expenses - cost of goods. */
   netSales: number;
   paymentMethod: 'cash';
   status: 'completed' | 'pending';
+  /** Store items sold from the inventory; counted in the GROCERIES line. */
   items: KadiwaSaleItem[];
+  /** The expenses, one line each; empty for sales saved before expenses were listed (their total only). */
+  expenses: KadiwaSaleExpense[];
+  /** The goods typed on the daily form (without the store items). */
+  goods: Array<{ name: string }>;
+  /** The goods sold, as the daily form lists them. */
+  lines: KadiwaSalesLine[];
 }
 
+export interface KadiwaSalesReport {
+  lines: KadiwaSalesLine[];
+  totals: { sales: number; days: number; gross: number; expenses: number; costOfGoods: number; net: number };
+}
+
+/** A good as typed on the sale form. */
+export interface KadiwaSaleGoodInput { name: string; unit: string; category: KadiwaInventoryItem['category']; price: string; quantity: string; amount: string }
+
+export type KadiwaSizeUnit = 'mL' | 'L' | 'mg' | 'g' | 'kg';
+
+// One product line, like a line of the store's inventory notebook:
+// Century Tuna 150 g, 13 pc, sold at ₱38, cost ₱35.
 export interface KadiwaInventoryItem {
   id: string;
   name: string;
   category: 'Groceries' | 'Vegetables' | 'Meat' | 'Other';
+  /** Content size of one unit (150 for 150 g); null when the product has no size. */
+  sizeValue: number | null;
+  sizeUnit: KadiwaSizeUnit | null;
   stock: number;
-  price: number;
-  reorderLevel: number;
+  /** What the stock is counted and sold in: pc, pack, bottle, kg ... */
   unit: string;
+  /** Selling price per unit. */
+  price: number;
+  /** Cost price (puhunan) per unit; the stock is valued at it when set. */
+  costPrice: number | null;
+  reorderLevel: number;
 }
 
-export interface KadiwaSummary { todaySales: number; todayRevenue: number; totalNetSales: number; inventoryValue: number; lowStockItems: number }
+/** A product as typed in the add sheet or the edit form. */
+export interface KadiwaInventoryInput {
+  name: string;
+  category: KadiwaInventoryItem['category'];
+  sizeValue: string;
+  sizeUnit: KadiwaSizeUnit | '';
+  unit: string;
+  stock: string;
+  price: string;
+  costPrice: string;
+  reorderLevel: string;
+}
 
+/** Today's sales: their number, the goods sold (revenue), the cost of the store items, the expenses and the net income. */
+export interface KadiwaSummary {
+  todaySales: number; todayRevenue: number; todayCost: number; todayExpenses: number; todayNetIncome: number;
+  totalNetSales: number; inventoryValue: number; lowStockItems: number;
+  /** Products saved before cost prices were required that still have none. */
+  missingCostItems: number;
+}
+
+const mapSalesLine = (line: Record<string, unknown>): KadiwaSalesLine => ({
+  ...(line as unknown as KadiwaSalesLine),
+  price: toNumberOrNull(line.price),
+  priceMax: toNumberOrNull(line.priceMax),
+  quantity: toNumberOrNull(line.quantity),
+  amount: toNumber(line.amount),
+});
 const mapSale = (sale: Record<string, unknown>): KadiwaSale => ({
   ...(sale as unknown as KadiwaSale),
   groceries: toNumber(sale.groceries),
   vegetables: toNumber(sale.vegetables),
   meat: toNumber(sale.meat),
   totalExpenses: toNumber(sale.totalExpenses),
+  costOfGoods: toNumber(sale.costOfGoods),
   netSales: toNumber(sale.netSales),
-  items: ((sale.items as Record<string, unknown>[]) || []).map((item) => ({ ...(item as unknown as KadiwaSaleItem), quantity: toNumber(item.quantity), unitPrice: toNumber(item.unitPrice), lineTotal: toNumber(item.lineTotal) })),
+  items: ((sale.items as Record<string, unknown>[]) || []).map((item) => ({ ...(item as unknown as KadiwaSaleItem), quantity: toNumber(item.quantity), unitPrice: toNumber(item.unitPrice), lineTotal: toNumber(item.lineTotal), unitCost: toNumberOrNull(item.unitCost), lineCost: toNumberOrNull(item.lineCost) })),
+  lines: ((sale.lines as Record<string, unknown>[]) || []).map(mapSalesLine),
+  goods: (sale.goods as Array<{ name: string }>) || [],
+  expenses: ((sale.expenses as Record<string, unknown>[]) || []).map((line) => ({ description: String(line.description ?? ''), amount: toNumber(line.amount) })),
 });
-const mapInventory = (item: Record<string, unknown>): KadiwaInventoryItem => ({ ...(item as unknown as KadiwaInventoryItem), stock: toNumber(item.stock), price: toNumber(item.price), reorderLevel: toNumber(item.reorderLevel) });
+const toNumberOrNull = (value: unknown) => (value === null || value === undefined || value === '' ? null : toNumber(value));
+const mapInventory = (item: Record<string, unknown>): KadiwaInventoryItem => ({ ...(item as unknown as KadiwaInventoryItem), sizeValue: toNumberOrNull(item.sizeValue), stock: toNumber(item.stock), price: toNumber(item.price), costPrice: toNumberOrNull(item.costPrice), reorderLevel: toNumber(item.reorderLevel) });
 
 export async function fetchKadiwaData(params: { page?: number; limit?: number } = {}) {
-  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown> }>(`/api/kadiwa${query(params)}`);
+  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown>; goods?: Record<string, unknown>[] }>(`/api/kadiwa${query(params)}`);
   return {
     inventory: data.inventory.map(mapInventory),
     sales: data.sales.map(mapSale),
     pagination: data.pagination,
     summary: Object.fromEntries(Object.entries(data.summary).map(([key, value]) => [key, toNumber(value)])) as unknown as KadiwaSummary,
+    goods: (data.goods || []).map((good) => ({ ...(good as unknown as KadiwaGood), price: toNumberOrNull(good.price) })),
   };
 }
 
-export async function createKadiwaSale(payload: { encoderName: string; groceriesPrice: number; vegetablesPrice: number; meatPrice: number; totalExpenses: number; items: Array<{ inventoryId: string; quantity: string }> }) {
+// Sales dated from..to (YYYY-MM-DD, inclusive), newest first, with the report
+// of every good sold in the period.
+export async function fetchKadiwaSales(from: string, to: string) {
+  const data = await apiGet<{ sales: Record<string, unknown>[]; report: { lines: Record<string, unknown>[]; totals: Record<string, unknown> } }>(`/api/kadiwa/sales${query({ from, to })}`);
+  const totals = data.report.totals;
+  return {
+    sales: data.sales.map(mapSale),
+    report: {
+      lines: data.report.lines.map(mapSalesLine),
+      totals: { sales: toNumber(totals.sales), days: toNumber(totals.days), gross: toNumber(totals.gross), expenses: toNumber(totals.expenses), costOfGoods: toNumber(totals.costOfGoods), net: toNumber(totals.net) },
+    } satisfies KadiwaSalesReport,
+  };
+}
+
+// The New Sale form sends `expenses` (their sum is the sale's expenses); Sell Products sends `totalExpenses`.
+export async function createKadiwaSale(payload: { sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string }) {
   const data = await apiPost<{ sale: Record<string, unknown> }>('/api/kadiwa/sales', payload);
   return { sale: mapSale(data.sale) };
 }
 
-export async function createKadiwaInventory(payload: Omit<KadiwaInventoryItem, 'id'>) {
-  const data = await apiPost<{ item: Record<string, unknown> }>('/api/kadiwa/inventory', payload);
+// Saves a whole sheet of products at once; nothing is saved when a row is refused.
+export async function createKadiwaInventory(items: KadiwaInventoryInput[]) {
+  const data = await apiPost<{ items: Record<string, unknown>[] }>('/api/kadiwa/inventory', { items });
+  return { items: data.items.map(mapInventory) };
+}
+
+// `stock` is sent only to record a physical count, with the quantity the form
+// was opened with as `expectedStock`.
+export async function updateKadiwaInventory(id: string, payload: Omit<KadiwaInventoryInput, 'stock'> & { stock?: string; expectedStock?: string }) {
+  const data = await apiPatch<{ item: Record<string, unknown> }>(`/api/kadiwa/inventory/${encodeURIComponent(id)}`, payload);
   return { item: mapInventory(data.item) };
 }
+
+// Deletes a product. One already sold is kept for its past sales (keptForPastSales) and leaves the inventory.
+export const deleteKadiwaInventory = (id: string) =>
+  apiDelete<{ id: string; name: string; keptForPastSales: boolean; pastSales: number }>(`/api/kadiwa/inventory/${encodeURIComponent(id)}`);
 
 export async function restockKadiwaInventory(id: string, quantity: number) {
   const data = await apiPatch<{ item: Record<string, unknown> }>(`/api/kadiwa/inventory/${id}/restock`, { quantity });
