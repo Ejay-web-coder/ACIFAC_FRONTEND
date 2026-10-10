@@ -536,15 +536,27 @@ export function fetchAdminAuditLogs(params: { page?: number; limit?: number; sea
 
 export interface AdminDashboardData {
   stats: {
+    /** Active members. */
     totalMembers: number;
+    /** Members (terminated ones left out) with a login account, and without one. */
+    registeredMembers: number;
+    unregisteredMembers: number;
     outstandingLoans: number;
+    /** What needs the admin's attention now. */
+    overdueLoans: number;
+    loansDueThisWeek: number;
+    pendingLoanRequests: number;
+    pendingRentalRequests: number;
+    scheduledOperations: number;
+    lowStockItems: number;
     /** All time: Kadiwa net sales + machinery income less expenses + loan interest collected. */
     netIncome: number;
     netIncomeBreakdown: { kadiwa: number; machinery: number; loans: number };
     /** Reserve 10%, Education & Training 10%, Community Development 3%, Optional 7% of the net income. */
     statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
   };
-  alerts: Array<{ id: string; message: string; type: 'warning' | 'info' }>;
+  /** Members (terminated ones left out) by their share capital now, lowest band first; max is exclusive, null for the PHP 20,000 maximum. */
+  shareCapitalLevels: Array<{ key: 'below1k' | 'from1kTo5k' | 'from5kTo15k' | 'from15kTo20k' | 'maximum'; min: number; max: number | null; members: number }>;
   recentActivities: Array<{ id: string; type: string; action: string; at: string }>;
 }
 
@@ -577,11 +589,11 @@ export interface AnalyticsData {
     projectedRepayment: number;
     paymentToOutstandingRate: number;
   };
-  membership: Array<{ period: string; members: number }>;
   loans: Array<{ period: string; amount: number; count: number }>;
   revenue: Array<{ category: string; amount: number }>;
   machinery: Array<{ name: string; operations: number; days: number; revenue: number }>;
-  sales: Array<{ period: string; sales: number; expenses: number; transactions: number }>;
+  /** Kadiwa per day (one month) or per month: goods sold (gross), cost of the store items, expenses, and the net income (sales = gross - expenses - costOfGoods). */
+  sales: Array<{ period: string; gross: number; costOfGoods: number; sales: number; expenses: number; transactions: number }>;
   memberAnalytics: Array<{
     databaseId: number;
     memberId: string | null;
@@ -614,6 +626,11 @@ export interface AnalyticsData {
 
 export const fetchAnalytics = (from: string, to: string) => apiGet<AnalyticsData>(`/api/admin/analytics${query({ from, to })}`);
 
+export interface ShareCapitalBandMember { id: number; memberNumber: string; memberName: string; status: string; shareCapital: number }
+type ShareCapitalBand = Omit<AdminDashboardData['shareCapitalLevels'][number], 'members'>;
+/** The members in one share capital band of the dashboard (a clicked bar), most share capital first. */
+export const fetchShareCapitalBandMembers = (band: ShareCapitalBand['key']) => apiGet<{ band: ShareCapitalBand; members: ShareCapitalBandMember[] }>(`/api/admin/dashboard/share-capital/${band}`);
+
 // ----- Machinery ---------------------------------------------------------------------------
 
 export interface Machinery {
@@ -631,14 +648,21 @@ export interface Machinery {
   parentMachineryId?: string | null;
   // per_service machines are paid per job (per hectare / per 100 bags), not booked by the day.
   pricingMode?: 'per_day' | 'per_service';
+  // What the cooperative paid, for the ROI in Analytics: null = not entered, 0 = a grant.
+  purchaseCost?: number | null;
 }
+
+/** A member's rental, or a non-member's recorded by the office with only a name (memberId null). */
+export type RenterCategory = 'member' | 'non_member';
 
 export interface RentalRequest {
   id: number;
   machineryId: string;
   machineryName: string;
+  clientCategory: RenterCategory;
+  /** The member's name, or the non-member's. */
   memberName: string;
-  memberId: string;
+  memberId: string | null;
   purpose: string;
   startDate: string;
   endDate: string;
@@ -652,8 +676,9 @@ export interface MachineryOperation {
   id: number;
   machineryId: string;
   machineryName: string;
+  clientCategory: RenterCategory;
   memberName: string;
-  memberId: string;
+  memberId: string | null;
   purpose: string;
   startDate: string;
   endDate: string;
@@ -665,7 +690,7 @@ export interface MachineryOperation {
 export async function fetchAdminMachinery(params: { page?: number; limit?: number } = {}) {
   const data = await apiGet<{ machinery: Record<string, unknown>[]; requests: RentalRequest[]; operations: MachineryOperation[]; operationsPagination: Pagination; summary: Record<string, unknown> }>(`/api/machinery${query(params)}`);
   return {
-    machinery: data.machinery.map((row) => ({ ...(row as unknown as Machinery), dailyFee: toNumber(row.dailyFee) })),
+    machinery: data.machinery.map((row) => ({ ...(row as unknown as Machinery), dailyFee: toNumber(row.dailyFee), purchaseCost: row.purchaseCost === null || row.purchaseCost === undefined ? null : toNumber(row.purchaseCost) })),
     requests: data.requests.map((request) => ({ ...request, rentalFee: toNumber(request.rentalFee), duration: toNumber(request.duration) })),
     operations: data.operations.map((operation) => ({ ...operation, rentalFee: toNumber(operation.rentalFee), duration: toNumber(operation.duration) })),
     operationsPagination: data.operationsPagination,
@@ -681,7 +706,8 @@ export async function fetchMachineryCatalog() {
 export const reviewRentalRequest = (id: number, status: 'approved' | 'declined') => apiPatch<{ message: string }>(`/api/machinery/requests/${id}`, { status });
 export const completeMachineryOperation = (id: number) => apiPatch<{ operation: MachineryOperation }>(`/api/machinery/operations/${id}`, { status: 'completed' });
 export const updateMachineryRequest = (id: string, payload: Partial<{ name: string; type: string; dailyFee: string | number; status: 'available' | 'maintenance'; lastMaintenance: string | null; nextMaintenance: string | null }>) => apiPatch<{ machinery: Machinery }>(`/api/machinery/${id}`, payload);
-export const createRentalRequest = (payload: { machineryId: string; startDate: string; endDate: string; purpose: string; notes: string; memberDatabaseId?: number }) =>
+/** Members book for themselves; the office books for a member (memberDatabaseId) or a non-member (clientCategory 'non_member' and clientName). */
+export const createRentalRequest = (payload: { machineryId: string; startDate: string; endDate: string; purpose: string; notes: string; memberDatabaseId?: number; clientCategory?: RenterCategory; clientName?: string }) =>
   apiPost<{ request: RentalRequest }>('/api/machinery/requests', payload);
 
 // ----- Kadiwa ------------------------------------------------------------------------------------

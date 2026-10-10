@@ -332,7 +332,8 @@ export interface MemberSavingsEntry {
   createdAt?: string;
 }
 
-export interface MemberSavingsSummary { balance: number; deposits: number; withdrawals: number; transactions: number }
+/** maintainingBalance must stay in savings (PHP 500, or 0 for a terminated member); withdrawable is the most a withdrawal can take now. */
+export interface MemberSavingsSummary { balance: number; deposits: number; withdrawals: number; transactions: number; maintainingBalance: number; withdrawable: number }
 
 /** One member's savings history, newest first. */
 export function fetchMemberSavings(id: number, params: { page?: number; limit?: number } = {}) {

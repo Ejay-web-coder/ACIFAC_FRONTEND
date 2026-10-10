@@ -216,7 +216,7 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
               <label className={labelClass}>From rental request
                 <select value={form.rentalRequestId} onChange={(event) => set('rentalRequestId', event.target.value)} className={inputClass}>
                   <option value="">None</option>
-                  {linkableRequests.map((request) => <option key={request.id} value={request.id}>#{request.id} {request.memberName} · {formatDate(request.startDate, true)}</option>)}
+                  {linkableRequests.map((request) => <option key={request.id} value={request.id}>#{request.id} {request.memberName}{request.clientCategory === 'non_member' ? ' (non-member)' : ''} · {formatDate(request.startDate, true)}</option>)}
                 </select>
               </label>
             )}

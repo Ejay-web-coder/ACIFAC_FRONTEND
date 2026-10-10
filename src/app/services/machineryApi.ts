@@ -220,13 +220,16 @@ export async function fetchPeriodBalances(croppingPeriod: CroppingPeriod, year: 
 export const savePeriodBalance = (payload: { machineryId: string; croppingPeriod: CroppingPeriod; year: number; beginningCash: string; otherIncome: string; notes?: string }) =>
   apiPut<{ balance: PeriodBalance }>('/api/machinery/period-balances', payload);
 
-export const updateMachine = (id: string, payload: Partial<{ name: string; type: string; deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null; pricingMode: PricingMode; dailyFee: string }>) =>
+export const updateMachine = (id: string, payload: Partial<{
+  name: string; type: string; deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null; pricingMode: PricingMode; dailyFee: string;
+  purchaseCost: string | null; lastMaintenance: string | null; nextMaintenance: string | null;
+}>) =>
   apiPatch<{ machinery: Record<string, unknown> }>(`/api/machinery/${encodeURIComponent(id)}`, payload);
 
 /** Adds a machine to the fleet; the server gives it the next M-### id. A blank daily fee is allowed for per-service machines. */
 export async function createMachine(payload: {
   name: string; type: string; pricingMode: PricingMode; dailyFee: string; status: 'available' | 'maintenance'; acquisitionDate: string;
-  deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null;
+  deliveryDate: string | null; condition: MachineCondition | null; parentMachineryId: string | null; purchaseCost: string | null;
 }): Promise<Machinery> {
   const { machinery } = await apiPost<{ machinery: Record<string, unknown> }>('/api/machinery', payload);
   return { ...(machinery as unknown as Machinery), dailyFee: toNumber(machinery.dailyFee) };
@@ -401,3 +404,128 @@ export async function saveReportForm(form: ReportForm) {
   const data = await apiPut<{ form: Record<string, unknown> }>('/api/machinery/reports/philmech/form', { ...payload, submissionDate: form.submissionDate || null });
   return mapReportForm(data.form);
 }
+
+// ----- Fleet analytics (Analytics page) -----------------------------------------------------------
+// Amounts arrive as numbers in pesos; the backend does every calculation.
+
+export type AlertSeverity = 'high' | 'medium' | 'low';
+export type RecommendationType = 'buy' | 'rates' | 'retire' | 'maintenance' | 'schedule' | 'promote' | 'other';
+
+export interface FleetAlert { machineryId: string; machineryName: string; kind: string; severity: AlertSeverity; message: string }
+
+export interface FleetPeriodFigures {
+  usedDays: number;
+  ownedDays: number;
+  /** Used days / owned days x 100; null when the machine was not owned in the period up to today. */
+  utilization: number | null;
+  bookings: number;
+  bookedDays: number;
+  jobs: number;
+  areaHa: number;
+  requestsSent: number;
+  declined: number;
+  revenue: number;
+  rentalRevenue: number;
+  serviceRevenue: number;
+  uncollected: number;
+  cost: number;
+  costByCategory: Record<ExpenseCategory, number>;
+  net: number;
+  downtimeDays: number;
+  downtimeEvents: number;
+}
+
+export interface MachineRoi {
+  id: string;
+  name: string;
+  type: string;
+  inServiceFrom: string;
+  purchaseCost: number | null;
+  yearsOwned: number;
+  lifetimeRevenue: number;
+  lifetimeCost: number;
+  lifetimeNet: number;
+  netPerYear: number | null;
+  /** Lifetime net as a % of the purchase cost. */
+  earnedBack: number | null;
+  roiPerYear: number | null;
+  paybackYears: number | null;
+  yearsToPayback: number | null;
+  status: 'ok' | 'no_cost' | 'grant' | 'too_new';
+}
+
+export interface FleetMachine extends FleetPeriodFigures {
+  id: string;
+  name: string;
+  type: string;
+  status: Machinery['status'];
+  condition: MachineCondition | null;
+  pricingMode: PricingMode;
+  parentMachineryId: string | null;
+  dailyFee: number;
+  lastMaintenance: string | null;
+  nextMaintenance: string | null;
+  downSince: string | null;
+  downtimeStartUnknown: boolean;
+  alerts: FleetAlert[];
+  last12: FleetPeriodFigures;
+  roi: MachineRoi;
+}
+
+export interface UpcomingBooking {
+  kind: 'booking' | 'request';
+  id: number;
+  machineryId: string;
+  machineryName: string;
+  memberName: string;
+  startDate: string;
+  endDate: string;
+  duration: number;
+  status: string;
+  /** A pending request whose dates are already booked. */
+  conflict: boolean;
+}
+
+export interface Recommendation { type: RecommendationType; priority: AlertSeverity; machineId: string | null; machine: string | null; title: string; reason: string; impact: string }
+
+export interface FleetAnalytics {
+  period: { from: string; to: string; today: string; elapsedDays: number };
+  fleet: {
+    machines: number; inMaintenance: number; inUse: number; usedDays: number; ownedDays: number; utilization: number | null;
+    revenue: number; rentalRevenue: number; serviceRevenue: number; uncollected: number; cost: number; net: number;
+    downtimeDays: number; availability: number | null;
+  };
+  bookings: {
+    requests: { submitted: number; pending: number; approved: number; declined: number; pendingNow: number; approvalRate: number | null; avgLeadDays: number | null; avgReviewHours: number | null };
+    operations: { scheduled: number; ongoing: number; completed: number; bookedDays: number };
+    services: { jobs: number; areaHa: number };
+    upcoming: UpcomingBooking[];
+  };
+  machines: FleetMachine[];
+  alerts: FleetAlert[];
+  forecast: {
+    history: Array<{ month: string; label: string; machineDays: number; jobs: number; partial: boolean }>;
+    forecast: Array<{ month: string; label: string; machineDays: number; basis: string }>;
+    trend: number;
+    monthsOfHistory: number;
+    peakMonths: string[];
+    insufficientData: boolean;
+  };
+  ruleRecommendations: Recommendation[];
+  methodology: Record<'utilization' | 'revenue' | 'cost' | 'downtime' | 'forecast' | 'roi' | 'rules', string>;
+}
+
+export interface FleetRecommendations {
+  source: 'ai' | 'rules';
+  period: { from: string; to: string };
+  generatedAt: string;
+  summary: string;
+  recommendations: Recommendation[];
+  /** Why the rule-based recommendations are shown instead of the AI's. */
+  notice: string;
+  methodology: string;
+}
+
+export const fetchFleetAnalytics = (from: string, to: string) => apiGet<FleetAnalytics>(`/api/admin/analytics/machinery${query({ from, to })}`);
+/** Each call asks the AI, so it is made only when an admin opens or refreshes the recommendations. */
+export const fetchFleetRecommendations = (from: string, to: string) => apiPost<FleetRecommendations>('/api/admin/analytics/machinery/recommendations', { from, to });

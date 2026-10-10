@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Download, TrendingUp, AlertTriangle, Users, X } from 'lucide-react';
+import { BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { Download, AlertTriangle } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { fetchAnalytics, type AnalyticsData } from '../../app/services/authApi';
+import { FleetAnalytics } from '../components/machinery/FleetAnalytics';
 import { toast } from 'sonner';
 
 const COLORS = ['#276221', '#52a447', '#8bca84', '#3b8132', '#acd8a7', '#5bb450'];
@@ -75,8 +76,6 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
   // Re-runs the analytics query only when underlying records change (no polling).
   useLiveRefresh(['members', 'loans', 'loan_payments', 'loan_requests', 'share_contributions', 'machinery_operations', 'kadiwa_sales'], () => setRefreshKey((key) => key + 1), 2000);
   const [loading, setLoading] = useState(true);
-  const [selectedMember, setSelectedMember] = useState<AnalyticsData['memberAnalytics'][number] | null>(null);
-  const [section, setSection] = useState<'system' | 'member'>('system');
   const selectionRef = useRef({ month: selectedMonth, year: selectedYear });
   selectionRef.current = { month: selectedMonth, year: selectedYear };
   const calendarRef = useRef({ month: today.getMonth(), year: today.getFullYear() });
@@ -139,23 +138,6 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
   }, [period.from, period.to, refreshKey]);
 
   const summary = data?.summary;
-  const empty = loading ? 'Loading...' : '₱0';
-  const systemCards: Array<[string, string | number, string]> = [
-    ['Operating Revenue', summary ? formatCurrency(summary.totalOperatingRevenue) : empty, 'Interest + machinery + Kadiwa'],
-    ['Active Members', summary ? summary.activeMembers.toLocaleString() : loading ? 'Loading...' : '0', summary ? `+${summary.newMembers} in period` : 'No data'],
-    ['Loan Payments', summary ? formatCurrency(summary.loanPayments) : empty, summary ? `${summary.paymentToOutstandingRate}% paid vs outstanding` : 'No data'],
-    ['Outstanding Balance', summary ? formatCurrency(summary.outstandingBalance) : empty, summary ? `${summary.overdueLoans} overdue loan(s)` : 'No data'],
-    ['Total Outstanding Loans', summary ? formatCurrency(summary.outstandingBalance) : empty, 'Active and overdue balances'],
-    ['Loan Applications', summary ? summary.loanApplications.toLocaleString() : loading ? 'Loading...' : '0', summary ? `${summary.pendingLoanApplications} pending review` : 'No data'],
-    ['Requested Amount', summary ? formatCurrency(summary.requestedLoanAmount) : empty, 'Applications submitted in period'],
-    ['Projected Repayment', summary ? formatCurrency(summary.projectedRepayment) : empty, 'Includes approved or pending application estimates'],
-  ];
-  const memberCards: Array<[string, string | number, string]> = [
-    ['Members with Good Repayment Records', data ? data.memberAnalytics.filter((member) => ['Excellent', 'Good'].includes(member.repaymentRating)).length : empty, 'Excellent or Good rating'],
-    ['Top Share Holder', data?.memberAnalytics[0]?.memberName || (loading ? 'Loading...' : 'No data'), data?.memberAnalytics[0] ? formatCurrency(data.memberAnalytics[0].shareCapital) : 'No data'],
-    ['Total Share Capital', data ? formatCurrency(data.memberAnalytics.reduce((total, member) => total + member.shareCapital, 0)) : empty, 'All active members'],
-    ['Members Recommended for Loan Review', data ? data.memberAnalytics.filter((member) => ['Strong', 'Good'].includes(member.assessment)).length : empty, 'Decision support only'],
-  ];
   const revenue = data?.revenue || [];
 
   return (
@@ -163,10 +145,6 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div><p className="mt-1 text-gray-600">Live cooperative performance for {periodLabel}</p></div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-          {/* The button names the view it switches to. */}
-          <button type="button" onClick={() => setSection(section === 'member' ? 'system' : 'member')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-            {section === 'member' ? <><TrendingUp className="h-4 w-4" /> Acifac</> : <><Users className="h-4 w-4" /> Member</>}
-          </button>
           <select value={dateRange} onChange={(event) => setDateRange(event.target.value as typeof dateRange)} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm"><option value="month">By Month</option><option value="quarter">By Quarter</option><option value="year">By Year</option></select>
           {dateRange === 'month' && <select value={selectedMonth} onChange={(event) => setSelectedMonth(Number(event.target.value))} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm">{monthNames.map((month, index) => <option key={month} value={index}>{month}</option>)}</select>}
           {dateRange === 'quarter' && <select value={Math.floor(selectedMonth / 3) * 3} onChange={(event) => setSelectedMonth(Number(event.target.value))} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm">{[0, 3, 6, 9].map((index) => <option key={index} value={index}>Q{index / 3 + 1}</option>)}</select>}
@@ -176,68 +154,72 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
       </div>
 
       {summary && summary.overdueLoans > 0 && <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="alert"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" /><span>{summary.overdueLoans} loan(s) are overdue with {formatCurrency(summary.outstandingBalance)} currently outstanding.</span></div>}
-      {section === 'system' && <>
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4 xl:grid-cols-4">{systemCards.map(([label, value, detail]) => <MetricCard key={label} label={label} value={value} detail={detail} />)}</div>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <ChartPanel title="New Memberships"><LineChart data={data?.membership || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Line type="monotone" dataKey="members" name="Members" stroke="#3b8132" strokeWidth={2.5} dot={{ r: 3, fill: '#3b8132' }} activeDot={{ r: 5 }} /></LineChart></ChartPanel>
-          <ChartPanel title="Loan Disbursement"><BarChart data={data?.loans || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="amount" name="Amount" fill="#52a447" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
-        </div>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Operating Revenue Breakdown</h2><div className="h-[300px]">{revenue.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}><PieChart><Pie data={revenue} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${String(name ?? '')}: ${(Number(percent ?? 0) * 100).toFixed(0)}%`}>{revenue.map((entry, index) => <Cell key={entry.category} fill={COLORS[index % COLORS.length]} />)}</Pie><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer> : <EmptyState loading={loading} />}</div></div>
-          <ChartPanel title="Kadiwa Net Sales"><LineChart data={data?.sales || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Line type="monotone" dataKey="sales" name="Net sales" stroke="#276221" strokeWidth={2.5} dot={{ r: 3, fill: '#276221' }} /><Line type="monotone" dataKey="expenses" name="Expenses" stroke="#72bf6a" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3, fill: '#72bf6a' }} /></LineChart></ChartPanel>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Machinery Revenue and Usage</h2>{data?.machinery.length ? <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-3">Machinery</th><th className="pb-3">Operations</th><th className="pb-3">Days</th><th className="pb-3 text-right">Revenue</th></tr></thead><tbody>{(data?.machinery || []).map((machine) => <tr key={machine.name} className="border-b last:border-0"><td className="py-3 font-medium text-gray-900">{machine.name}</td><td className="py-3">{machine.operations}</td><td className="py-3">{machine.days}</td><td className="py-3 text-right font-medium">{formatCurrency(machine.revenue)}</td></tr>)}</tbody></table></div> : <EmptyState loading={loading} />}</div>
-      </>}
-      {section === 'member' && <>
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4 xl:grid-cols-4">{memberCards.map(([label, value, detail]) => <MetricCard key={label} label={label} value={value} detail={detail} />)}</div>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <ChartPanel title="Loan Repayment Performance"><BarChart data={data?.repaymentRatings || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="rating" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Bar dataKey="members" name="Members" fill="#3b8132" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
-          <ChartPanel title="Largest Share Holders"><BarChart data={(data?.memberAnalytics || []).slice(0, 5)} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} type="number" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} type="category" dataKey="memberName" width={90} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="shareCapital" name="Share capital" fill="#52a447" radius={[0, 6, 6, 0]} maxBarSize={28} /></BarChart></ChartPanel>
-          <ChartPanel title="Loan Capacity Recommendation (rule-based)"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="assessment" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
-        </div>
-        <AnalyticsMembers members={data?.memberAnalytics || []} loading={loading} onSelect={setSelectedMember} />
-      </>}
-
-      {false && <><div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartPanel title="New Memberships"><LineChart data={data?.membership || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Line type="monotone" dataKey="members" name="Members" stroke="#3b8132" strokeWidth={2.5} dot={{ r: 3, fill: '#3b8132' }} activeDot={{ r: 5 }} /></LineChart></ChartPanel>
-        <ChartPanel title="Loan Disbursement"><BarChart data={data?.loans || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="amount" name="Amount" fill="#52a447" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <ChartPanel title="Loan Repayment Performance"><BarChart data={data?.repaymentRatings || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="rating" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Bar dataKey="members" name="Members" fill="#3b8132" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
-        <ChartPanel title="Largest Share Holders"><BarChart data={(data?.memberAnalytics || []).slice(0, 5)} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} type="number" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} type="category" dataKey="memberName" width={90} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="shareCapital" name="Share capital" fill="#52a447" radius={[0, 6, 6, 0]} maxBarSize={28} /></BarChart></ChartPanel>
-        <ChartPanel title="Loan Capacity Recommendation (rule-based)"><BarChart data={data?.loanCapacity || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="assessment" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} /><Bar dataKey="members" name="Members" fill="#d97706" /></BarChart></ChartPanel>
-      </div>
-
-      <AnalyticsMembers members={data?.memberAnalytics || []} loading={loading} onSelect={setSelectedMember} />
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Operating Revenue Breakdown</h2><div className="h-[300px]">{data?.revenue.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}><PieChart><Pie data={data?.revenue || []} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${String(name ?? '')}: ${(Number(percent ?? 0) * 100).toFixed(0)}%`}>{(data?.revenue || []).map((entry, index) => <Cell key={entry.category} fill={COLORS[index % COLORS.length]} />)}</Pie><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer> : <EmptyState loading={loading} />}</div></div>
-        <ChartPanel title="Kadiwa Net Sales"><LineChart data={data?.sales || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Line type="monotone" dataKey="sales" name="Net sales" stroke="#276221" strokeWidth={2.5} dot={{ r: 3, fill: '#276221' }} /><Line type="monotone" dataKey="expenses" name="Expenses" stroke="#72bf6a" strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3, fill: '#72bf6a' }} /></LineChart></ChartPanel>
+        <ChartPanel title="Loan Disbursement"><BarChart data={data?.loans || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="amount" name="Amount" fill="#52a447" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Operating Revenue Breakdown</h2><div className="h-[300px]">{revenue.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}><PieChart><Pie data={revenue} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${String(name ?? '')}: ${(Number(percent ?? 0) * 100).toFixed(0)}%`}>{revenue.map((entry, index) => <Cell key={entry.category} fill={COLORS[index % COLORS.length]} />)}</Pie><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer> : <EmptyState loading={loading} />}</div></div>
       </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Machinery Revenue and Usage</h2>{data?.machinery.length ? <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-3">Machinery</th><th className="pb-3">Operations</th><th className="pb-3">Days</th><th className="pb-3 text-right">Revenue</th></tr></thead><tbody>{(data?.machinery || []).map((machine) => <tr key={machine.name} className="border-b last:border-0"><td className="py-3 font-medium text-gray-900">{machine.name}</td><td className="py-3">{machine.operations}</td><td className="py-3">{machine.days}</td><td className="py-3 text-right font-medium">{formatCurrency(machine.revenue)}</td></tr>)}</tbody></table></div> : <EmptyState loading={loading} />}</div></>}
-      {selectedMember && <MemberDetail member={selectedMember} onClose={() => setSelectedMember(null)} />}
+      {/* Full width so a month's daily bars have room. */}
+      <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />
+      {/* Bookings, utilization, revenue and cost per machine, maintenance and downtime; the forecast, ROI and AI recommendations open from its button. */}
+      <FleetAnalytics from={period.from} to={period.to} periodLabel={periodLabel} refreshKey={refreshKey} />
     </div>
   );
 }
 
-function AnalyticsMembers({ members, loading, onSelect }: { members: AnalyticsData['memberAnalytics']; loading: boolean; onSelect: (member: AnalyticsData['memberAnalytics'][number]) => void }) {
-  return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><div className="mb-4"><h2 className="text-lg font-bold text-gray-900">Loan Repayment Performance</h2><p className="text-sm text-gray-500">Select a member to review repayment history and decision-support notes.</p></div>{members.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-3">Member</th><th className="pb-3">Member ID</th><th className="pb-3">Completed Loans</th><th className="pb-3">On-Time Rate</th><th className="pb-3">Outstanding</th><th className="pb-3">Rating</th></tr></thead><tbody>{members.map((member) => <tr key={member.databaseId} onClick={() => onSelect(member)} className="cursor-pointer border-b last:border-0 hover:bg-gray-50"><td className="py-3 font-medium text-gray-900">{member.memberName || 'Unknown Member'}</td><td className="py-3">{member.memberId || '—'}</td><td className="py-3">{member.completedLoans}</td><td className="py-3">{member.paymentCount ? `${member.onTimePaymentRate}%` : 'Insufficient data'}</td><td className="py-3">{formatCurrency(member.outstandingBalance)}</td><td className="py-3">{member.repaymentRating}</td></tr>)}</tbody></table></div> : <EmptyState loading={loading} />}</div>;
+// Teal, orange and blue stay apart for color-blind viewers (checked with the
+// data-viz palette validator); the store's greens and an orange do not.
+const KADIWA_COLORS = { gross: '#1baf7a', expenses: '#eb6834', net: '#2a78d6' };
+type KadiwaRow = AnalyticsData['sales'][number];
+
+/**
+ * Kadiwa sales against expenses, with the net income (total sold - cost of
+ * goods - expenses) as the line between them. One month is plotted day by day
+ * (the server fills days without a sale with 0); longer periods month by month.
+ */
+function KadiwaChart({ rows, daily, loading }: { rows: KadiwaRow[]; daily: boolean; loading: boolean }) {
+  // No line point on a day without a sale, so the line does not dip to 0 between sale days.
+  // No animation: the page re-fetches as sales come in, and bars growing in again each time would leave the line alone for a moment.
+  const points = rows.map((row) => ({ ...row, net: row.transactions ? row.sales : null }));
+  const total = (key: 'gross' | 'expenses' | 'sales') => rows.reduce((sum, row) => sum + row[key], 0);
+  const totals: Array<[string, string, number]> = [
+    ['Total sold', KADIWA_COLORS.gross, total('gross')],
+    ['Expenses', KADIWA_COLORS.expenses, total('expenses')],
+    ['Net income', KADIWA_COLORS.net, total('sales')],
+  ];
+  return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6">
+    <h2 className="text-lg font-bold text-gray-900">{daily ? 'Kadiwa Daily Sales, Expenses and Net Income' : 'Kadiwa Sales, Expenses and Net Income'}</h2>
+    {/* The legend, with the totals for the period. */}
+    <ul className="mb-4 mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">{totals.map(([label, color, value]) => <li key={label} className="flex items-center gap-2 text-gray-600"><span aria-hidden="true" className={label === 'Net income' ? 'h-0.5 w-4 rounded-full' : 'h-3 w-3 rounded-sm'} style={{ background: color }} />{label} <span className={`font-semibold tabular-nums ${value < 0 ? 'text-red-700' : 'text-gray-900'}`}>{formatCurrency(value)}</span></li>)}</ul>
+    <div className="h-[300px]">{rows.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}>
+      <ComposedChart data={points} barGap={2}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} />
+        <XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" minTickGap={12} />
+        <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} />
+        <ReferenceLine y={0} stroke="#c9cdc9" />
+        <Tooltip cursor={{ fill: 'rgba(139,202,132,0.12)' }} content={({ active, payload }) => active && payload?.length ? <KadiwaTooltip row={payload[0].payload as KadiwaRow} /> : null} />
+        <Bar dataKey="gross" name="Total sold" fill={KADIWA_COLORS.gross} radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+        <Bar dataKey="expenses" name="Expenses" fill={KADIWA_COLORS.expenses} radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />
+        <Line type="linear" dataKey="net" name="Net income" stroke={KADIWA_COLORS.net} strokeWidth={2} dot={{ r: 4, fill: KADIWA_COLORS.net, stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />
+      </ComposedChart>
+    </ResponsiveContainer> : <EmptyState loading={loading} />}</div>
+  </div>;
 }
 
-function MemberDetail({ member, onClose }: { member: AnalyticsData['memberAnalytics'][number]; onClose: () => void }) {
-  return <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-label="Member analytics details"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-xl font-bold text-gray-900">{member.memberName}</h2><p className="text-sm text-gray-500">Member ID: {member.memberId || '—'}</p></div><button onClick={onClose} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close member details"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4"><Detail label="Share Capital" value={formatCurrency(member.shareCapital)} /><Detail label="Savings" value={formatCurrency(member.savings)} /><Detail label="Completed Loans" value={String(member.completedLoans)} /><Detail label="Active Loans" value={String(member.activeLoans)} /><Detail label="Total Borrowed" value={formatCurrency(member.totalBorrowed)} /><Detail label="Total Paid" value={formatCurrency(member.totalPaid)} /><Detail label="Outstanding" value={formatCurrency(member.outstandingBalance)} /><Detail label="On-Time Rate" value={member.paymentCount ? `${member.onTimePaymentRate}%` : 'Insufficient data'} /></div><div className="mt-6 rounded-lg border border-gray-200 p-4"><h3 className="font-semibold text-gray-900">Loan Capacity Recommendation (rule-based)</h3><p className="mt-2 text-sm"><strong>Assessment:</strong> {member.assessment}</p><p className="mt-1 text-sm"><strong>Recommendation:</strong> {member.recommendation}</p>{member.reasons.length > 0 && <><p className="mt-3 text-sm font-semibold">Why this member was recommended:</p><ul className="mt-1 list-disc pl-5 text-sm text-gray-600">{member.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></>}</div><div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Loan History</h3>{member.loanHistory.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-gray-500"><th className="pb-2">Loan</th><th className="pb-2">Status</th><th className="pb-2">Borrowed</th><th className="pb-2">Paid</th><th className="pb-2">Balance</th></tr></thead><tbody>{member.loanHistory.map((loan) => <tr key={loan.id} className="border-b last:border-0"><td className="py-2">{loan.loanNumber}</td><td className="py-2">{loan.status}</td><td className="py-2">{formatCurrency(Number(loan.amount))}</td><td className="py-2">{formatCurrency(Number(loan.totalPaid))}</td><td className="py-2">{formatCurrency(Number(loan.balance))}</td></tr>)}</tbody></table></div> : <p className="text-sm text-gray-500">Insufficient data</p>}</div></div></div>;
-}
-
-function Detail({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-gray-500">{label}</p><p className="mt-1 font-semibold text-gray-900">{value}</p></div>; }
-
-function MetricCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
-  return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-5"><div className="mb-2 flex items-center justify-between"><p className="text-sm text-gray-600">{label}</p><TrendingUp className="h-4 w-4 text-green-600" /></div><p className="text-2xl font-bold text-gray-900">{value}</p><p className="mt-1 text-xs text-gray-500">{detail}</p></div>;
+function KadiwaTooltip({ row }: { row: KadiwaRow }) {
+  const line = (label: string, color: string, value: number, strong = false) => <div className="flex items-center justify-between gap-6"><span className="flex items-center gap-2 text-gray-600"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} />{label}</span><span className={`tabular-nums ${strong ? 'font-semibold' : ''} ${value < 0 ? 'text-red-700' : 'text-gray-900'}`}>{formatCurrency(value)}</span></div>;
+  return <div className="min-w-[200px] space-y-1 bg-white p-3 text-[13px]" style={TOOLTIP_STYLE}>
+    <p className="font-semibold text-gray-900">{row.period}</p>
+    {row.transactions ? <>
+      {line('Total sold', KADIWA_COLORS.gross, row.gross)}
+      {line('Expenses', KADIWA_COLORS.expenses, row.expenses)}
+      {row.costOfGoods > 0 && line('Cost of store items', '#9ca3af', row.costOfGoods)}
+      <div className="border-t border-gray-100 pt-1">{line('Net income', KADIWA_COLORS.net, row.sales, true)}</div>
+    </> : <p className="text-gray-500">No sale</p>}
+  </div>;
 }
 
 function ChartPanel({ title, children }: { title: string; children: React.ReactElement }) {
   return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">{title}</h2><div className="h-[300px]"><ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}>{children}</ResponsiveContainer></div></div>;
 }
 
-function EmptyState({ loading }: { loading: boolean }) { return <div className="flex h-full items-center justify-center text-sm text-gray-500">{loading ? 'Loading live data...' : 'No data for this period.'}</div>; }
+function EmptyState({ loading, message = 'No data for this period.' }: { loading: boolean; message?: string }) { return <div className="flex h-full items-center justify-center text-sm text-gray-500">{loading ? 'Loading live data...' : message}</div>; }

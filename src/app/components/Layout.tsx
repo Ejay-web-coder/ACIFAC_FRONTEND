@@ -26,6 +26,7 @@ import {
   Search,
   BellOff,
   History,
+  CalendarCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../App';
@@ -87,6 +88,7 @@ const navigation: NavItem[] = [
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
   { name: 'Activity Log', href: '/activity-log', icon: History, roles: ['member'], group: 'My Account', aliases: ['/member/activity'], short: 'Log' },
   { name: 'Members', href: '/membership', icon: Users, roles: ['admin'], group: 'Members', aliases: ['/admin/members'], short: 'Members' },
+  { name: 'Attendance', href: '/attendance', icon: CalendarCheck, roles: ['admin'], group: 'Members', aliases: ['/admin/attendance'], short: 'Attendance' },
   { name: 'Loans & Payments', href: '/loans', icon: PhilippinePeso, roles: ['admin'], group: 'Finance', aliases: ['/admin/loans'], short: 'Loans' },
   { name: 'Savings', href: '/admin/savings', icon: Wallet, roles: ['admin'], group: 'Finance', short: 'Savings' },
   { name: 'Machinery Operations', href: '/machinery', icon: Tractor, roles: ['admin'], group: 'Operations', aliases: ['/admin/machinery'], short: 'Machinery' },

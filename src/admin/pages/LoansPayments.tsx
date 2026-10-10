@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
@@ -61,9 +62,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loanRequests, setLoanRequests] = useState<LoanRequest[]>([]);
-  const [activeTab, setActiveTab] = useState<'loans' | 'payments' | 'requests'>('loans');
+  // The dashboard links here with ?tab=requests or ?status=overdue.
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'loans' | 'payments' | 'requests'>(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'payments' || tab === 'requests' ? tab : 'loans';
+  });
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'paid' | 'overdue'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'paid' | 'overdue'>(() => {
+    const status = searchParams.get('status');
+    return status === 'active' || status === 'paid' || status === 'overdue' ? status : 'all';
+  });
   const [showAddLoanModal, setShowAddLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   // Payments are received on weekdays during office hours only.

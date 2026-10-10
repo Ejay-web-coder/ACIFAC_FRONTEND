@@ -19,6 +19,9 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
     condition: (machine.condition ?? '') as MachineCondition | '',
     pricingMode: (machine.pricingMode ?? 'per_day') as PricingMode,
     parentMachineryId: machine.parentMachineryId ?? '',
+    purchaseCost: machine.purchaseCost === null || machine.purchaseCost === undefined ? '' : machine.purchaseCost.toFixed(2),
+    lastMaintenance: machine.lastMaintenance ?? '',
+    nextMaintenance: machine.nextMaintenance ?? '',
   });
   const [rates, setRates] = useState<ServiceRate[]>([]);
   const [rateForm, setRateForm] = useState({ serviceType: '', unit: 'per_ha' as ServiceUnit, memberRate: '', nonMemberRate: '', effectiveFrom: '', effectiveTo: '' });
@@ -40,6 +43,8 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
       toast.error(details.pricingMode === 'per_day' ? 'Enter the rental fee per day.' : 'Enter a valid daily fee or leave it blank.');
       return;
     }
+    const cost = details.purchaseCost.trim().replace(/,/g, '');
+    if (cost && !/^\d+(\.\d{1,2})?$/.test(cost)) { toast.error('Enter a valid purchase cost, 0 for a grant, or leave it blank.'); return; }
     setBusy(true);
     try {
       await updateMachine(machine.id, {
@@ -50,6 +55,9 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
         condition: details.condition || null,
         pricingMode: details.pricingMode,
         parentMachineryId: details.parentMachineryId || null,
+        purchaseCost: cost || null,
+        lastMaintenance: details.lastMaintenance || null,
+        nextMaintenance: details.nextMaintenance || null,
       });
       toast.success(`${machine.name} updated`);
       onChanged();
@@ -134,6 +142,16 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
             {parents.map((row) => <option key={row.id} value={row.id}>{row.name} ({row.id})</option>)}
           </select>
         </label>
+        <label className={labelClass}>Purchase cost
+          <input inputMode="decimal" value={details.purchaseCost} onChange={(event) => setDetails({ ...details, purchaseCost: event.target.value })} className={inputClass} placeholder="Optional; 0 = grant" />
+        </label>
+        <label className={labelClass}>Last maintenance
+          <input type="date" value={details.lastMaintenance} onChange={(event) => setDetails({ ...details, lastMaintenance: event.target.value })} className={inputClass} />
+        </label>
+        <label className={labelClass}>Next maintenance
+          <input type="date" value={details.nextMaintenance} onChange={(event) => setDetails({ ...details, nextMaintenance: event.target.value })} className={inputClass} />
+        </label>
+        <p className="self-end pb-2 text-xs text-gray-500">The purchase cost and maintenance dates feed the ROI and maintenance alerts in Analytics.</p>
         <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-2 lg:col-span-4">
           <p className="text-xs text-gray-500">
             {implementsList.length > 0 ? `Implements attached: ${implementsList.map((row) => row.name).join(', ')}.` : 'Implements such as a Rotavator are attached to the tractor that pulls them.'}

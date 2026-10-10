@@ -5,6 +5,7 @@ import { useMyMemberData } from '../../lib/useMyMemberData';
 import { MemberDividendSection, peso, percent, useMyDividend } from '../components/MemberDividend';
 import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
+import { ParticipationProfile } from '../../app/components/attendance/ParticipationProfile';
 
 interface MemberProfileProps {
   userRole: UserRole;
@@ -160,6 +161,8 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
           </table>
         </div>
       </div>
+
+      <ParticipationProfile variant="member" />
 
       {/* Contact Information */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">

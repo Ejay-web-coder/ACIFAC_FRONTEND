@@ -28,6 +28,7 @@ const RentalBooking = lazy(() => import('../member/pages/RentalBooking').then((m
 const ActivityLog = lazy(() => import('../member/pages/ActivityLog').then((module) => ({ default: module.ActivityLog })));
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
+const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
 
 export type UserRole = 'admin' | 'member';
 
@@ -140,6 +141,7 @@ export default function App() {
           <Route path="/rental-booking" element={<RoleRoute userRole={userRole} allowedRole="member"><RentalBooking userRole={userRole} /></RoleRoute>} />
           <Route path="/activity-log" element={<RoleRoute userRole={userRole} allowedRole="member"><ActivityLog /></RoleRoute>} />
           <Route path="/membership" element={<RoleRoute userRole={userRole} allowedRole="admin"><MembershipManagement userRole={userRole} /></RoleRoute>} />
+          <Route path="/attendance" element={<RoleRoute userRole={userRole} allowedRole="admin"><Attendance userRole={userRole} /></RoleRoute>} />
           <Route path="/loans" element={<RoleRoute userRole={userRole} allowedRole="admin"><LoansPayments userRole={userRole} /></RoleRoute>} />
           <Route path="/machinery" element={<RoleRoute userRole={userRole} allowedRole="admin"><MachineryOperations userRole={userRole} /></RoleRoute>} />
           <Route path="/kadiwa" element={<RoleRoute userRole={userRole} allowedRole="admin"><KadiwaStore userRole={userRole} /></RoleRoute>} />
@@ -149,6 +151,7 @@ export default function App() {
           <Route path="/admin/savings" element={<RoleRoute userRole={userRole} allowedRole="admin"><Savings userRole={userRole} view="total" /></RoleRoute>} />
           <Route path="/admin/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/members" element={<RoleRoute userRole={userRole} allowedRole="admin"><MembershipManagement userRole={userRole} /></RoleRoute>} />
+          <Route path="/admin/attendance" element={<RoleRoute userRole={userRole} allowedRole="admin"><Attendance userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/loans" element={<RoleRoute userRole={userRole} allowedRole="admin"><LoansPayments userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/machinery" element={<RoleRoute userRole={userRole} allowedRole="admin"><MachineryOperations userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/kadiwa" element={<RoleRoute userRole={userRole} allowedRole="admin"><KadiwaStore userRole={userRole} /></RoleRoute>} />

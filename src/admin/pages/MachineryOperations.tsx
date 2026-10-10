@@ -5,7 +5,7 @@ import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type MemberSuggestion } from '../../app/services/authApi';
+import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type RenterCategory, type MemberSuggestion } from '../../app/services/authApi';
 import { formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
@@ -41,15 +41,17 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
   const memberSearchRequest = useRef(0);
   const memberSuggestionRef = useRef<HTMLDivElement>(null);
+  // A rental is for a member (picked from the members, with their member ID)
+  // or for a non-member, who is recorded by name only.
+  const [renterType, setRenterType] = useState<RenterCategory>('member');
   const [formData, setFormData] = useState({
     machineryId: '',
     memberName: '',
     memberId: '',
+    clientName: '',
     purpose: '',
     startDate: '',
-    endDate: '',
-    duration: 0,
-    rentalFee: 0
+    endDate: ''
   });
 
   const machineryPages = usePagination(machinery, { pageSize: 8 });
@@ -89,7 +91,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
   useEffect(() => {
     const search = formData.memberName.trim() || formData.memberId.trim();
-    if (!showForm || !search || selectedMemberId !== null) {
+    if (!showForm || renterType !== 'member' || !search || selectedMemberId !== null) {
       setMemberSuggestions([]);
       setShowMemberSuggestions(false);
       return;
@@ -103,7 +105,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       }).catch(error => toast.error(error instanceof Error ? error.message : 'Unable to search members.'));
     }, 300);
     return () => window.clearTimeout(timeout);
-  }, [formData.memberName, formData.memberId, selectedMemberId, showForm]);
+  }, [formData.memberName, formData.memberId, selectedMemberId, showForm, renterType]);
 
   useEffect(() => {
     const closeSuggestions = (event: MouseEvent) => {
@@ -134,7 +136,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       ...prev,
       ...(name === 'memberName' ? { memberName: value, memberId: '' } : {}),
       ...(name === 'memberId' ? { memberId: value, memberName: '' } : {}),
-      ...(name !== 'memberName' && name !== 'memberId' ? { [name]: name === 'duration' || name === 'rentalFee' ? Number(value) : value } : {})
+      ...(name !== 'memberName' && name !== 'memberId' ? { [name]: value } : {})
     }));
     if (name === 'memberName' || name === 'memberId') setShowMemberSuggestions(true);
   };
@@ -146,14 +148,29 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     setShowMemberSuggestions(false);
   };
 
+  // Switching between member and non-member starts the renter's fields over.
+  const chooseRenterType = (type: RenterCategory) => {
+    setRenterType(type);
+    setFormData(prev => ({ ...prev, memberName: '', memberId: '', clientName: '' }));
+    setSelectedMemberId(null);
+    setMemberSuggestions([]);
+    setShowMemberSuggestions(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMemberId) {
+    const clientName = formData.clientName.trim();
+    if (renterType === 'member' && !selectedMemberId) {
       toast.error('Select a member from the suggestions before creating a rental.');
       return;
     }
+    if (renterType === 'non_member' && !clientName) {
+      toast.error('Enter the non-member\'s full name.');
+      return;
+    }
     try {
-      await createRentalRequest({ machineryId: formData.machineryId, memberDatabaseId: selectedMemberId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' });
+      const rental = { machineryId: formData.machineryId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' };
+      await createRentalRequest(renterType === 'member' ? { ...rental, memberDatabaseId: selectedMemberId! } : { ...rental, clientCategory: 'non_member', clientName });
       void loadData();
       toast.success('Rental request created');
     } catch (error) {
@@ -164,12 +181,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       machineryId: '',
       memberName: '',
       memberId: '',
+      clientName: '',
       purpose: '',
       startDate: '',
-      endDate: '',
-      duration: 0,
-      rentalFee: 0
+      endDate: ''
     });
+    setRenterType('member');
     setSelectedMemberId(null);
     setMemberSuggestions([]);
     setShowMemberSuggestions(false);
@@ -227,10 +244,10 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 ring-1 ring-green-100"><ClipboardList className="h-5 w-5 text-green-700" /></span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-bold text-gray-900">Rental Requests from Members</h2>
+                <h2 className="font-bold text-gray-900">Rental Requests</h2>
                 <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{pendingRequests.length} pending</span>
               </div>
-              <p className="text-sm text-gray-600">Review booking requests submitted from the member portal.</p>
+              <p className="text-sm text-gray-600">Review bookings from the member portal and rentals added here, for members and non-members.</p>
             </div>
           </div>
           {pendingRequests.length > 0 ? (
@@ -242,7 +259,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     <h3 className="font-semibold text-gray-900">{request.machineryName}</h3>
                     <span className={`rounded-full px-2 py-1 text-xs font-medium ${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : request.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{request.status}</span>
                   </div>
-                  <p className="mt-1 text-sm text-gray-600">{request.memberName} · {request.memberId} · {request.purpose}</p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {request.memberName} · {request.clientCategory === 'non_member' ? <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Non-member</span> : request.memberId} · {request.purpose}
+                  </p>
                   <p className="mt-1 text-xs text-gray-500">{formatDate(request.startDate)} to {formatDate(request.endDate)} · {request.duration} day(s) · ₱{request.rentalFee.toLocaleString()}</p>
                   {request.notes && <p className="mt-1 text-xs text-gray-500">Note: {request.notes}</p>}
                 </div>
@@ -255,7 +274,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             <div className="px-6 py-10 text-center">
               <ClipboardList className="mx-auto h-10 w-10 text-gray-300" />
               <p className="mt-3 text-sm font-medium text-gray-700">No pending rental requests</p>
-              <p className="mt-1 text-sm text-gray-500">New member booking requests will appear here for review.</p>
+              <p className="mt-1 text-sm text-gray-500">New booking requests will appear here for review.</p>
             </div>
           )}
         </div>
@@ -336,27 +355,42 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Machinery ID
-                  </label>
-                  <select
-                    name="machineryId"
-                    value={formData.machineryId}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
-                  >
-                    <option value="">Select machinery</option>
-                    {machinery.filter(m => m.pricingMode !== 'per_service').map(m => (
-                      <option key={m.id} value={m.id} disabled={m.status === 'maintenance'}>
-                        {m.name} — ₱{m.dailyFee.toLocaleString('en-PH')}/day{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
-                      </option>
-                    ))}
-                  </select>
+              <fieldset>
+                <legend className="mb-1 block text-sm font-medium text-gray-700">Rented by</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1" role="radiogroup" aria-label="Rented by">
+                  {([['member', 'Member', 'Needs a member ID'], ['non_member', 'Non-member', 'Name only']] as const).map(([value, label, hint]) => (
+                    <button key={value} type="button" role="radio" aria-checked={renterType === value} onClick={() => chooseRenterType(value)}
+                      className={`rounded-lg px-3 py-2 text-left ${renterType === value ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:text-gray-900'}`}>
+                      <span className="block text-sm font-semibold">{label}</span>
+                      <span className="block text-xs text-gray-500">{hint}</span>
+                    </button>
+                  ))}
                 </div>
+              </fieldset>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {renterType === 'non_member' && (
+                  <div className="md:col-span-2">
+                    <label htmlFor="rental-client-name" className="block text-sm font-medium text-gray-700 mb-1">
+                      Full Name
+                    </label>
+                    <input
+                      id="rental-client-name"
+                      type="text"
+                      name="clientName"
+                      value={formData.clientName}
+                      onChange={handleFormChange}
+                      required
+                      maxLength={200}
+                      autoComplete="off"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
+                      placeholder="e.g., Juan Dela Cruz"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Non-members are recorded by name only, with the same daily fee.</p>
+                  </div>
+                )}
+
+                {renterType === 'member' && (<>
                 <div ref={memberSuggestionRef} className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Member Name
@@ -403,6 +437,27 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     placeholder="e.g., ACIFAC-2024-001"
                   />
                 </div>
+                </>)}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Machinery ID
+                  </label>
+                  <select
+                    name="machineryId"
+                    value={formData.machineryId}
+                    onChange={handleFormChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
+                  >
+                    <option value="">Select machinery</option>
+                    {machinery.filter(m => m.pricingMode !== 'per_service').map(m => (
+                      <option key={m.id} value={m.id} disabled={m.status === 'maintenance'}>
+                        {m.name} — ₱{m.dailyFee.toLocaleString('en-PH')}/day{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -444,39 +499,6 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     onChange={handleFormChange}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Duration (days)
-                  </label>
-                  <input
-                    type="number"
-                    name="duration"
-                    value={formData.duration}
-                    onChange={handleFormChange}
-                    required
-                    min="1"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
-                    placeholder="0"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Rental Fee (₱)
-                  </label>
-                  <input
-                    type="number"
-                    name="rentalFee"
-                    value={formData.rentalFee}
-                    onChange={handleFormChange}
-                    required
-                    min="0"
-                    step="100"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
-                    placeholder="0"
                   />
                 </div>
               </div>

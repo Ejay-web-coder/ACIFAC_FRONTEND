@@ -15,7 +15,7 @@ const MONEY = /^\d+(\.\d{1,2})?$/;
 export function AddMachineModal({ machinery, onClose, onAdded }: { machinery: Machinery[]; onClose: () => void; onAdded: (machine: Machinery) => void }) {
   const [form, setForm] = useState({
     name: '', type: '', pricingMode: 'per_day' as PricingMode, dailyFee: '', status: 'available' as 'available' | 'maintenance',
-    acquisitionDate: dateOnlyToday(), deliveryDate: '', condition: 'operational' as MachineCondition | '', parentMachineryId: '',
+    acquisitionDate: dateOnlyToday(), deliveryDate: '', condition: 'operational' as MachineCondition | '', parentMachineryId: '', purchaseCost: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -36,6 +36,8 @@ export function AddMachineModal({ machinery, onClose, onAdded }: { machinery: Ma
     if (!form.acquisitionDate) next.acquisitionDate = 'Acquisition date is required.';
     else if (form.acquisitionDate > dateOnlyToday()) next.acquisitionDate = 'The date cannot be in the future.';
     if (form.deliveryDate && form.deliveryDate > dateOnlyToday()) next.deliveryDate = 'The date cannot be in the future.';
+    const cost = form.purchaseCost.trim().replace(/,/g, '');
+    if (cost && !MONEY.test(cost)) next.purchaseCost = 'Enter a valid amount, 0 for a grant, or leave it blank.';
     setErrors(next);
     if (Object.values(next).some(Boolean) || saving) return;
     setSaving(true);
@@ -43,6 +45,7 @@ export function AddMachineModal({ machinery, onClose, onAdded }: { machinery: Ma
       const machine = await createMachine({
         name: form.name.trim(), type: form.type.trim(), pricingMode: form.pricingMode, dailyFee: fee, status: form.status,
         acquisitionDate: form.acquisitionDate, deliveryDate: form.deliveryDate || null, condition: form.condition || null, parentMachineryId: form.parentMachineryId || null,
+        purchaseCost: cost || null,
       });
       toast.success(`${machine.name} added`, { description: perDay && form.status === 'available' ? 'Members can now book it for rental.' : `${machine.id} is in the fleet.` });
       onAdded(machine);
@@ -100,6 +103,10 @@ export function AddMachineModal({ machinery, onClose, onAdded }: { machinery: Ma
         <label className={labelClass}>Date of delivery
           <input type="date" max={dateOnlyToday()} value={form.deliveryDate} onChange={(event) => set('deliveryDate', event.target.value)} className={inputClass} />
           {fieldError('deliveryDate')}
+        </label>
+        <label className={`${labelClass} sm:col-span-2`}>Purchase cost
+          <input inputMode="decimal" value={form.purchaseCost} onChange={(event) => set('purchaseCost', event.target.value)} className={inputClass} placeholder="Optional, e.g. 850000" />
+          {fieldError('purchaseCost') ?? <span className="mt-1 block text-xs font-normal text-gray-500">For the return on investment in Analytics. Enter 0 for a machine received as a grant.</span>}
         </label>
         <label className={`${labelClass} sm:col-span-2`}>Attached to
           <select value={form.parentMachineryId} onChange={(event) => set('parentMachineryId', event.target.value)} className={inputClass}>

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { AddMemberModal, draftFromMember, MemberForm, MemberFormModal, useSavedMemberFiles, type MemberDraftData, type MemberFormFiles } from '../components/AddMemberModal';
 import { MemberImportModal } from '../components/MemberImportModal';
 import { TerminationModal, terminationSummary } from '../components/TerminationModal';
+import { ParticipationProfile } from '../../app/components/attendance/ParticipationProfile';
 import { openProtectedFile, errorMessage } from '../../lib/api';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { useLiveRefresh } from '../../lib/liveUpdates';
@@ -610,6 +611,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   </>
                 ) : <p className="mt-4 text-sm text-gray-500">Share contribution history is unavailable.</p>}
               </div>
+
+              <ParticipationProfile memberId={selectedMember.id} variant="office" />
 
             </div>
 

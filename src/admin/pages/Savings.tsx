@@ -313,6 +313,9 @@ function MemberSavingsModal({ member, refreshKey, onChanged, onClose }: { member
   }, [action, onClose]);
 
   const balance = summary?.balance ?? 0;
+  // The server keeps PHP 500 in savings (none for a terminated member) and says how much can go.
+  const withdrawable = summary?.withdrawable ?? 0;
+  const keep = summary?.maintainingBalance ?? 0;
 
   return (
     <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-2 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="member-savings-title">
@@ -347,15 +350,17 @@ function MemberSavingsModal({ member, refreshKey, onChanged, onClose }: { member
             <SavingsEntryForm
               kind={action}
               member={member}
-              balance={balance}
+              available={withdrawable}
+              keep={keep}
               onCancel={() => setAction(null)}
               onSaved={() => { setAction(null); setPage(1); onChanged(); }}
             />
           ) : (
             <div className="flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={() => setAction('withdraw')} disabled={!summary || balance <= 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300"><ArrowUpRight className="h-4 w-4" />Withdraw</button>
+              <button type="button" onClick={() => setAction('withdraw')} disabled={!summary || withdrawable <= 0} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300"><ArrowUpRight className="h-4 w-4" />Withdraw</button>
               <button type="button" onClick={() => setAction('deposit')} disabled={!summary} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-green-600 px-4 py-2 font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" />Add Deposit</button>
-              {summary && balance <= 0 && <p className="self-center text-sm text-gray-500">No savings left to withdraw.</p>}
+              {summary && withdrawable <= 0 && <p className="self-center text-sm text-gray-500">{balance <= 0 ? 'No savings left to withdraw.' : `Nothing can be withdrawn: ${peso(keep)} must stay in savings.`}</p>}
+              {summary && withdrawable > 0 && keep > 0 && <p className="self-center text-sm text-gray-500">{peso(keep)} must stay in savings.</p>}
             </div>
           )}
 
@@ -416,8 +421,9 @@ function TypeBadge({ type }: { type: TransactionType }) {
     : <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"><ArrowDownLeft className="h-3 w-3" />Deposit</span>;
 }
 
-// Records a withdrawal (never more than the balance) or a deposit for the open member.
-function SavingsEntryForm({ kind, member, balance, onCancel, onSaved }: { kind: 'withdraw' | 'deposit'; member: { id: number; memberName: string }; balance: number; onCancel: () => void; onSaved: () => void }) {
+// Records a withdrawal (at most `available`: the balance less the `keep` that
+// must stay in savings) or a deposit for the open member.
+function SavingsEntryForm({ kind, member, available, keep, onCancel, onSaved }: { kind: 'withdraw' | 'deposit'; member: { id: number; memberName: string }; available: number; keep: number; onCancel: () => void; onSaved: () => void }) {
   const withdraw = kind === 'withdraw';
   const [values, setValues] = useState({ amount: '', date: dateOnlyToday(), paymentMethod: withdraw ? 'Cash' : 'Deposit', reference: '', notes: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -429,7 +435,7 @@ function SavingsEntryForm({ kind, member, balance, onCancel, onSaved }: { kind: 
     const next: Record<string, string> = {};
     const amount = values.amount.trim();
     if (!MONEY.test(amount) || Number(amount) <= 0) next.amount = 'Enter an amount greater than 0 with up to two decimals.';
-    else if (withdraw && Math.round(Number(amount) * 100) > Math.round(balance * 100)) next.amount = `The withdrawal cannot be more than the balance of ${peso(balance)}.`;
+    else if (withdraw && Math.round(Number(amount) * 100) > Math.round(available * 100)) next.amount = keep > 0 ? `The most that can be withdrawn is ${peso(available)}: ${peso(keep)} must stay in savings.` : `The withdrawal cannot be more than the balance of ${peso(available)}.`;
     if (!values.date) next.date = 'Date is required.';
     else if (values.date > dateOnlyToday()) next.date = 'The date cannot be in the future.';
     setErrors(next);
@@ -452,13 +458,13 @@ function SavingsEntryForm({ kind, member, balance, onCancel, onSaved }: { kind: 
     <form onSubmit={(event) => void submit(event)} noValidate className={`rounded-xl border p-4 ${withdraw ? 'border-amber-200 bg-amber-50/60' : 'border-green-200 bg-green-50/60'}`} aria-label={withdraw ? 'Withdraw savings' : 'Add a savings deposit'}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-bold text-gray-900">{withdraw ? 'Withdraw Savings' : 'Add Deposit'}</h3>
-        {withdraw && <p className="text-sm text-gray-700">Available: <strong className="tabular-nums">{peso(balance)}</strong></p>}
+        {withdraw && <p className="text-sm text-gray-700">Available: <strong className="tabular-nums">{peso(available)}</strong>{keep > 0 && <span className="text-gray-500"> ({peso(keep)} stays in savings)</span>}</p>}
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={withdraw ? 'Withdrawal Amount' : 'Deposit Amount'} error={errors.amount}>
           <div className="flex gap-2">
             <input inputMode="decimal" value={values.amount} onChange={(event) => set('amount', event.target.value)} className={`${INPUT} bg-white`} placeholder="0.00" autoFocus />
-            {withdraw && <button type="button" onClick={() => set('amount', balance.toFixed(2))} className="shrink-0 rounded-xl border border-amber-300 bg-white px-3 text-sm font-medium text-amber-800 hover:bg-amber-100">All</button>}
+            {withdraw && <button type="button" onClick={() => set('amount', available.toFixed(2))} className="shrink-0 rounded-xl border border-amber-300 bg-white px-3 text-sm font-medium text-amber-800 hover:bg-amber-100" title="The most that can be withdrawn">Max</button>}
           </div>
         </Field>
         <Field label="Date" error={errors.date}><input type="date" max={dateOnlyToday()} value={values.date} onChange={(event) => set('date', event.target.value)} className={`${INPUT} bg-white`} /></Field>
