@@ -124,6 +124,9 @@ export interface AdminLoan {
   farmArea?: number | null;
   idDocuments?: LoanIdDocuments;
   borrowerSignature?: LoanSignature | null;
+  /** How many times the loan was given a new schedule, and the last time. */
+  restructureCount: number;
+  lastRestructuredOn: string | null;
 }
 
 export interface AdminPayment {
@@ -188,7 +191,8 @@ export interface LoanInstallment {
   amountPaid: number;
   lastPaymentDate: string | null;
   paidDate: string | null;
-  status: 'paid' | 'paid_late' | 'overdue' | 'partial' | 'upcoming';
+  /** restructured: replaced by a restructuring's new schedule, no longer due. */
+  status: 'paid' | 'paid_late' | 'overdue' | 'partial' | 'upcoming' | 'restructured';
 }
 
 const optionalNumber = (value: unknown) => (value === null || value === undefined ? undefined : Number(value));
@@ -306,6 +310,12 @@ export const reviewAdminLoanRequest = (id: number, status: 'approved' | 'decline
 export async function recordAdminLoanPayment(id: number, payload: { amount: number | string; paymentDate: string }) {
   const data = await apiPost<{ payment: Record<string, unknown> }>(`/api/admin/loans/${id}/payments`, payload);
   return { payment: mapPayment(data.payment) };
+}
+
+/** Gives an open loan a new schedule for what is still owed, from today: term months, plus interestRate% of that balance. */
+export async function restructureAdminLoan(id: number, payload: { term: number; interestRate: string; reason: string }) {
+  const data = await apiPost<{ loan: Record<string, unknown> }>(`/api/admin/loans/${id}/restructure`, payload);
+  return mapLoan(data.loan);
 }
 
 export interface LoanQuote {
@@ -454,6 +464,35 @@ export interface MemberDividend {
   /** Member share capital / total paid-up share capital (0 to 1). */
   shareRatio: number;
   dividend: number;
+  patronage: MemberPatronageRefund;
+}
+
+export type ActivityPoints = { meeting: number; community_development: number; education_training: number };
+
+/** The member's estimated patronage refund for the same year: the patronage refund pool shared by business and participation points. */
+export interface MemberPatronageRefund {
+  rules: { pesosPerBusinessPoint: number; activityPoints: ActivityPoints };
+  /** Percent of the pool shared by each kind of points (100 and 0 when no member has points of one kind). */
+  weights: { business: number; participation: number };
+  businessPool: number;
+  participationPool: number;
+  /** The member's business with the cooperative in pesos, by service. */
+  business: { machinery: number; loans: number; total: number };
+  businessPoints: number;
+  /** All current members' business and points. */
+  totalBusiness: number;
+  totalBusinessPoints: number;
+  /** Activities attended, by category. */
+  attended: ActivityPoints;
+  participationPoints: number;
+  totalParticipationPoints: number;
+  businessShare: number;
+  participationShare: number;
+  /** The member's share of the whole pool, both parts weighted together (0 to 1). */
+  poolShare: number;
+  businessRefund: number;
+  participationRefund: number;
+  refund: number;
 }
 
 export async function fetchMyDividend(year?: number) {
@@ -613,11 +652,17 @@ export interface AnalyticsData {
     onTimePaymentRate: number;
     repaymentRating: string;
     shareCapital: number;
-    savings: number;
     assessment: string;
     recommendation: string;
     reasons: string[];
-    loanHistory: Array<{ id: number; loanNumber: string; amount: number; balance: number; status: string; dateApproved: string; dueDate: string; paymentCount: number; totalPaid: number }>;
+    overdueInstallments: number;
+    /** Loans given a new schedule, and how many times in all. */
+    restructuredLoans: number;
+    restructurings: number;
+    loanHistory: Array<{
+      id: number; loanNumber: string; amount: number; balance: number; status: string; dateApproved: string; dueDate: string; paymentCount: number; totalPaid: number;
+      onTimePayments: number; latePayments: number; restructureCount: number;
+    }>;
   }>;
   repaymentRatings: Array<{ rating: string; members: number }>;
   loanCapacity: Array<{ assessment: string; members: number }>;
@@ -625,6 +670,26 @@ export interface AnalyticsData {
 }
 
 export const fetchAnalytics = (from: string, to: string) => apiGet<AnalyticsData>(`/api/admin/analytics${query({ from, to })}`);
+
+export type CreditVerdict = 'lend' | 'caution' | 'do_not_lend' | 'no_history';
+
+/** A short suggestion on lending to a member again, from how they repaid: the AI's, or rule-based when it cannot answer. */
+export interface MemberCreditAdvice {
+  source: 'ai' | 'rules';
+  verdict: CreditVerdict;
+  suggestion: string;
+  reasons: string[];
+  /** Why the rule-based suggestion is shown instead of the AI's (empty when the AI answered). */
+  notice: string;
+  methodology: string;
+  generatedAt: string;
+  facts: {
+    loans: { total: number; open: number; fullyPaid: number; restructured: number; totalBorrowed: number; outstandingBalance: number };
+    installments: { due: number; onTime: number; late: number; overdueNow: number; onTimeRate: number | null; averageDaysLate: number; mostDaysLate: number };
+  };
+}
+
+export const fetchMemberCreditAdvice = (memberId: number) => apiPost<MemberCreditAdvice>(`/api/admin/analytics/members/${memberId}/credit-advice`);
 
 export interface ShareCapitalBandMember { id: number; memberNumber: string; memberName: string; status: string; shareCapital: number }
 type ShareCapitalBand = Omit<AdminDashboardData['shareCapitalLevels'][number], 'members'>;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarCheck, CalendarClock, ClipboardCheck, LoaderCircle, MapPin, Percent, ShieldCheck, XCircle } from 'lucide-react';
+import { CalendarCheck, ClipboardCheck, LoaderCircle, Percent, ShieldCheck, XCircle } from 'lucide-react';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { formatDate } from '../../../utils/dateTime';
 import { EmptyState, Pagination } from '../common/UiKit';
@@ -142,24 +142,6 @@ function ProfileBody({ profile, own, pages }: { profile: Profile; own: boolean; 
           </div>
         )}
       </div>
-
-      {own && (
-        <div>
-          <h3 className="mb-2 font-semibold text-gray-900">Upcoming Activities</h3>
-          {!profile.upcoming.length ? <p className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-500">No upcoming activity is scheduled yet.</p> : (
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {profile.upcoming.map((activity) => (
-                <li key={activity.id} className="rounded-xl border border-gray-200 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-green-700">{activity.categoryLabel}</p>
-                  <p className="font-semibold text-gray-900">{activity.title}</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-600"><CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />{formatDate(activity.activityDate)} · {timeRange(activity.startTime, activity.endTime)}</p>
-                  <p className="flex items-center gap-1.5 text-sm text-gray-600"><MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />{activity.venue}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
 
       <p className="text-xs text-gray-500">{RATE_RULE}</p>
     </div>

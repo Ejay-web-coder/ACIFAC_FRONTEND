@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { User, Phone, MapPin, Calendar, CreditCard, PiggyBank, Percent } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { User, Phone, MapPin, Calendar, CreditCard, PiggyBank, HandCoins } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
-import { MemberDividendSection, peso, percent, useMyDividend } from '../components/MemberDividend';
+import { fetchProtectedImage } from '../../lib/profilePhoto';
+import { DividendBreakdown, peso, percent, periodText, useMyDividend, YearSelect } from '../components/MemberDividend';
+import { PatronageBreakdown } from '../components/MemberPatronageRefund';
 import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
 import { ParticipationProfile } from '../../app/components/attendance/ParticipationProfile';
@@ -11,8 +13,28 @@ interface MemberProfileProps {
   userRole: UserRole;
 }
 
+/** The member's own picture, else their 2x2 registration photo; null while loading or when there is none. */
+function useMyPicture(enabled: boolean) {
+  const [picture, setPicture] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    let url: string | null = null;
+    fetchProtectedImage('/api/members/me/documents/avatar')
+      .then((result) => {
+        if (cancelled) { if (result) URL.revokeObjectURL(result); return; }
+        url = result;
+        setPicture(result);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+  }, [enabled]);
+  return picture;
+}
+
 export function MemberProfile({ userRole }: MemberProfileProps) {
   const { memberData, error } = useMyMemberData();
+  const picture = useMyPicture(userRole === 'member');
   const [dividendYear, setDividendYear] = useState<number | undefined>(undefined);
   const { dividend, error: dividendError } = useMyDividend(dividendYear, userRole === 'member');
 
@@ -37,9 +59,13 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
       {/* Profile Overview */}
       <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
         <div className="flex items-start gap-6">
-          <div className="p-6 bg-blue-50 rounded-full">
-            <User className="w-16 h-16 text-blue-600" />
-          </div>
+          {picture ? (
+            <img src={picture} alt={`${member.full_name}'s picture`} className="h-28 w-28 shrink-0 rounded-full border border-gray-200 object-cover" />
+          ) : (
+            <div className="shrink-0 p-6 bg-blue-50 rounded-full">
+              <User className="w-16 h-16 text-blue-600" />
+            </div>
+          )}
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-gray-900">{member.full_name}</h2>
             <p className="text-gray-600 mt-1">Member ID: {member.member_number || member.id}</p>
@@ -83,10 +109,16 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         </div>
       </div>
 
-      {/* Financial Summary */}
-      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Financial Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Financial Summary: balances, this year's estimates and how they are computed */}
+      <section className="bg-white rounded-2xl p-4 sm:p-6 shadow-[var(--shadow-card)] border border-gray-200" aria-labelledby="financial-summary-title" id="financial-summary">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 id="financial-summary-title" className="text-lg font-bold text-gray-900">Financial Summary</h2>
+            {dividend && <p className="mt-1 text-sm text-gray-600">Dividend and patronage refund estimates for {periodText(dividend)}</p>}
+          </div>
+          <YearSelect dividend={dividend} onYearChange={setDividendYear} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="p-4 bg-blue-50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <CreditCard className="w-5 h-5 text-blue-600" />
@@ -106,25 +138,33 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
             </p>
           </div>
 
-          <a href="#my-dividend" className="block p-4 bg-purple-50 rounded-lg hover:bg-purple-100">
+          <div className="p-4 bg-purple-50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <PiggyBank className="w-5 h-5 text-purple-600" />
-              <p className="text-sm text-purple-700">Estimated Dividend{dividend ? ` (${dividend.year})` : ''}</p>
+              <p className="text-sm text-purple-700">Estimated Dividend</p>
             </div>
-            <p className="text-2xl font-bold text-purple-900">{dividend ? peso(dividend.dividend) : '—'}</p>
-          </a>
+            <p className="text-2xl font-bold tabular-nums text-purple-900">{dividend ? peso(dividend.dividend) : '—'}</p>
+            {dividend && <p className="mt-1 text-xs text-purple-700">{percent(dividend.shareRatio)} of the dividend pool</p>}
+          </div>
 
-          <div className="p-4 bg-orange-50 rounded-lg">
+          <div className="p-4 bg-teal-50 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
-              <Percent className="w-5 h-5 text-orange-600" />
-              <p className="text-sm text-orange-700">Share of Paid-up Capital</p>
+              <HandCoins className="w-5 h-5 text-teal-600" />
+              <p className="text-sm text-teal-700">Estimated Patronage Refund</p>
             </div>
-            <p className="text-2xl font-bold text-orange-900">{dividend ? percent(dividend.shareRatio) : '—'}</p>
+            <p className="text-2xl font-bold tabular-nums text-teal-900">{dividend?.patronage ? peso(dividend.patronage.refund) : '—'}</p>
+            {dividend?.patronage && <p className="mt-1 text-xs text-teal-700">{percent(dividend.patronage.poolShare)} of the patronage refund pool</p>}
           </div>
         </div>
-      </div>
 
-      <MemberDividendSection dividend={dividend} error={dividendError} year={dividendYear} onYearChange={setDividendYear} />
+        {dividendError && <p className="mt-4 text-sm text-red-600" role="alert">{dividendError}</p>}
+        {dividend && (
+          <div className="mt-5 space-y-3">
+            <DividendBreakdown dividend={dividend} />
+            {dividend.patronage && <PatronageBreakdown dividend={dividend} patronage={dividend.patronage} />}
+          </div>
+        )}
+      </section>
 
       <div className="rounded-lg border border-green-200 bg-green-50 p-6 shadow-sm">
         <h2 className="text-lg font-bold text-green-900">My Share Contributions</h2>

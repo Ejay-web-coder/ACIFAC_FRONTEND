@@ -1,12 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  Archive, BadgePercent, CalendarClock, Info, Lightbulb, LoaderCircle, Megaphone, RefreshCw, ShoppingCart, Sparkles, TriangleAlert, Wrench,
+  Archive, BadgePercent, CalendarClock, Lightbulb, LoaderCircle, Megaphone, RefreshCw, ShoppingCart, Sparkles, Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import {
   EXPENSE_LABELS, fetchFleetAnalytics, fetchFleetRecommendations,
-  type AlertSeverity, type ExpenseCategory, type FleetAnalytics as FleetData, type FleetMachine, type FleetRecommendations, type Recommendation, type RecommendationType,
+  type ExpenseCategory, type FleetAnalytics as FleetData, type FleetMachine, type FleetRecommendations, type Recommendation, type RecommendationType,
 } from '../../../app/services/machineryApi';
 import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
@@ -23,12 +23,6 @@ const ACTUAL_COLOR = '#276221';
 const FORECAST_COLOR = '#7cbf74';
 const AXIS_TICK = { fontSize: 12, fill: '#5f6660' };
 const TOOLTIP_STYLE = { borderRadius: 12, border: '1px solid #e4e7e4', boxShadow: '0 4px 12px -2px rgba(16,24,16,0.08)', fontSize: 13 };
-
-const SEVERITY: Record<AlertSeverity, { label: string; icon: LucideIcon; className: string }> = {
-  high: { label: 'Urgent', icon: TriangleAlert, className: 'bg-red-50 text-red-800 ring-red-200' },
-  medium: { label: 'Soon', icon: Wrench, className: 'bg-amber-50 text-amber-900 ring-amber-200' },
-  low: { label: 'Note', icon: Info, className: 'bg-gray-50 text-gray-700 ring-gray-200' },
-};
 
 const RECOMMENDATION: Record<RecommendationType, { label: string; icon: LucideIcon }> = {
   buy: { label: 'Buy more units', icon: ShoppingCart },
@@ -47,9 +41,9 @@ const STATUS_BADGE: Record<FleetMachine['status'], string> = {
 };
 
 /**
- * The machinery fleet on the Analytics page, in one card: bookings and the
- * schedule, utilization, revenue and cost per machine, maintenance alerts and
- * downtime for the picked period. The recommendations, the seasonal forecast
+ * The machinery fleet on the Analytics page, in one card: utilization,
+ * revenue, cost, bookings and downtime, in total and per machine, for the
+ * picked period. The recommendations, the seasonal forecast
  * and the return on investment open in a window from "AI insights"; only then
  * (or on Refresh) is the AI asked.
  */
@@ -102,7 +96,7 @@ export function FleetAnalytics({ from, to, periodLabel, refreshKey }: { from: st
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 id="fleet-analytics-title" className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
-          <p className="mt-1 text-sm text-gray-500">Bookings, utilization, revenue and cost per machine, maintenance and downtime · {periodLabel}</p>
+          <p className="mt-1 text-sm text-gray-500">Utilization, revenue, cost, bookings and downtime per machine · {periodLabel}</p>
         </div>
         <button type="button" onClick={openInsights} disabled={!data} aria-haspopup="dialog"
           className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">
@@ -125,13 +119,6 @@ export function FleetAnalytics({ from, to, periodLabel, refreshKey }: { from: st
             <Tile label="Bookings & jobs" value={(data.bookings.operations.scheduled + data.bookings.operations.ongoing + data.bookings.operations.completed + data.bookings.services.jobs).toLocaleString()}
               detail={data.bookings.requests.pendingNow ? `${plural(data.bookings.requests.pendingNow, 'request')} waiting for review` : 'No requests waiting'} />
             <Tile label="Downtime" value={days(fleet.downtimeDays)} detail={`${fleet.availability === null ? '—' : `${fleet.availability}%`} available · ${fleet.inMaintenance} in maintenance now`} />
-          </div>
-
-          <MaintenanceAlerts alerts={data.alerts} />
-
-          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <BookingReport data={data} />
-            <Upcoming rows={data.bookings.upcoming} />
           </div>
 
           <MachineTable machines={machines} fleet={fleet} />
@@ -166,69 +153,6 @@ function Tile({ label, value, detail, negative = false }: { label: string; value
     <p className="text-xs font-medium text-gray-600">{label}</p>
     <p className={`mt-0.5 truncate text-xl font-bold ${negative ? 'text-red-700' : 'text-gray-900'}`}>{value}</p>
     <p className="mt-0.5 text-xs leading-snug text-gray-500">{detail}</p>
-  </div>;
-}
-
-function SeverityBadge({ severity }: { severity: AlertSeverity }) {
-  const { label, icon: Icon, className } = SEVERITY[severity];
-  return <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${className}`}><Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}</span>;
-}
-
-function MaintenanceAlerts({ alerts }: { alerts: FleetData['alerts'] }) {
-  const [all, setAll] = useState(false);
-  if (!alerts.length) return <p className="mt-5 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800"><Wrench className="h-4 w-4" aria-hidden="true" />No maintenance alerts.</p>;
-  const shown = all ? alerts : alerts.slice(0, 4);
-  return <div className="mt-5">
-    <h3 className="text-sm font-semibold text-gray-900">Maintenance alerts <span className="font-normal text-gray-500">({alerts.length})</span></h3>
-    <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200">
-      {shown.map((alert, index) => (
-        <li key={`${alert.machineryId}-${alert.kind}-${index}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-          <SeverityBadge severity={alert.severity} />
-          <span className="font-medium text-gray-900">{alert.machineryName}</span>
-          <span className="text-gray-600">{alert.message}</span>
-        </li>
-      ))}
-    </ul>
-    {alerts.length > 4 && <button type="button" onClick={() => setAll(!all)} className="mt-2 text-sm font-medium text-green-700 hover:text-green-900">{all ? 'Show fewer' : `Show all ${alerts.length} alerts`}</button>}
-  </div>;
-}
-
-function BookingReport({ data }: { data: FleetData }) {
-  const { requests, operations, services } = data.bookings;
-  const rows: Array<[string, ReactNode]> = [
-    ['Requests received', `${requests.submitted.toLocaleString()} (${requests.approved} approved, ${requests.declined} declined, ${requests.pending} waiting)`],
-    ['Approval rate', requests.approvalRate === null ? '—' : `${requests.approvalRate}%`],
-    ['Booked ahead', requests.avgLeadDays === null ? '—' : `${days(requests.avgLeadDays)} before the start, on average`],
-    ['Review time', requests.avgReviewHours === null ? '—' : `${requests.avgReviewHours.toLocaleString('en-PH', { maximumFractionDigits: 1 })} hours on average`],
-    ['Bookings', `${operations.scheduled} scheduled · ${operations.ongoing} ongoing · ${operations.completed} completed (${days(operations.bookedDays)})`],
-    ['Services done', `${plural(services.jobs, 'job')}${services.areaHa ? ` · ${services.areaHa.toLocaleString('en-PH', { maximumFractionDigits: 2 })} ha` : ''}`],
-  ];
-  return <div>
-    <h3 className="text-sm font-semibold text-gray-900">Bookings & scheduling</h3>
-    <dl className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 text-sm">
-      {rows.map(([label, value]) => <div key={label} className="flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:gap-3"><dt className="shrink-0 text-gray-500 sm:w-36">{label}</dt><dd className="text-gray-900">{value}</dd></div>)}
-    </dl>
-  </div>;
-}
-
-function Upcoming({ rows }: { rows: FleetData['bookings']['upcoming'] }) {
-  return <div>
-    <h3 className="text-sm font-semibold text-gray-900">Next 14 days</h3>
-    {rows.length ? <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 text-sm">
-      {rows.map((row) => (
-        <li key={`${row.kind}-${row.id}`} className="flex items-start justify-between gap-3 px-3 py-2">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-gray-900">{row.machineryName}</p>
-            <p className="truncate text-xs text-gray-500">{formatDate(row.startDate, true)}{row.endDate !== row.startDate ? ` – ${formatDate(row.endDate, true)}` : ''} · {row.memberName}</p>
-          </div>
-          {row.kind === 'booking'
-            ? <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-800 ring-1 ring-green-200">{row.status === 'ongoing' ? 'In use' : 'Booked'}</span>
-            : row.conflict
-              ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-red-200"><TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />Dates taken</span>
-              : <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">Waiting approval</span>}
-        </li>
-      ))}
-    </ul> : <p className="mt-2 rounded-xl border border-dashed border-gray-300 px-3 py-6 text-center text-sm text-gray-500">Nothing booked or requested for the next 14 days.</p>}
   </div>;
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { addDateOnlyDays, dateOnlyToday, formatDate, formatDateTime } from '../.
 import { escapeHtml } from '../../utils/html';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
+import { RestructureLoanModal } from '../components/RestructureLoanModal';
 import type { Member } from './MembershipManagement';
 
 type Loan = AdminLoan;
@@ -80,6 +81,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const [officeOpen, setOfficeOpen] = useState(true);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
+  // The open loan being given a new schedule.
+  const [restructuringLoan, setRestructuringLoan] = useState<Loan | null>(null);
   const [selectedPaymentForReceipt, setSelectedPaymentForReceipt] = useState<Payment | null>(null);
   const [paymentData, setPaymentData] = useState({
     amount: '',
@@ -435,6 +438,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">
                           {loan.loanType}
                         </span>
+                        {loan.restructureCount > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200" title={`Last restructured on ${formatDate(loan.lastRestructuredOn)}`}>
+                            <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Restructured{loan.restructureCount > 1 ? ` ×${loan.restructureCount}` : ''}
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}
                         {hasIds(loan.idDocuments) && (['borrower', 'coMaker'] as const).filter((holder) => loan.idDocuments?.[holder]).map((holder) => (
@@ -445,15 +453,15 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                         <div>
                           <p className="text-xs text-gray-500">Loan Amount</p>
-                          <p className="text-sm font-medium text-gray-900">₱{loan.amount.toLocaleString()}</p>
+                          <p className="text-sm font-medium text-gray-900">{peso(loan.amount)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Total Repayment</p>
-                          <p className="text-sm font-medium text-green-700">₱{loan.totalAmount.toLocaleString()}</p>
+                          <p className="text-sm font-medium text-green-700">{peso(loan.totalAmount)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Balance</p>
-                          <p className="text-sm font-medium text-gray-900">₱{loan.balance.toLocaleString()}</p>
+                          <p className="text-sm font-medium text-gray-900">{peso(loan.balance)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Interest Rate</p>
@@ -461,7 +469,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Monthly Payment</p>
-                          <p className="text-sm font-medium text-gray-900">₱{loan.monthlyPayment.toLocaleString()}</p>
+                          <p className="text-sm font-medium text-gray-900">{peso(loan.monthlyPayment)}</p>
                         </div>
                       </div>
                       {loan.status !== 'paid' && loan.nextPaymentDate && (
@@ -476,11 +484,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       )}
                     </div>
                     {canEdit && loan.status !== 'paid' && (
-                      <button
-                        onClick={() => handleRecordPayment(loan)}
-                          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:ml-4 sm:w-auto">
-                        Record Payment
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-2 sm:ml-4">
+                        <button
+                          onClick={() => handleRecordPayment(loan)}
+                            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto">
+                          Record Payment
+                        </button>
+                        <button type="button" onClick={() => setRestructuringLoan(loan)}
+                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 hover:bg-amber-50 sm:w-auto">
+                          <RefreshCcw className="h-4 w-4" />Restructure
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -720,6 +734,10 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
             </form>
           </div>
         </div>
+      )}
+
+      {restructuringLoan && (
+        <RestructureLoanModal loan={restructuringLoan} onClose={() => setRestructuringLoan(null)} onDone={() => { setRestructuringLoan(null); void loadData(); }} />
       )}
 
       {/* Receipt View Modal */}

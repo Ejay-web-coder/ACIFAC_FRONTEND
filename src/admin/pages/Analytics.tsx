@@ -5,6 +5,7 @@ import { Download, AlertTriangle } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { fetchAnalytics, type AnalyticsData } from '../../app/services/authApi';
 import { FleetAnalytics } from '../components/machinery/FleetAnalytics';
+import { MemberCreditHistory } from '../components/MemberCreditHistory';
 import { toast } from 'sonner';
 
 const COLORS = ['#276221', '#52a447', '#8bca84', '#3b8132', '#acd8a7', '#5bb450'];
@@ -158,6 +159,8 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
         <ChartPanel title="Loan Disbursement"><BarChart data={data?.loans || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="amount" name="Amount" fill="#52a447" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Operating Revenue Breakdown</h2><div className="h-[300px]">{revenue.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}><PieChart><Pie data={revenue} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${String(name ?? '')}: ${(Number(percent ?? 0) * 100).toFixed(0)}%`}>{revenue.map((entry, index) => <Cell key={entry.category} fill={COLORS[index % COLORS.length]} />)}</Pie><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer> : <EmptyState loading={loading} />}</div></div>
       </div>
+      {/* All loans to date, whatever period is picked. */}
+      <MemberCreditHistory members={data?.memberAnalytics || []} methodology={data?.methodology} loading={loading} />
       {/* Full width so a month's daily bars have room. */}
       <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />
       {/* Bookings, utilization, revenue and cost per machine, maintenance and downtime; the forecast, ROI and AI recommendations open from its button. */}
