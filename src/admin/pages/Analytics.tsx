@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLiveRefresh } from '../../lib/liveUpdates';
-import { BarChart, Bar, ComposedChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
-import { Download, AlertTriangle } from 'lucide-react';
+import { BarChart, Bar, ComposedChart, Line, LineChart, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, ReferenceLine, Rectangle, ResponsiveContainer, type BarShapeProps, type LabelProps } from 'recharts';
+import { Download, HandCoins, Store, Tractor, TrendingUp } from 'lucide-react';
 import { UserRole } from '../../app/App';
-import { fetchAnalytics, type AnalyticsData } from '../../app/services/authApi';
+import { fetchAnalytics, fetchRevenueTrend, type AnalyticsData, type RevenueGranularity, type RevenueTrend, type RevenueTrendRow } from '../../app/services/authApi';
+import { StatCard } from '../../app/components/common/UiKit';
 import { FleetAnalytics } from '../components/machinery/FleetAnalytics';
 import { MemberCreditHistory } from '../components/MemberCreditHistory';
 import { toast } from 'sonner';
 
-const COLORS = ['#276221', '#52a447', '#8bca84', '#3b8132', '#acd8a7', '#5bb450'];
 // Shared chart styling in the ACIFAC palette.
 const AXIS_TICK = { fontSize: 12, fill: '#5f6660' };
 const TOOLTIP_STYLE = { borderRadius: 12, border: '1px solid #e4e7e4', boxShadow: '0 4px 12px -2px rgba(16,24,16,0.08)', fontSize: 13 };
@@ -17,6 +18,15 @@ const CHART_INITIAL_SIZE = { width: 1, height: 300 };
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 interface AnalyticsProps { userRole: UserRole; }
+
+// One area at a time, so the page stays short; the tab is kept in the address (?tab=loans).
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'loans', label: 'Loans' },
+  { id: 'kadiwa', label: 'Kadiwa' },
+  { id: 'machinery', label: 'Machinery' },
+] as const;
+type TabId = typeof TABS[number]['id'];
 
 function dateKey(year: number, month: number, day: number) {
   // Date accepts day 0 as the final day of the preceding month. This is used
@@ -69,6 +79,9 @@ function downloadCsv(data: AnalyticsData) {
 
 export function Analytics({ userRole: _userRole }: AnalyticsProps) {
   const today = new Date();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: TabId = TABS.some((entry) => entry.id === searchParams.get('tab')) ? searchParams.get('tab') as TabId : 'overview';
+  const selectTab = (id: TabId) => setSearchParams(id === 'overview' ? {} : { tab: id }, { replace: true });
   const [dateRange, setDateRange] = useState<'month' | 'quarter' | 'year'>('month');
   const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
@@ -139,7 +152,6 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
   }, [period.from, period.to, refreshKey]);
 
   const summary = data?.summary;
-  const revenue = data?.revenue || [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -154,19 +166,276 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
         </div>
       </div>
 
-      {summary && summary.overdueLoans > 0 && <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="alert"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" /><span>{summary.overdueLoans} loan(s) are overdue with {formatCurrency(summary.outstandingBalance)} currently outstanding.</span></div>}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartPanel title="Loan Disbursement"><BarChart data={data?.loans || []}><CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} /><XAxis tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} dataKey="period" /><YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="amount" name="Amount" fill="#52a447" radius={[6, 6, 0, 0]} maxBarSize={56} /></BarChart></ChartPanel>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">Operating Revenue Breakdown</h2><div className="h-[300px]">{revenue.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}><PieChart><Pie data={revenue} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${String(name ?? '')}: ${(Number(percent ?? 0) * 100).toFixed(0)}%`}>{revenue.map((entry, index) => <Cell key={entry.category} fill={COLORS[index % COLORS.length]} />)}</Pie><Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} /><Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(139,202,132,0.12)' }} formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer> : <EmptyState loading={loading} />}</div></div>
+      {/* The four headline figures for the period, above every tab. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Operating revenue" value={summary ? formatCurrency(summary.totalOperatingRevenue) : '—'} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Loan interest, machinery rentals and Kadiwa" />
+        <StatCard label="Outstanding loans" value={summary ? formatCurrency(summary.outstandingBalance) : '—'} icon={HandCoins} loading={loading && !summary}
+          tone={summary?.overdueLoans ? 'warning' : 'green'} detail={summary ? (summary.overdueLoans ? `${summary.overdueLoans} overdue` : 'None overdue') : undefined} onClick={() => selectTab('loans')} />
+        <StatCard label="Kadiwa net income" value={summary ? formatCurrency(summary.kadiwaNetSales) : '—'} icon={Store} loading={loading && !summary} detail="Sales less costs and expenses" onClick={() => selectTab('kadiwa')} />
+        <StatCard label="Machinery rentals" value={summary ? formatCurrency(summary.machineryRevenue) : '—'} icon={Tractor} loading={loading && !summary} detail="Day rentals started in the period" onClick={() => selectTab('machinery')} />
       </div>
-      {/* All loans to date, whatever period is picked. */}
-      <MemberCreditHistory members={data?.memberAnalytics || []} methodology={data?.methodology} loading={loading} />
-      {/* Full width so a month's daily bars have room. */}
-      <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />
-      {/* Bookings, utilization, revenue and cost per machine, maintenance and downtime; the forecast, ROI and AI recommendations open from its button. */}
-      <FleetAnalytics from={period.from} to={period.to} periodLabel={periodLabel} refreshKey={refreshKey} />
+
+      {/* Four equal tabs on a phone, so none is cut off. */}
+      <nav aria-label="Analytics sections" className="grid grid-cols-4 gap-1 sm:flex">
+        {TABS.map((entry) => (
+          <button key={entry.id} type="button" onClick={() => selectTab(entry.id)} aria-current={tab === entry.id ? 'page' : undefined}
+            className={`whitespace-nowrap rounded-xl px-1 py-2 text-[13px] font-semibold sm:px-4 sm:text-sm ${tab === entry.id ? 'bg-green-600 text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
+            {entry.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Up to the end of the period picked above. */}
+      {tab === 'overview' && <IncomeTrendChart to={period.to} refreshKey={refreshKey} />}
+      {tab === 'loans' && <>
+        <LoanDisbursementChart rows={data?.loans || []} loading={loading} />
+        {/* All loans to date, whatever period is picked. */}
+        <MemberCreditHistory members={data?.memberAnalytics || []} methodology={data?.methodology} loading={loading} />
+      </>}
+      {/* One month is shown day by day. */}
+      {tab === 'kadiwa' && <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />}
+      {/* Bookings, utilization, revenue and cost per machine; forecast, ROI and AI recommendations open from its button. */}
+      {tab === 'machinery' && <FleetAnalytics from={period.from} to={period.to} periodLabel={periodLabel} refreshKey={refreshKey} />}
     </div>
   );
+}
+
+// A month's bar is blue when it went up from the month before and red when it
+// went down, a pair that stays apart for color-blind viewers (checked with the
+// data-viz palette validator); gray (3.4:1 on white) when it stayed the same.
+// The signed change written above the bar says the same without color. Brand
+// green is for the amounts alone, when the server sends no change.
+const LOAN_COLORS = { amount: '#52a447', up: '#2a78d6', down: '#e34948', same: '#868e87' };
+type LoanRow = AnalyticsData['loans'][number];
+// The value axis is a fixed width, so the room each month gets is known.
+const LOAN_AXIS_WIDTH = 64;
+// About how wide one character of an 11px bar label is.
+const LOAN_LABEL_CHAR_WIDTH = 6.6;
+const compactPesos = (value: number) => `${value < 0 ? '−' : ''}₱${new Intl.NumberFormat('en-PH', { notation: 'compact', maximumFractionDigits: 1 }).format(Math.abs(value))}`;
+const signedPesos = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatCurrency(Math.abs(value))}`;
+// "+₱86K", "−₱8.5K": short enough to sit above a bar.
+const changeLabel = (value: number) => `${value > 0 ? '+' : '−'}₱${new Intl.NumberFormat('en-PH', { notation: 'compact', maximumFractionDigits: Math.abs(value) >= 10000 ? 0 : 1 }).format(Math.abs(value))}`;
+
+// "Sep 2026" for the month before a YYYY-MM month.
+function monthBefore(month: string) {
+  const [year, number] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, number - 2, 1)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+const currentMonth = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// "up ₱15,000 (+25%) from Sep 2026", in words for the summary, tooltip and table.
+function describeChange(row: LoanRow) {
+  const before = monthBefore(row.month);
+  if (row.change === 0) return row.amount === 0 ? `none in ${before} either` : `same as ${before}`;
+  const percent = row.changePercent === null ? '' : ` (${row.changePercent > 0 ? '+' : '−'}${Math.abs(row.changePercent)}%)`;
+  return `${row.change > 0 ? 'up' : 'down'} ${formatCurrency(Math.abs(row.change))}${percent} from ${before}`;
+}
+
+/**
+ * Loans disbursed month by month in one bar chart: each bar is the month's
+ * total, colored by whether it went up or down from the month before, with
+ * that change written above it. The server sends every month (₱0 without a
+ * loan); the current month is marked "so far".
+ */
+function LoanDisbursementChart({ rows, loading }: { rows: LoanRow[]; loading: boolean }) {
+  const thisMonth = currentMonth();
+  const latest = rows.at(-1);
+  const [chartWidth, setChartWidth] = useState(0);
+  // A backend from before the change sends only the months with loans and no
+  // change; then only the amounts are shown (the frontend may go live first).
+  const compared = rows.every((row) => typeof row.month === 'string' && typeof row.change === 'number');
+  // Every change is written above its bar when the labels fit side by side.
+  // On a narrow chart (a phone) only the latest month and the two biggest
+  // changes are, never two next to each other, so the labels do not collide.
+  const band = rows.length ? (chartWidth - LOAN_AXIS_WIDTH - 8) / rows.length : 0;
+  const allFit = rows.every((row) => !row.change || changeLabel(row.change).length * LOAN_LABEL_CHAR_WIDTH <= band - 4);
+  const labeled = new Set<number>();
+  if (compared && rows.length) {
+    if (allFit) rows.forEach((row, index) => { if (row.change) labeled.add(index); });
+    else {
+      const byChange = rows.map((row, index) => index).filter((index) => rows[index].change).sort((a, b) => Math.abs(rows[b].change) - Math.abs(rows[a].change));
+      for (const index of [rows.length - 1, ...byChange]) {
+        if (labeled.size >= 3) break;
+        if (rows[index].change && !labeled.has(index - 1) && !labeled.has(index + 1)) labeled.add(index);
+      }
+    }
+  }
+  const barColor = (row: LoanRow) => (!compared ? LOAN_COLORS.amount : row.change > 0 ? LOAN_COLORS.up : row.change < 0 ? LOAN_COLORS.down : LOAN_COLORS.same);
+  const renderLabel = ({ viewBox, index }: LabelProps) => {
+    const row = typeof index === 'number' ? rows[index] : undefined;
+    if (!row || !row.change || !labeled.has(index as number) || !viewBox || !('width' in viewBox)) return null;
+    const { x = 0, y = 0, width = 0 } = viewBox as { x?: number; y?: number; width?: number };
+    return <text x={Number(x) + Number(width) / 2} y={Number(y) - 6} textAnchor="middle" fontSize={11} fontWeight={600} fill="#374151">{changeLabel(row.change)}</text>;
+  };
+  const showSame = compared && rows.some((row) => row.change === 0 && row.amount > 0);
+
+  return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6">
+    <h2 className="text-lg font-bold text-gray-900">Loan Disbursement</h2>
+    {rows.length > 0 && latest ? <>
+      <p className="text-sm text-gray-500">{rows[0].period === latest.period ? latest.period : `${rows[0].period} to ${latest.period}`}, month by month</p>
+      {compared && <>
+        <p className="mt-2 text-sm text-gray-700"><span className="font-semibold">{latest.period}{latest.month === thisMonth ? ' so far' : ''}:</span> <span className="tabular-nums">{formatCurrency(latest.amount)}</span>, {describeChange(latest)}</p>
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+          <li className="flex items-center gap-1.5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: LOAN_COLORS.up }} />Up from the month before</li>
+          <li className="flex items-center gap-1.5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: LOAN_COLORS.down }} />Down</li>
+          {showSame && <li className="flex items-center gap-1.5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: LOAN_COLORS.same }} />Same</li>}
+          <li className="text-gray-500">Above each bar: the change</li>
+        </ul>
+      </>}
+      <div className="mt-3 h-[300px]"><ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE} onResize={(width) => setChartWidth(width)}>
+        <BarChart data={rows} margin={{ top: 22, right: 4, bottom: 0, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e4e7e4" vertical={false} />
+          <XAxis dataKey="period" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} minTickGap={8} />
+          <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={LOAN_AXIS_WIDTH} tickFormatter={compactPesos} />
+          <Tooltip cursor={{ fill: 'rgba(139,202,132,0.12)' }} content={({ active, payload }) => active && payload?.length ? <LoanTooltip row={payload[0].payload as LoanRow} partial={(payload[0].payload as LoanRow).month === thisMonth} compared={compared} /> : null} />
+          {/* Colored through the bar's shape (Cell is deprecated). A month that fell to ₱0 keeps a thin red
+              sliver, so its label sits on a mark of its own and not beside the month before. */}
+          <Bar dataKey="amount" name="Disbursed" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false}
+            minPointSize={(value, index) => (compared && !value && rows[index]?.change ? 3 : 0)}
+            shape={(props: BarShapeProps) => <Rectangle {...props} fill={barColor(props.payload as LoanRow)} />}>
+            {compared && <LabelList dataKey="change" content={renderLabel} />}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer></div>
+
+      {compared && <details className="mt-3 text-sm">
+        <summary className="cursor-pointer font-medium text-green-700 hover:text-green-800">View as table</summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="min-w-full text-left">
+            {/* The number of loans and the percentage are left out on a phone, so the change fits; the tooltip still has both. */}
+            <thead className="text-xs text-gray-500"><tr><th className="py-1 pr-3 font-medium">Month</th><th className="hidden py-1 pr-3 text-right font-medium sm:table-cell">Loans</th><th className="py-1 pr-3 text-right font-medium">Disbursed</th><th className="py-1 pr-3 text-right font-medium">Change</th><th className="hidden py-1 text-right font-medium sm:table-cell">%</th></tr></thead>
+            <tbody className="divide-y divide-gray-100 tabular-nums text-gray-700">
+              {rows.map((row) => <tr key={row.month}>
+                <td className="whitespace-nowrap py-1 pr-3">{row.period}{row.month === thisMonth ? ' (so far)' : ''}</td>
+                <td className="hidden py-1 pr-3 text-right sm:table-cell">{row.count}</td>
+                <td className="py-1 pr-3 text-right">{formatCurrency(row.amount)}</td>
+                <td className="whitespace-nowrap py-1 pr-3 text-right">{signedPesos(row.change)}</td>
+                <td className="hidden whitespace-nowrap py-1 text-right sm:table-cell">{row.changePercent === null ? '—' : `${row.changePercent > 0 ? '+' : row.changePercent < 0 ? '−' : ''}${Math.abs(row.changePercent)}%`}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </details>}
+    </> : <div className="h-[300px]"><EmptyState loading={loading} /></div>}
+  </div>;
+}
+
+function LoanTooltip({ row, partial, compared }: { row: LoanRow; partial: boolean; compared: boolean }) {
+  return <div className="min-w-[220px] space-y-1 bg-white p-3 text-[13px]" style={TOOLTIP_STYLE}>
+    <p className="font-semibold text-gray-900">{row.period}{partial ? ' (so far)' : ''}</p>
+    <div className="flex items-center justify-between gap-6"><span className="flex items-center gap-2 text-gray-600"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: LOAN_COLORS.amount }} />Disbursed</span><span className="font-semibold tabular-nums text-gray-900">{formatCurrency(row.amount)}</span></div>
+    <p className="text-gray-500">{row.count} {row.count === 1 ? 'loan' : 'loans'}</p>
+    {compared && <>
+      <div className="flex items-center justify-between gap-6 border-t border-gray-100 pt-1"><span className="flex items-center gap-2 text-gray-600"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: row.change < 0 ? LOAN_COLORS.down : LOAN_COLORS.up }} />Change</span><span className="tabular-nums text-gray-900">{signedPesos(row.change)}</span></div>
+      <p className="text-gray-500">{describeChange(row)}</p>
+    </>}
+  </div>;
+}
+
+// The three income sources, one line each: blue, orange and aqua, the first
+// three slots of the validated categorical palette (they stay apart for
+// color-blind viewers on white). The legend names each line with its total.
+const INCOME_SERIES = [
+  { key: 'kadiwa', label: 'Kadiwa net sales', color: '#2a78d6' },
+  { key: 'machinery', label: 'Machinery rentals', color: '#eb6834' },
+  { key: 'loanInterest', label: 'Loan interest', color: '#1baf7a' },
+] as const;
+const GRANULARITIES: Array<{ id: RevenueGranularity; label: string; span: string; column: string }> = [
+  { id: 'day', label: 'Daily', span: 'Last 30 days', column: 'Day' },
+  { id: 'month', label: 'Monthly', span: 'Last 12 months', column: 'Month' },
+  { id: 'year', label: 'Yearly', span: 'Last 5 years', column: 'Year' },
+];
+
+/**
+ * Income over time from each source, by day, month or year, ending with the
+ * period picked at the top of the page (today at the latest).
+ */
+function IncomeTrendChart({ to, refreshKey }: { to: string; refreshKey: number }) {
+  const [granularity, setGranularity] = useState<RevenueGranularity>('month');
+  const [trend, setTrend] = useState<RevenueTrend | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    fetchRevenueTrend(granularity, to)
+      .then((result) => { if (active) { setTrend(result); setError(''); } })
+      .catch((reason: Error) => { if (active) setError(reason.message || 'Unable to load the income chart.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [granularity, to, refreshKey]);
+
+  const rows = trend?.granularity === granularity ? trend.rows : [];
+  const { span, column } = GRANULARITIES.find((entry) => entry.id === granularity)!;
+  const last = rows.at(-1);
+  return <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 className="text-lg font-bold text-gray-900">Income over time</h2>
+        <p className="text-sm text-gray-500">{span}{last ? `, to ${last.label}` : ''}</p>
+      </div>
+      <div role="group" aria-label="Show by" className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">
+        {GRANULARITIES.map((entry) => (
+          <button key={entry.id} type="button" onClick={() => setGranularity(entry.id)} aria-pressed={granularity === entry.id}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${granularity === entry.id ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:text-gray-900'}`}>
+            {entry.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {trend && rows.length > 0 && <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+      {INCOME_SERIES.map((series) => <li key={series.key} className="flex items-center gap-2 text-gray-600">
+        <span aria-hidden="true" className="h-0.5 w-4 rounded-full" style={{ background: series.color }} />{series.label}
+        <span className="font-semibold tabular-nums text-gray-900">{formatCurrency(trend.totals[series.key])}</span>
+      </li>)}
+      <li className="text-gray-600">Total <span className="font-semibold tabular-nums text-gray-900">{formatCurrency(trend.totals.total)}</span></li>
+    </ul>}
+
+    <div className={`mt-4 h-[320px] ${loading && rows.length ? 'opacity-60' : ''}`}>
+      {rows.length ? <ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}>
+        <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="#eef0ee" vertical={false} />
+          <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: '#e4e7e4' }} minTickGap={16} />
+          <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={64} tickFormatter={compactPesos} />
+          <Tooltip cursor={{ stroke: '#9ca39d', strokeDasharray: '3 3' }} content={({ active, payload }) => active && payload?.length ? <IncomeTooltip row={payload[0].payload as RevenueTrendRow} /> : null} />
+          {INCOME_SERIES.map((series) => <Line key={series.key} type="linear" dataKey={series.key} name={series.label} stroke={series.color} strokeWidth={2}
+            dot={granularity === 'day' ? false : { r: 4, fill: series.color, stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />)}
+        </LineChart>
+      </ResponsiveContainer> : <EmptyState loading={loading} message={error || 'No income in this period.'} />}
+    </div>
+
+    {rows.length > 0 && <details className="mt-3 text-sm">
+      <summary className="cursor-pointer font-medium text-green-700 hover:text-green-800">View as table</summary>
+      <div className="mt-2 max-h-72 overflow-auto">
+        <table className="min-w-full text-left">
+          <thead className="sticky top-0 bg-white text-xs text-gray-500"><tr><th className="py-1 pr-3 font-medium">{column}</th>{INCOME_SERIES.map((series) => <th key={series.key} className="py-1 pr-3 text-right font-medium">{series.label}</th>)}<th className="py-1 text-right font-medium">Total</th></tr></thead>
+          <tbody className="divide-y divide-gray-100 tabular-nums text-gray-700">
+            {[...rows].reverse().map((row) => <tr key={row.start}>
+              <td className="whitespace-nowrap py-1 pr-3">{row.label}</td>
+              {INCOME_SERIES.map((series) => <td key={series.key} className="py-1 pr-3 text-right">{formatCurrency(row[series.key])}</td>)}
+              <td className="py-1 text-right font-semibold text-gray-900">{formatCurrency(row.total)}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </details>}
+  </section>;
+}
+
+function IncomeTooltip({ row }: { row: RevenueTrendRow }) {
+  return <div className="min-w-[210px] space-y-1 bg-white p-3 text-[13px]" style={TOOLTIP_STYLE}>
+    <p className="font-semibold text-gray-900">{row.label}</p>
+    {INCOME_SERIES.map((series) => <div key={series.key} className="flex items-center justify-between gap-6">
+      <span className="flex items-center gap-2 text-gray-600"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm" style={{ background: series.color }} />{series.label}</span>
+      <span className="tabular-nums text-gray-900">{formatCurrency(row[series.key])}</span>
+    </div>)}
+    <div className="flex justify-between gap-6 border-t border-gray-100 pt-1"><span className="text-gray-600">Total</span><span className="font-semibold tabular-nums text-gray-900">{formatCurrency(row.total)}</span></div>
+  </div>;
 }
 
 // Teal, orange and blue stay apart for color-blind viewers (checked with the
@@ -221,8 +490,5 @@ function KadiwaTooltip({ row }: { row: KadiwaRow }) {
   </div>;
 }
 
-function ChartPanel({ title, children }: { title: string; children: React.ReactElement }) {
-  return <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6"><h2 className="mb-4 text-lg font-bold text-gray-900">{title}</h2><div className="h-[300px]"><ResponsiveContainer width="100%" height="100%" initialDimension={CHART_INITIAL_SIZE}>{children}</ResponsiveContainer></div></div>;
-}
 
 function EmptyState({ loading, message = 'No data for this period.' }: { loading: boolean; message?: string }) { return <div className="flex h-full items-center justify-center text-sm text-gray-500">{loading ? 'Loading live data...' : message}</div>; }

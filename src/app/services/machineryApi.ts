@@ -174,6 +174,32 @@ export async function fetchServices(params: { machineryId?: string; croppingPeri
   };
 }
 
+/** A booking of a machine rented by the day (shown under Services, beside the per-service jobs). */
+export interface DayRental {
+  id: number;
+  machineryId: string;
+  machineryName: string;
+  clientCategory: ClientCategory;
+  memberName: string;
+  memberNumber: string | null;
+  purpose: string;
+  startDate: string;
+  endDate: string;
+  duration: number;
+  dailyFee: number;
+  rentalFee: number;
+  status: 'scheduled' | 'ongoing' | 'completed';
+}
+
+export async function fetchDayRentals(params: { machineryId?: string; year?: number | string; search?: string; page?: number; limit?: number }) {
+  const data = await apiGet<{ rentals: Record<string, unknown>[]; totals: Record<string, unknown>; pagination: Pagination }>(`/api/machinery/day-rentals${query(params)}`);
+  return {
+    rentals: data.rentals.map((row) => ({ ...row, duration: toNumber(row.duration), dailyFee: toNumber(row.dailyFee), rentalFee: toNumber(row.rentalFee) }) as DayRental),
+    totals: { count: toNumber(data.totals.count), days: toNumber(data.totals.days), rentalFees: toNumber(data.totals.rentalFees) },
+    pagination: data.pagination,
+  };
+}
+
 export async function fetchService(id: number) {
   const data = await apiGet<{ service: Record<string, unknown>; payments: Record<string, unknown>[] }>(`/api/machinery/services/${id}`);
   return { service: mapService(data.service), payments: data.payments.map(mapPayment) };

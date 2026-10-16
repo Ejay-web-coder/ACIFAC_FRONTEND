@@ -7,6 +7,7 @@ import { CROPPING_PERIODS, deleteService, fetchServices, rateLabel, type Machine
 import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
+import { DayRentalsTable } from './DayRentalsTable';
 import { PaymentModal } from './PaymentModal';
 import { RecordServiceModal } from './RecordServiceModal';
 import { PaymentBadge, bags, hectares, peso, primaryButton, yearOptions } from './shared';
@@ -151,6 +152,9 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
         </div>
         {data && <Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} label="services" />}
       </SectionCard>
+
+      {/* The machines rented by the day, with the same machine, year and name filters. */}
+      <DayRentalsTable machineryId={filters.machineryId} year={filters.year} search={filters.search} />
 
       {editing !== undefined && (
         <RecordServiceModal machinery={machinery} rentalRequests={rentalRequests} service={editing} defaultMachineryId={filters.machineryId || undefined}

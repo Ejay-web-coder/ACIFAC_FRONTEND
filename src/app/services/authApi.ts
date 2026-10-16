@@ -628,7 +628,8 @@ export interface AnalyticsData {
     projectedRepayment: number;
     paymentToOutstandingRate: number;
   };
-  loans: Array<{ period: string; amount: number; count: number }>;
+  /** Loans disbursed per month (every month, 0 without a loan; 12 months up to the period's end, or the period's own months for a year), with the change from the month before. changePercent is null when the month before had none. */
+  loans: Array<{ period: string; month: string; amount: number; count: number; previous: number; change: number; changePercent: number | null }>;
   revenue: Array<{ category: string; amount: number }>;
   machinery: Array<{ name: string; operations: number; days: number; revenue: number }>;
   /** Kadiwa per day (one month) or per month: goods sold (gross), cost of the store items, expenses, and the net income (sales = gross - expenses - costOfGoods). */
@@ -670,6 +671,18 @@ export interface AnalyticsData {
 }
 
 export const fetchAnalytics = (from: string, to: string) => apiGet<AnalyticsData>(`/api/admin/analytics${query({ from, to })}`);
+
+/** Operating revenue per day (last 30 days), month (last 12) or year (last 5), up to `to`, one figure per source. */
+export type RevenueGranularity = 'day' | 'month' | 'year';
+export interface RevenueTrendRow { start: string; label: string; kadiwa: number; machinery: number; loanInterest: number; total: number }
+export interface RevenueTrend {
+  granularity: RevenueGranularity;
+  from: string;
+  to: string;
+  rows: RevenueTrendRow[];
+  totals: { kadiwa: number; machinery: number; loanInterest: number; total: number };
+}
+export const fetchRevenueTrend = (granularity: RevenueGranularity, to: string) => apiGet<RevenueTrend>(`/api/admin/analytics/revenue${query({ granularity, to })}`);
 
 export type CreditVerdict = 'lend' | 'caution' | 'do_not_lend' | 'no_history';
 
@@ -969,6 +982,7 @@ export interface AnnouncementRecord { id: number; title: string; message: string
 export const fetchAnnouncements = () => apiGet<{ data: AnnouncementRecord[]; pagination: Pagination }>('/api/announcements?limit=50');
 export const createAnnouncementRequest = (payload: { title: string; message: string; audience: AnnouncementRecord['audience'] }) => apiPost<{ data: AnnouncementRecord }>('/api/announcements', payload);
 export const deleteAnnouncementRequest = (id: number) => apiDelete<{ success: boolean }>(`/api/announcements/${id}`);
+export const markAnnouncementDoneRequest = (id: number) => apiPatch<{ success: boolean }>(`/api/announcements/${id}/done`, {});
 
 // ----- Legal documents (admin settings) --------------------------------------------------------
 

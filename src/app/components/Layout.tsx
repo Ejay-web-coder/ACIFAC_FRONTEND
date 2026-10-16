@@ -27,19 +27,20 @@ import {
   BellOff,
   History,
   CalendarCheck,
+  CircleCheck,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../App';
 import {
-  createAnnouncementRequest, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
-  markNotificationRead, type AppNotification, type AuditLogEntry,
+  createAnnouncementRequest, deleteAnnouncementRequest, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
+  markAnnouncementDoneRequest, markNotificationRead, type AppNotification, type AuditLogEntry,
 } from '../services/authApi';
 import { closeLiveUpdates, useLiveRefresh } from '../../lib/liveUpdates';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './ui/sheet';
 import { useIsMobile } from './ui/use-mobile';
 import { formatDateTime } from '../../utils/dateTime';
 import { EmptyState, ListSkeleton } from './common/UiKit';
-import { InstallAppButton } from './common/InstallAppButton';
 import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
 
 const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
@@ -264,6 +265,24 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     }
   };
 
+  // Done: the announcement has served its purpose; it leaves the list and stays on record.
+  // Delete: posted by mistake; it is removed for everyone, members' notifications included.
+  const [removingAnnouncement, setRemovingAnnouncement] = useState<string | null>(null);
+  const removeAnnouncement = async (announcement: Announcement, action: 'done' | 'delete') => {
+    if (action === 'delete' && !window.confirm(`Delete "${announcement.title}"? It is removed for everyone, including from members' notifications.`)) return;
+    setRemovingAnnouncement(announcement.id);
+    try {
+      if (action === 'done') await markAnnouncementDoneRequest(Number(announcement.id));
+      else await deleteAnnouncementRequest(Number(announcement.id));
+      setAnnouncements((current) => current.filter((item) => item.id !== announcement.id));
+      toast.success(action === 'done' ? 'Announcement marked as done' : 'Announcement deleted');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to remove the announcement.');
+    } finally {
+      setRemovingAnnouncement(null);
+    }
+  };
+
   // Filter audit logs based on search and filter
   useEffect(() => {
     if (!showAuditLogs || userRole !== 'admin') return;
@@ -406,7 +425,6 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             </div>
 
             <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
-              <InstallAppButton />
               {userRole === 'admin' && (
                 <button
                   type="button"
@@ -650,7 +668,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                 <div className="flex justify-end"><button type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 sm:w-auto"><Megaphone className="h-4 w-4" />Post Announcement</button></div>
               </form>
 
-              <div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Posted Announcements</h3>{announcements.length ? <div className="space-y-3">{announcements.map((announcement) => <article key={announcement.id} className="rounded-2xl border border-gray-200 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900">{announcement.title}</h4><p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{announcement.message}</p></div><span className="w-fit shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-800 ring-1 ring-green-200">{announcement.audience}</span></div><p className="mt-3 text-xs text-gray-500">{announcement.postedAt}</p></article>)}</div> : <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={Megaphone} title="No announcements yet" message="Announcements you post will be listed here." compact /></div>}</div>
+              <div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Posted Announcements</h3>{announcements.length ? <div className="space-y-3">{announcements.map((announcement) => <article key={announcement.id} className="rounded-2xl border border-gray-200 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900">{announcement.title}</h4><p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{announcement.message}</p></div><span className="w-fit shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-800 ring-1 ring-green-200">{announcement.audience}</span></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">{announcement.postedAt}</p><div className="flex gap-2"><button type="button" onClick={() => void removeAnnouncement(announcement, 'done')} disabled={removingAnnouncement === announcement.id} title="It has served its purpose: take it off the list (kept on record)" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"><CircleCheck className="h-4 w-4" />Done</button><button type="button" onClick={() => void removeAnnouncement(announcement, 'delete')} disabled={removingAnnouncement === announcement.id} title="Posted by mistake: remove it for everyone" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button></div></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={Megaphone} title="No announcements yet" message="Announcements you post will be listed here." compact /></div>}</div>
             </div>
           </div>
         </div>
