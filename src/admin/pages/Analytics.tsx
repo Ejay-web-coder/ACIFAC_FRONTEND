@@ -8,6 +8,7 @@ import { fetchAnalytics, fetchRevenueTrend, type AnalyticsData, type RevenueGran
 import { StatCard } from '../../app/components/common/UiKit';
 import { FleetAnalytics } from '../components/machinery/FleetAnalytics';
 import { MemberCreditHistory } from '../components/MemberCreditHistory';
+import { KadiwaProductInsights } from '../components/kadiwa/KadiwaProductInsights';
 import { toast } from 'sonner';
 
 // Shared chart styling in the ACIFAC palette.
@@ -45,6 +46,10 @@ function getPeriod(range: 'month' | 'quarter' | 'year', month: number, year: num
   return { from: dateKey(year, month, 1), to: dateKey(year, month + 1, 0) };
 }
 
+// Net income as the Dashboard counts it; a server from before it was sent gives the old sum.
+const netIncomeOf = (summary: AnalyticsData['summary']) => summary.netIncome ?? summary.totalOperatingRevenue;
+const machineryNetOf = (summary: AnalyticsData['summary']) => summary.machineryNetIncome ?? summary.machineryRevenue;
+
 function formatCurrency(value: number) {
   return `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
 }
@@ -55,11 +60,13 @@ function downloadCsv(data: AnalyticsData) {
     ['Period', `${data.period.from} to ${data.period.to}`],
     ['Active Members', data.summary.activeMembers],
     ['New Members', data.summary.newMembers],
+    ['Net Income', netIncomeOf(data.summary)],
     ['Operating Revenue', data.summary.totalOperatingRevenue],
     ['Loan Payments', data.summary.loanPayments],
     ['Interest Collected', data.summary.interestCollected],
     ['Share Capital Contributions', data.summary.shareCapital],
-    ['Machinery Revenue', data.summary.machineryRevenue],
+    ['Machinery Net Income', machineryNetOf(data.summary)],
+    ['Machinery Rental Fees', data.summary.machineryRevenue],
     ['Kadiwa Net Sales', data.summary.kadiwaNetSales],
     ['Outstanding Loan Balance', data.summary.outstandingBalance],
     ['Overdue Loans', data.summary.overdueLoans],
@@ -168,11 +175,11 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
 
       {/* The four headline figures for the period, above every tab. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Operating revenue" value={summary ? formatCurrency(summary.totalOperatingRevenue) : '—'} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Loan interest, machinery rentals and Kadiwa" />
+        <StatCard label="Net income" value={summary ? formatCurrency(netIncomeOf(summary)) : '—'} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Kadiwa, machinery and loan interest, as on the Dashboard" />
         <StatCard label="Outstanding loans" value={summary ? formatCurrency(summary.outstandingBalance) : '—'} icon={HandCoins} loading={loading && !summary}
           tone={summary?.overdueLoans ? 'warning' : 'green'} detail={summary ? (summary.overdueLoans ? `${summary.overdueLoans} overdue` : 'None overdue') : undefined} onClick={() => selectTab('loans')} />
         <StatCard label="Kadiwa net income" value={summary ? formatCurrency(summary.kadiwaNetSales) : '—'} icon={Store} loading={loading && !summary} detail="Sales less costs and expenses" onClick={() => selectTab('kadiwa')} />
-        <StatCard label="Machinery rentals" value={summary ? formatCurrency(summary.machineryRevenue) : '—'} icon={Tractor} loading={loading && !summary} detail="Day rentals started in the period" onClick={() => selectTab('machinery')} />
+        <StatCard label="Machinery net income" value={summary ? formatCurrency(machineryNetOf(summary)) : '—'} icon={Tractor} loading={loading && !summary} detail="Rentals and services, less expenses" onClick={() => selectTab('machinery')} />
       </div>
 
       {/* Four equal tabs on a phone, so none is cut off. */}
@@ -193,7 +200,10 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
         <MemberCreditHistory members={data?.memberAnalytics || []} methodology={data?.methodology} loading={loading} />
       </>}
       {/* One month is shown day by day. */}
-      {tab === 'kadiwa' && <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />}
+      {tab === 'kadiwa' && <>
+        <KadiwaChart rows={data?.sales || []} daily={dateRange === 'month'} loading={loading} />
+        <KadiwaProductInsights from={period.from} to={period.to} refreshKey={refreshKey} />
+      </>}
       {/* Bookings, utilization, revenue and cost per machine; forecast, ROI and AI recommendations open from its button. */}
       {tab === 'machinery' && <FleetAnalytics from={period.from} to={period.to} periodLabel={periodLabel} refreshKey={refreshKey} />}
     </div>
@@ -341,7 +351,7 @@ function LoanTooltip({ row, partial, compared }: { row: LoanRow; partial: boolea
 // color-blind viewers on white). The legend names each line with its total.
 const INCOME_SERIES = [
   { key: 'kadiwa', label: 'Kadiwa net sales', color: '#2a78d6' },
-  { key: 'machinery', label: 'Machinery rentals', color: '#eb6834' },
+  { key: 'machinery', label: 'Machinery (net)', color: '#eb6834' },
   { key: 'loanInterest', label: 'Loan interest', color: '#1baf7a' },
 ] as const;
 const GRANULARITIES: Array<{ id: RevenueGranularity; label: string; span: string; column: string }> = [
@@ -351,7 +361,7 @@ const GRANULARITIES: Array<{ id: RevenueGranularity; label: string; span: string
 ];
 
 /**
- * Income over time from each source, by day, month or year, ending with the
+ * Net income over time from each module (as the Dashboard counts it), by day, month or year, ending with the
  * period picked at the top of the page (today at the latest).
  */
 function IncomeTrendChart({ to, refreshKey }: { to: string; refreshKey: number }) {
@@ -375,7 +385,7 @@ function IncomeTrendChart({ to, refreshKey }: { to: string; refreshKey: number }
   return <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="text-lg font-bold text-gray-900">Income over time</h2>
+        <h2 className="text-lg font-bold text-gray-900">Net income over time</h2>
         <p className="text-sm text-gray-500">{span}{last ? `, to ${last.label}` : ''}</p>
       </div>
       <div role="group" aria-label="Show by" className="inline-flex rounded-xl border border-gray-200 bg-gray-50 p-1">

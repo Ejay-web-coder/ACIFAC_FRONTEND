@@ -616,6 +616,9 @@ export interface AnalyticsData {
     machineryRevenue: number;
     kadiwaNetSales: number;
     totalOperatingRevenue: number;
+    /** Net income for the period as the Dashboard counts it (services/netIncome.js); machinery net of its expenses. */
+    netIncome?: number;
+    machineryNetIncome?: number;
     outstandingBalance: number;
     totalLoans: number;
     activeLoans: number;
@@ -683,6 +686,20 @@ export interface RevenueTrend {
   totals: { kadiwa: number; machinery: number; loanInterest: number; total: number };
 }
 export const fetchRevenueTrend = (granularity: RevenueGranularity, to: string) => apiGet<RevenueTrend>(`/api/admin/analytics/revenue${query({ granularity, to })}`);
+
+/** Kadiwa products in a period: best sellers (store items and the day's goods) and store items running out. */
+export interface KadiwaProductRow {
+  id: string | null; name: string; kind: 'store' | 'goods'; unit: string | null; quantity: number; amount: number; saleDays: number;
+  share?: number; stock?: number; reorderLevel?: number; perDay?: number; daysLeft?: number | null;
+}
+export interface KadiwaProducts {
+  period: { from: string; to: string; days: number };
+  summary: { totalSales: number; storeItems: number; storeItemsSold: number };
+  bestSellers: KadiwaProductRow[];
+  runningOut: KadiwaProductRow[];
+  runningOutDays: number;
+}
+export const fetchKadiwaProducts = (from: string, to: string) => apiGet<KadiwaProducts>(`/api/admin/analytics/kadiwa-products${query({ from, to })}`);
 
 export type CreditVerdict = 'lend' | 'caution' | 'do_not_lend' | 'no_history';
 
