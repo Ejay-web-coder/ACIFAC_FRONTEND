@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
+import { KeyRound, Mail, Phone, Plus, RefreshCw, Search, ShieldCheck, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import {
@@ -22,15 +22,18 @@ export function AccountManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
-  const [form, setForm] = useState({ memberId: '', username: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ memberId: '', password: '', confirmPassword: '' });
 
   const filteredMembers = availableMembers.filter((member) => {
     const search = memberSearch.trim().toLowerCase();
     if (!search) return true;
-    return [member.member_number, member.first_name, member.last_name, member.email]
+    return [member.member_number, member.first_name, member.last_name, member.email, member.phone]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(search));
   });
+  // The member signs in with the email and mobile number in their member information.
+  const selectedMember = availableMembers.find((member) => String(member.id) === form.memberId);
+  const nothingToSignInWith = Boolean(selectedMember && !selectedMember.email && !selectedMember.phone);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -58,9 +61,10 @@ export function AccountManagement() {
 
     setIsCreating(true);
     try {
-      await createMemberAccountRequest({ memberId: Number(form.memberId), username: form.username, password: form.password, confirmPassword: form.confirmPassword });
-      toast.success('Member account created. The member must change the temporary password on first login.');
-      setForm({ memberId: '', username: '', password: '', confirmPassword: '' });
+      const response = await createMemberAccountRequest({ memberId: Number(form.memberId), password: form.password, confirmPassword: form.confirmPassword });
+      toast.success('Member account created. The member signs in with their email or mobile number and must change the temporary password on first login.');
+      for (const warning of response.warnings ?? []) toast.warning(warning);
+      setForm({ memberId: '', password: '', confirmPassword: '' });
       setMemberSearch('');
       setShowCreate(false);
       void loadData();
@@ -113,7 +117,7 @@ export function AccountManagement() {
       {showCreate && (
         <form onSubmit={createAccount} className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">Create Member Account</h2>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-gray-700">Select member
               <div className="relative mt-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -125,9 +129,19 @@ export function AccountManagement() {
               </select>
               <span className="mt-1 block text-xs text-gray-500">Showing {filteredMembers.length} of {availableMembers.length} members</span>
             </label>
-            <label className="text-sm font-medium text-gray-700">Username
-              <input required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
-            </label>
+            <div className="text-sm font-medium text-gray-700">Signs in with
+              <div className={`mt-1 space-y-1.5 rounded-xl border bg-white px-3 py-2.5 font-normal ${nothingToSignInWith ? 'border-red-300' : 'border-gray-200'}`}>
+                {selectedMember ? (
+                  <>
+                    <p className="flex min-w-0 items-center gap-2"><Mail className="h-4 w-4 shrink-0 text-gray-400" /><span className={`truncate ${selectedMember.email ? 'text-gray-900' : 'text-gray-400'}`}>{selectedMember.email || 'No email'}</span></p>
+                    <p className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-gray-400" /><span className={selectedMember.phone ? 'text-gray-900' : 'text-gray-400'}>{selectedMember.phone || 'No mobile number'}</span></p>
+                  </>
+                ) : <p className="text-gray-500">Choose a member to see their email and mobile number.</p>}
+              </div>
+              <span className={`mt-1 block text-xs font-normal ${nothingToSignInWith ? 'text-red-600' : 'text-gray-500'}`}>
+                {nothingToSignInWith ? 'Add an email or mobile number in this member\'s information first.' : 'From the member\'s information. The member signs in with either one.'}
+              </span>
+            </div>
             <label className="text-sm font-medium text-gray-700">Temporary password
               <input required minLength={8} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2" />
               <span className="mt-1 block text-xs font-normal text-gray-500">Use 8+ characters with uppercase, lowercase, number, and symbol.</span>
@@ -137,7 +151,7 @@ export function AccountManagement() {
             </label>
           </div>
           <div className="mt-4 flex gap-2">
-            <button type="submit" disabled={isCreating} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{isCreating ? 'Creating...' : 'Create account'}</button>
+            <button type="submit" disabled={isCreating || nothingToSignInWith} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{isCreating ? 'Creating...' : 'Create account'}</button>
             <button type="button" disabled={isCreating} onClick={() => setShowCreate(false)} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
           </div>
         </form>
@@ -146,12 +160,16 @@ export function AccountManagement() {
       <div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
         <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50"><tr>{['Member', 'Username', 'Role', 'Status', 'Created', 'Actions'].map((heading) => <th key={heading} className="px-4 py-3 text-left font-semibold text-gray-600">{heading}</th>)}</tr></thead>
+          <thead className="bg-gray-50"><tr>{['Member', 'Email / Mobile number', 'Role', 'Status', 'Created', 'Actions'].map((heading) => <th key={heading} className="px-4 py-3 text-left font-semibold text-gray-600">{heading}</th>)}</tr></thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading accounts...</td></tr> : accountPages.pageItems.map((account) => (
               <tr key={account.user_id}>
                 <td className="px-4 py-3"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number || 'Admin'}</span></div></td>
-                <td className="px-4 py-3 text-gray-700">{account.username}</td>
+                {/* What the account signs in with: members their email or mobile number; administrators keep their username. */}
+                <td className="px-4 py-3 text-gray-700">
+                  <span className="block">{account.email || <span className="text-gray-400">No email</span>}</span>
+                  <span className="block text-xs text-gray-500">{account.role === 'ADMIN' ? `Username: ${account.username}` : account.phone || 'No mobile number'}</span>
+                </td>
                 <td className="px-4 py-3"><span className="inline-flex items-center gap-1"><ShieldCheck className="h-4 w-4 text-blue-600" />{account.role}</span></td>
                 <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${account.account_status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{account.account_status}</span>{account.must_change_password && <span className="ml-2 text-xs text-orange-600">Password change required</span>}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDateTime(account.account_created_at)}</td>

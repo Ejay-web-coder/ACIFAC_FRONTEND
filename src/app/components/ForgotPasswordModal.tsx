@@ -16,6 +16,8 @@ const PRIMARY = 'flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg
 const SECONDARY = 'flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300';
 
 // Forgot password: email or mobile number -> 6-digit code -> new password.
+// Only an email or number of an account (or of its member information) gets a
+// code; any other is refused with the server's reason, shown on this step.
 // Every rule (who gets a code, expiry, attempts, resend cooldown, password
 // policy) is enforced by the server; the code never comes back to the page,
 // and the final step is authorised by an httpOnly cookie the page cannot read.
@@ -165,12 +167,13 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
           <div>
             <label htmlFor="reset-email" className="block text-sm font-medium text-gray-700 mb-2">Email</label>
             <input id="reset-email" type="email" autoComplete="email" autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" className={INPUT} />
+            <p className="mt-2 text-xs text-gray-500">The email on your ACIFAC account or in your member information.</p>
           </div>
         ) : (
           <div>
             <label htmlFor="reset-phone" className="block text-sm font-medium text-gray-700 mb-2">Mobile number</label>
             <input id="reset-phone" type="tel" inputMode="tel" autoComplete="tel" autoFocus value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0917 123 4567" className={INPUT} />
-            <p className="mt-2 text-xs text-gray-500">The number on your ACIFAC account. If it is shared with another member, use your email instead.</p>
+            <p className="mt-2 text-xs text-gray-500">The number on your ACIFAC account or in your member information. If it is shared with another member, use your email instead.</p>
           </div>
         )}
         {feedback}

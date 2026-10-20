@@ -9,6 +9,7 @@ import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMe
 import { formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
+import { DayRentalsPanel } from '../components/machinery/DayRentalsPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
@@ -21,6 +22,7 @@ interface MachineryOperationsProps {
 const TABS = [
   { id: 'rentals', label: 'Fleet & Rentals' },
   { id: 'services', label: 'Services' },
+  { id: 'day-rentals', label: 'Day Rentals' },
   { id: 'expenses', label: 'Expenses' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
@@ -210,6 +212,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
 
       {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
+      {canEdit && tab === 'day-rentals' && <DayRentalsPanel machinery={machinery} />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
 
       {tab === 'rentals' && (<>

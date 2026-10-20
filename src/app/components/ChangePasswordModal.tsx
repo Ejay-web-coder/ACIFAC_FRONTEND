@@ -24,9 +24,10 @@ function maskPhone(phone: string) {
   return digits ? `0${digits.slice(0, 3)} ••• ${digits.slice(-4)}` : phone;
 }
 
-// Change password while signed in: a 6-digit code sent to the account's own
-// email or mobile number, or the current password. The server checks the code
-// and ends every session, so the member signs in again afterwards.
+// Change password while signed in (members and administrators): a 6-digit
+// code sent to the account's own email or mobile number, picked like in
+// Forgot Password, or the current password. The server checks the code and
+// ends every session, so the user signs in again afterwards.
 export function ChangePasswordModal({ email, phone, smsAvailable, onClose }: {
   email: string | null;
   phone: string | null;
@@ -150,26 +151,35 @@ export function ChangePasswordModal({ email, phone, smsAvailable, onClose }: {
       </div>
     </>
   );
-  const option = (value: Channel, icon: ReactNode, label: string, detail: string) => (
-    <label className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${channel === value ? 'border-green-600 bg-green-50' : 'border-gray-200 hover:bg-gray-50'}`}>
-      <input type="radio" name="code-channel" value={value} checked={channel === value} onChange={() => setChannel(value)} className="accent-green-600" />
-      {icon}
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-gray-900">{label}</span>
-        <span className="block truncate text-xs text-gray-500">{detail}</span>
-      </span>
-    </label>
+  // Email or mobile number, as in Forgot Password: one of the two, shown masked.
+  const tab = (value: Channel, label: string, unavailable: boolean) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={channel === value}
+      disabled={unavailable}
+      onClick={() => { setChannel(value); setError(''); }}
+      className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:text-gray-400 ${channel === value ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'}`}
+    >
+      {label}
+    </button>
   );
+  const destination = channel === 'email'
+    ? { icon: <Mail className="h-5 w-5 shrink-0 text-gray-500" />, text: email ? `We will email it to ${maskEmail(email)}.` : 'No email is on your account.' }
+    : { icon: <MessageSquare className="h-5 w-5 shrink-0 text-gray-500" />, text: phone ? `We will text it to ${maskPhone(phone)}.` : 'No mobile number is on your account.' };
 
   let body: ReactNode;
   if (method === 'code' && !sentTo) {
     body = (
       <form onSubmit={sendCode} noValidate className="p-6 space-y-4">
-        <p className="text-sm text-gray-600">We will send a 6-digit code to confirm it is you. Where should we send it?</p>
-        <div className="space-y-2" role="radiogroup" aria-label="Send the code by">
-          {email && option('email', <Mail className="h-5 w-5 shrink-0 text-gray-500" />, 'Email', maskEmail(email))}
-          {smsAvailable && phone && option('sms', <MessageSquare className="h-5 w-5 shrink-0 text-gray-500" />, 'Text message', maskPhone(phone))}
+        <p className="text-sm text-gray-600">Where should we send your 6-digit code?</p>
+        <div role="tablist" aria-label="Send the code by" className="flex gap-1 rounded-lg bg-gray-100 p-1">
+          {tab('email', 'Email', !email)}
+          {tab('sms', 'Mobile number', !phone || !smsAvailable)}
         </div>
+        <p className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm text-gray-700">{destination.icon}<span className="min-w-0 truncate">{destination.text}</span></p>
+        {phone && !smsAvailable && <p className="text-xs text-gray-500">Codes cannot be sent by text message right now, so use your email.</p>}
+        {!phone && <p className="text-xs text-gray-500">Add a mobile number in your profile to get codes by text message.</p>}
         {feedback}
         <button type="button" onClick={() => switchMethod('current')} className={LINK}>Use your current password instead</button>
         {buttons('Send Code', 'Sending...')}

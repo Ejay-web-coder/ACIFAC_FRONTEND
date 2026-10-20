@@ -302,16 +302,19 @@ export function Login({ onLogin, notice }: LoginProps) {
             ) : (
               <form onSubmit={handleMemberLogin} className="space-y-4 sm:space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">Username/Number</label>
+                  <label htmlFor="member-identifier" className="mb-2 block text-sm font-medium text-gray-700">Email or mobile number</label>
                   <div className="relative">
                     <User className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 sm:h-4 sm:w-4 sm:left-3" />
                     <input
+                      id="member-identifier"
                       type="text"
                       name="identifier"
                       value={memberForm.identifier}
                       onChange={handleMemberChange}
                       autoComplete="username"
-                      placeholder="Username or member number"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      placeholder="you@email.com or 0917 123 4567"
                       className="w-full rounded-xl border border-gray-300 py-3 sm:py-2.5 pl-11 sm:pl-9 pr-4 sm:pr-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </div>

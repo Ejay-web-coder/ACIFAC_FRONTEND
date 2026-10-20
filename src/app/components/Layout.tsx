@@ -54,6 +54,8 @@ interface LayoutProps {
 interface AuditLog {
   id: string;
   user: string;
+  /** Shown on hover when the full name is the one displayed. */
+  username: string | null;
   action: string;
   resource: string;
   timestamp: string;
@@ -295,12 +297,14 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
         if (!isMounted) return;
 
         const rows = (response.data ?? []).map((row: AuditLogEntry): AuditLog => {
-          const userName = row.user_name_snapshot || (row.user_id ? `User #${row.user_id}` : 'System');
+          // Who did it by full name (e.g. "Krezner Allado"), else the username.
+          const userName = row.user_full_name || row.user_name_snapshot || (row.user_id ? `User #${row.user_id}` : 'System');
           const summary = row.description || `${row.action} on ${row.entity_type || 'record'}`;
           const resource = row.entity_type ? `${row.entity_type} ${row.entity_id ?? ''}`.trim() : row.module;
           return {
             id: String(row.id),
             user: userName,
+            username: row.user_full_name ? row.user_name_snapshot : null,
             action: row.action,
             resource,
             timestamp: row.created_at ? formatDateTime(row.created_at) : 'Unknown',
@@ -326,6 +330,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     const matchesSearch =
       log.id.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.user.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
+      (log.username ?? '').toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.resource.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.details.toLowerCase().includes(auditLogsSearch.toLowerCase());
 
@@ -733,7 +738,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                           <span className="text-xs text-gray-400">#{log.id}</span>
                         </div>
                         <p className="mt-1.5 text-sm text-gray-900">{log.details}</p>
-                        <p className="mt-1 text-xs text-gray-500">{log.user} · {log.resource}</p>
+                        <p className="mt-1 text-xs text-gray-500"><span title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</span> · {log.resource}</p>
                         <p className="text-xs text-gray-400">{log.timestamp}</p>
                       </li>
                     ))}
@@ -755,7 +760,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                         {filteredAuditLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-green-50/40">
                             <td className="px-4 py-3 font-mono text-xs text-gray-900 lg:px-6">{log.id}</td>
-                            <td className="px-4 py-3 text-gray-600">{log.user}</td>
+                            <td className="px-4 py-3 text-gray-600" title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</td>
                             <td className="px-4 py-3">
                               <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${log.action === 'DELETE' ? 'bg-red-50 text-red-700 ring-red-200' : log.action === 'VIEW' ? 'bg-gray-100 text-gray-700 ring-gray-200' : 'bg-green-50 text-green-800 ring-green-200'}`}>
                                 {log.action}

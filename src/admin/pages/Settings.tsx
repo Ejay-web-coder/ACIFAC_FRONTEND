@@ -3,11 +3,11 @@ import { User, Bell, Shield, Database, Save, FileText, Upload, Eye, Trash2 } fro
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import {
-  changePasswordRequest, deleteLegalDocumentRequest, fetchCurrentUser, fetchLegalDocuments, updateNotificationPreferencesRequest,
+  deleteLegalDocumentRequest, fetchCurrentUser, fetchLegalDocuments, updateNotificationPreferencesRequest,
   updateProfileRequest, uploadLegalDocumentRequest, type AuthUser, type LegalDocumentRecord,
 } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
-import { closeLiveUpdates } from '../../lib/liveUpdates';
+import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { formatDate, formatDateTime } from '../../utils/dateTime';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 
@@ -25,7 +25,8 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
   const [account, setAccount] = useState<AuthUser | null>(null);
   const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
   const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: true, loanReminders: true });
-  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  // A temporary password opens the change straight away.
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
   const [isUploading, setIsUploading] = useState(false);
 
   const loadAccount = useCallback(() => {
@@ -67,24 +68,6 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
       toast.success('Notification settings saved!');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to save notification settings.');
-    }
-  };
-
-  const handleChangePassword = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast.error('New passwords do not match.');
-      return;
-    }
-    try {
-      await changePasswordRequest(passwordForm);
-      toast.success('Password changed successfully. Please sign in again.');
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      // The server ends every session after a password change.
-      closeLiveUpdates();
-      window.setTimeout(() => window.location.replace('/login'), 800);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to change password.');
     }
   };
 
@@ -136,7 +119,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
       <div>
         
         <p className="text-gray-600 mt-1">Manage your account and system preferences</p>
-        {mustChangePassword && <p className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">You are using a temporary password. Change it below to continue using the system.</p>}
+        {mustChangePassword && <p className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">You are using a temporary password. Change it under Security to continue using the system.</p>}
       </div>
 
       {/* Settings Container */}
@@ -343,15 +326,10 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                 <div className="space-y-4">
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Change Password</h3>
-                    <p className="text-sm text-gray-600 mb-4">Update your password to keep your account secure</p>
-                    <form onSubmit={handleChangePassword} className="grid gap-3 sm:grid-cols-3">
-                      {(['currentPassword', 'newPassword', 'confirmPassword'] as const).map((field) => (
-                        <input key={field} required type="password" placeholder={field === 'currentPassword' ? 'Current password' : field === 'newPassword' ? 'New password' : 'Confirm password'} value={passwordForm[field]} onChange={(event) => setPasswordForm({ ...passwordForm, [field]: event.target.value })} className="rounded-xl border border-gray-300 px-3 py-2" />
-                      ))}
-                      <button type="submit" className="rounded-xl bg-green-600 px-4 py-2 text-white hover:bg-green-700 sm:col-span-3 sm:justify-self-start">
-                        Change Password
-                      </button>
-                    </form>
+                    <p className="text-sm text-gray-600 mb-4">Update your password with a 6-digit code sent to your email or mobile number, or with your current password</p>
+                    <button type="button" onClick={() => setShowChangePasswordModal(true)} className="rounded-xl bg-green-600 px-4 py-2 text-white hover:bg-green-700">
+                      Change Password
+                    </button>
                   </div>
                   <div className="p-4 border border-gray-200 rounded-lg">
                     <h3 className="font-medium text-gray-900 mb-2">Two-Factor Authentication</h3>
@@ -456,6 +434,11 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
           )}
         </div>
       </div>
+
+      {/* Opens once the account is loaded, so it knows the email and mobile number on file. */}
+      {showChangePasswordModal && account && (
+        <ChangePasswordModal email={account.notification_email ?? account.email ?? null} phone={account.phone ?? null} smsAvailable={Boolean(account.sms_available)} onClose={() => setShowChangePasswordModal(false)} />
+      )}
     </div>
   );
 }
