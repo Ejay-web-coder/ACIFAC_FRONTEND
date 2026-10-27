@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '../App';
 import {
-  createAnnouncementRequest, deleteAnnouncementRequest, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
+  createAnnouncementRequest, deleteAnnouncementRequest, fetchAdminAccounts, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
   markAnnouncementDoneRequest, markNotificationRead, type AppNotification, type AuditLogEntry,
 } from '../services/authApi';
 import { closeLiveUpdates, useLiveRefresh } from '../../lib/liveUpdates';
@@ -56,11 +56,21 @@ interface AuditLog {
   user: string;
   /** Shown on hover when the full name is the one displayed. */
   username: string | null;
+  /** An administrator's position in the cooperative when they acted. */
+  position: string | null;
   action: string;
   resource: string;
   timestamp: string;
   details: string;
 }
+
+const AUDIT_ACTION_WORDS: Record<string, string[]> = {
+  CREATE: ['CREATE', 'ADD', 'SUBMIT', 'UPLOAD', 'RECORD', 'POSTED', 'REGISTER'],
+  UPDATE: ['UPDATE', 'EDIT', 'CHANGE', 'APPROVE', 'DECLINE', 'RESTRUCTURE', 'RESET', 'STATUS', 'UNDONE', 'REVIEW'],
+  DELETE: ['DELETE', 'REMOVE', 'ARCHIVE', 'REJECT', 'VOID', 'CANCEL'],
+  VIEW: ['VIEW', 'DOWNLOAD', 'LOGIN', 'LOGOUT', 'SIGN'],
+  EXPORT: ['EXPORT', 'PRINT', 'REPORT'],
+};
 
 interface Announcement {
   id: string;
@@ -133,6 +143,11 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsSearch, setAuditLogsSearch] = useState('');
   const [auditLogsFilter, setAuditLogsFilter] = useState<string>('all');
+  // One administrator's actions only ('' = everyone), and the administrators to choose from.
+  const [auditLogsAdmin, setAuditLogsAdmin] = useState('');
+  const [auditAdmins, setAuditAdmins] = useState<Array<{ id: number; label: string }>>([]);
+  // Opened again later, the audit log shows everyone.
+  useEffect(() => { if (!showAuditLogs) setAuditLogsAdmin(''); }, [showAuditLogs]);
 
   // Notifications and announcements are stored in PostgreSQL and refreshed
   // through live updates, so they are the same on every device.
@@ -293,8 +308,13 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     const loadAuditLogs = async () => {
       setAuditLogsLoading(true);
       try {
-        const response = await fetchAdminAuditLogs({ page: 1, limit: 50 });
+        const [response, accounts] = await Promise.all([
+          fetchAdminAuditLogs({ page: 1, limit: 100, userId: auditLogsAdmin || undefined }),
+          fetchAdminAccounts().catch(() => ({ accounts: [] })),
+        ]);
         if (!isMounted) return;
+        setAuditAdmins(accounts.accounts.filter((account) => account.role === 'ADMIN')
+          .map((account) => ({ id: account.user_id, label: `${account.full_name || account.username}${account.position ? ` (${account.position})` : ''}` })));
 
         const rows = (response.data ?? []).map((row: AuditLogEntry): AuditLog => {
           // Who did it by full name (e.g. "Krezner Allado"), else the username.
@@ -305,6 +325,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             id: String(row.id),
             user: userName,
             username: row.user_full_name ? row.user_name_snapshot : null,
+            position: row.user_position ?? null,
             action: row.action,
             resource,
             timestamp: row.created_at ? formatDateTime(row.created_at) : 'Unknown',
@@ -324,17 +345,19 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     return () => {
       isMounted = false;
     };
-  }, [showAuditLogs, userRole]);
+  }, [showAuditLogs, userRole, auditLogsAdmin]);
 
   const filteredAuditLogs = auditLogs.filter(log => {
     const matchesSearch =
       log.id.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.user.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       (log.username ?? '').toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
+      (log.position ?? '').toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.resource.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
       log.details.toLowerCase().includes(auditLogsSearch.toLowerCase());
 
-    const matchesFilter = auditLogsFilter === 'all' || log.action.toUpperCase() === auditLogsFilter.toUpperCase();
+    // Actions are named like MEMBER_CREATED or DOCUMENT_UPLOADED: the filter matches the kind of action in the name.
+    const matchesFilter = auditLogsFilter === 'all' || AUDIT_ACTION_WORDS[auditLogsFilter]?.some((word) => log.action.toUpperCase().includes(word));
 
     return matchesSearch && matchesFilter;
   });
@@ -693,17 +716,24 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 border-b border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-[1fr_12rem] md:px-6">
+            <div className="grid grid-cols-1 gap-3 border-b border-gray-100 bg-gray-50/70 p-3 sm:grid-cols-[1fr_14rem_10rem] md:px-6">
               <label className="relative">
                 <span className="sr-only">Search audit logs</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search by ID, user, resource or details"
+                  placeholder="Search by ID, name, position, resource or details"
                   value={auditLogsSearch}
                   onChange={(e) => setAuditLogsSearch(e.target.value)}
                   className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-9 pr-3 text-sm"
                 />
+              </label>
+              <label>
+                <span className="sr-only">Filter by administrator</span>
+                <select value={auditLogsAdmin} onChange={(e) => setAuditLogsAdmin(e.target.value)} className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">
+                  <option value="">Everyone</option>
+                  {auditAdmins.map((admin) => <option key={admin.id} value={String(admin.id)}>{admin.label}</option>)}
+                </select>
               </label>
               <label>
                 <span className="sr-only">Filter by action</span>
@@ -738,7 +768,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                           <span className="text-xs text-gray-400">#{log.id}</span>
                         </div>
                         <p className="mt-1.5 text-sm text-gray-900">{log.details}</p>
-                        <p className="mt-1 text-xs text-gray-500"><span title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</span> · {log.resource}</p>
+                        <p className="mt-1 text-xs text-gray-500"><span title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</span>{log.position && <span className="font-medium text-green-800"> ({log.position})</span>} · {log.resource}</p>
                         <p className="text-xs text-gray-400">{log.timestamp}</p>
                       </li>
                     ))}
@@ -760,7 +790,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                         {filteredAuditLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-green-50/40">
                             <td className="px-4 py-3 font-mono text-xs text-gray-900 lg:px-6">{log.id}</td>
-                            <td className="px-4 py-3 text-gray-600" title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</td>
+                            <td className="px-4 py-3 text-gray-600" title={log.username ? `Username: ${log.username}` : undefined}>{log.user}{log.position && <span className="block text-xs font-medium text-green-800">{log.position}</span>}</td>
                             <td className="px-4 py-3">
                               <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${log.action === 'DELETE' ? 'bg-red-50 text-red-700 ring-red-200' : log.action === 'VIEW' ? 'bg-gray-100 text-gray-700 ring-gray-200' : 'bg-green-50 text-green-800 ring-green-200'}`}>
                                 {log.action}
@@ -805,7 +835,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             </div>
             <div className="p-4 sm:p-6">
               <Suspense fallback={<ListSkeleton rows={5} />}>
-                <AccountManagement />
+                <AccountManagement onViewActivity={(account) => { setAuditLogsAdmin(String(account.user_id)); setAuditLogsFilter('all'); setAuditLogsSearch(''); setShowManageUsersModal(false); setShowAuditLogs(true); }} />
               </Suspense>
             </div>
           </div>

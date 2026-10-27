@@ -477,7 +477,7 @@ export interface MemberPatronageRefund {
   businessPool: number;
   participationPool: number;
   /** The member's business with the cooperative in pesos, by service. */
-  business: { machinery: number; loans: number; total: number };
+  business: { machinery: number; loans: number; kadiwa?: number; total: number };
   businessPoints: number;
   /** All current members' business and points. */
   totalBusiness: number;
@@ -535,7 +535,33 @@ export interface Account {
   must_change_password: boolean;
   last_login: string | null;
   account_created_at: string;
+  /** Administrators: their name and position in the cooperative, who made the account, and their latest action in the audit log. */
+  full_name?: string | null;
+  position?: string | null;
+  created_by_name?: string | null;
+  last_activity_at?: string | null;
 }
+
+/** An email, number or username already taken (problem), or null when it is free. */
+export interface ContactCheck { problem: string | null }
+export interface AdminContactCheck {
+  positions: string[];
+  /** Whether codes can be sent: by text message to the number, by email to the address. */
+  smsAvailable: boolean;
+  emailAvailable: boolean;
+  email?: ContactCheck;
+  phone?: ContactCheck;
+  username?: ContactCheck;
+}
+
+export const checkAdminContact = (params: { email?: string; phone?: string; username?: string }) => apiGet<AdminContactCheck>(`/api/admin/accounts/admin-check${query(params)}`);
+export const sendAdminContactCode = (channel: 'email' | 'sms', value: string, name: string) =>
+  apiPost<{ verificationId: number; channel: 'email' | 'sms'; sentTo: string; expiresInMinutes: number; message: string }>('/api/admin/accounts/admin-verifications', { channel, value, name });
+export const confirmAdminContactCode = (verificationId: number, code: string) => apiPost<{ verified: boolean; message: string }>(`/api/admin/accounts/admin-verifications/${verificationId}/confirm`, { code });
+export const createAdminAccountRequest = (payload: {
+  fullName: string; position: string; username: string; email: string; phone: string; password: string; confirmPassword: string;
+  emailVerificationId: number | null; phoneVerificationId: number | null;
+}) => apiPost<{ message: string; user: AuthUser }>('/api/admin/accounts/admins', payload);
 
 export interface AvailableMember {
   id: number;
@@ -559,6 +585,8 @@ export interface AuditLogEntry {
   user_name_snapshot: string | null;
   /** Full name of whoever did the action (profile name, or the member's name); null for system actions. */
   user_full_name: string | null;
+  /** An administrator's position in the cooperative when they acted (Treasurer, Secretary, ...). */
+  user_position?: string | null;
   user_role_snapshot: string | null;
   action: string;
   module: string;
@@ -854,7 +882,15 @@ export interface KadiwaSale {
   goods: Array<{ name: string }>;
   /** The goods sold, as the daily form lists them. */
   lines: KadiwaSalesLine[];
+  /** The members who bought that day and their patronage points (1 per PHP 100). */
+  memberPurchases: KadiwaMemberPurchase[];
 }
+
+export interface KadiwaMemberPurchase { memberId: number; memberNumber: string; name: string; amount: number; points: number }
+/** An active member found by member ID or name, for the member purchases of a sale. */
+export interface KadiwaBuyer { id: number; memberNumber: string; name: string; barangay: string | null }
+
+export const searchKadiwaMembers = (search: string) => apiGet<{ members: KadiwaBuyer[] }>(`/api/kadiwa/members${query({ search })}`);
 
 export interface KadiwaSalesReport {
   lines: KadiwaSalesLine[];
@@ -925,6 +961,9 @@ const mapSale = (sale: Record<string, unknown>): KadiwaSale => ({
   lines: ((sale.lines as Record<string, unknown>[]) || []).map(mapSalesLine),
   goods: (sale.goods as Array<{ name: string }>) || [],
   expenses: ((sale.expenses as Record<string, unknown>[]) || []).map((line) => ({ description: String(line.description ?? ''), amount: toNumber(line.amount) })),
+  memberPurchases: ((sale.memberPurchases as Record<string, unknown>[]) || []).map((line) => ({
+    memberId: Number(line.memberId), memberNumber: String(line.memberNumber ?? ''), name: String(line.name ?? ''), amount: toNumber(line.amount), points: toNumber(line.points),
+  })),
 });
 const toNumberOrNull = (value: unknown) => (value === null || value === undefined || value === '' ? null : toNumber(value));
 const mapInventory = (item: Record<string, unknown>): KadiwaInventoryItem => ({ ...(item as unknown as KadiwaInventoryItem), sizeValue: toNumberOrNull(item.sizeValue), stock: toNumber(item.stock), price: toNumber(item.price), costPrice: toNumberOrNull(item.costPrice), reorderLevel: toNumber(item.reorderLevel) });
@@ -955,7 +994,7 @@ export async function fetchKadiwaSales(from: string, to: string) {
 }
 
 // The New Sale form sends `expenses` (their sum is the sale's expenses); Sell Products sends `totalExpenses`.
-export async function createKadiwaSale(payload: { sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string }) {
+export async function createKadiwaSale(payload: { sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string; memberPurchases?: Array<{ memberId: number; amount: string }> }) {
   const data = await apiPost<{ sale: Record<string, unknown> }>('/api/kadiwa/sales', payload);
   return { sale: mapSale(data.sale) };
 }

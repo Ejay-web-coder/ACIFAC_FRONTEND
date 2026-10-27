@@ -35,12 +35,13 @@ export function PatronageBreakdown({ dividend, patronage }: { dividend: MemberDi
           <Rows rows={[
             ['Machinery rental and service fees', patronage.business.machinery],
             ['Loan interest paid', patronage.business.loans],
+            ['Kadiwa Store purchases', patronage.business.kadiwa ?? 0],
             ['Your Total Business', patronage.business.total, 'total'],
           ]} />
           <Formula worked={`= ${peso(patronage.business.total)} ÷ ₱${rules.pesosPerBusinessPoint} = ${businessPoints(patronage.businessPoints)} points`}>
             Business Points = Your Total Business ÷ ₱{rules.pesosPerBusinessPoint}
           </Formula>
-          <p className="text-xs text-gray-500">Kadiwa Store purchases are not counted yet: store sales are recorded as daily totals, without the buyer.</p>
+          <p className="text-xs text-gray-500">Kadiwa Store purchases count when the store writes your member ID or name on the day's sale. Ask for it when you buy.</p>
         </Step>
 
         <Step number={2} title="Your Participation Points">

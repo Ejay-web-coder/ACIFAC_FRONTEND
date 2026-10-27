@@ -4,7 +4,7 @@ import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import {
   deleteLegalDocumentRequest, fetchCurrentUser, fetchLegalDocuments, updateNotificationPreferencesRequest,
-  updateProfileRequest, uploadLegalDocumentRequest, type AuthUser, type LegalDocumentRecord,
+  checkAdminContact, updateProfileRequest, uploadLegalDocumentRequest, type AuthUser, type LegalDocumentRecord,
 } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
@@ -24,6 +24,9 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
   const [documentCategory, setDocumentCategory] = useState('Registration');
   const [account, setAccount] = useState<AuthUser | null>(null);
   const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
+  // The cooperative's positions, suggested for the Position field.
+  const [positions, setPositions] = useState<string[]>([]);
+  useEffect(() => { checkAdminContact({}).then((result) => setPositions(result.positions)).catch(() => undefined); }, []);
   const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: true, loanReminders: true });
   // A temporary password opens the change straight away.
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
@@ -192,14 +195,17 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
             <form onSubmit={handleSaveProfile} className="space-y-6">
               <ProfilePhotoEditor visibilityNote="Shown in your top bar. Members never see administrator pictures." />
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-4">Profile Information</h2>
+                <h2 className="text-lg font-bold text-gray-900">Profile Information</h2>
+                <p className="mb-4 mt-1 text-sm text-gray-600">Your full name and position are shown with everything you do in the audit log, so both are required.</p>
+                {!profileData.position.trim() && <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Enter your position in the cooperative (for example Treasurer or Secretary) and save.</p>}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Full Name
+                      Full Name <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
+                      required
                       value={profileData.name}
                       onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -229,14 +235,18 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-2">
-                      Position
+                      Position <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
+                      required
+                      list="admin-positions"
+                      placeholder="e.g. Treasurer"
                       value={profileData.position}
                       onChange={(e) => setProfileData({ ...profileData, position: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
+                    <datalist id="admin-positions">{positions.map((position) => <option key={position} value={position} />)}</datalist>
                   </div>
                 </div>
               </div>

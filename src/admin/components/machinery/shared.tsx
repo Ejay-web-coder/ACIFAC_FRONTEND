@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { StatusBadge } from '../../../app/components/common/UiKit';
 import { CONDITION_LABELS, type MachineCondition, type PaymentStatus } from '../../../app/services/machineryApi';
@@ -39,7 +40,10 @@ export function Modal({ title, description, onClose, children, footer, wide = fa
   footer?: ReactNode;
   wide?: boolean;
 }) {
-  return (
+  // Rendered at the end of the page, not inside the section that opens it: a
+  // section that fades while it refreshes (opacity) would otherwise make the
+  // window see-through, and the page behind it would show over its text.
+  return createPortal(
     <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}>
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
@@ -52,6 +56,7 @@ export function Modal({ title, description, onClose, children, footer, wide = fa
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

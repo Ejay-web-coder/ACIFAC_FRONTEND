@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertCircle, AlertTriangle, Camera, CheckCircle, CheckCircle2, Clock, Database, FileText, Plus, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Trash2, Undo2, Upload, User, XCircle,
+  AlertCircle, AlertTriangle, Camera, CheckCircle2, Clock, Database, Plus, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Trash2, Undo2, Upload, User, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
@@ -150,7 +150,6 @@ const FLAG_INPUT: Record<CheckStatus, string> = { fail: 'border-red-400 bg-red-5
 export function OCRScanner({ userRole }: OCRScannerProps) {
   const [scans, setScans] = useState<OcrScan[]>([]);
   const [forms, setForms] = useState<OcrFormDefinition[]>([]);
-  const [autoPost, setAutoPost] = useState(true);
   const [activeScan, setActiveScan] = useState<OcrScan | null>(null);
   const [dirty, setDirty] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -168,7 +167,6 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   // Delete a scan from Recent Scans: the first click asks to confirm.
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [undoWindowHours, setUndoWindowHours] = useState(48);
   // ?scan=<id>: the scan a notification links to.
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedScan = Number(searchParams.get('scan')) || null;
@@ -182,7 +180,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       .then(({ data }) => setScans(data))
       .catch((error) => toast.error('Unable to load document scans', { description: errorText(error, 'Please refresh and try again.') }));
     fetchFormDefinitions()
-      .then(({ data, autoPost: enabled, requiredIdSignatures: signatures, undoWindowHours: hours }) => { setForms(data); setAutoPost(enabled); if (signatures) setRequiredIdSignatures(signatures); if (hours) setUndoWindowHours(hours); })
+      .then(({ data, requiredIdSignatures: signatures }) => { setForms(data); if (signatures) setRequiredIdSignatures(signatures); })
       .catch(() => undefined);
   }, []);
 
@@ -727,7 +725,6 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
           </div>}
         </div>
       ))}<Pagination className="-mx-6 -mb-6 mt-4" page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" /></div>}</div>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>Every form is read twice, independently. Values the two readings agree on are trusted; any that differ are highlighted. The rule checks then confirm the required fields, dates, amounts and mobile numbers (09XXXXXXXXX), that a new member is 18 or older and lives in the service area, that the name matches the ID (90% alike or more), that the ID is genuine, and that nobody is registered twice. The confidence shown is the share of these checks that passed.</p><p>{autoPost ? `Forms that pass every check are saved automatically and the admins are notified; a new member, loan application or rental request saved this way can be undone for ${undoWindowHours} hours. Only forms with a failed or doubtful check wait here, with the fields to look at highlighted. Loan applications are filled in from the form but still wait for an officer's approval.` : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>When the AI service is busy, the document is kept and read again by itself (after 15 seconds, then 1, 5 and 15 minutes, 1 and 3 hours); nobody has to press Retry.</p><p>A scanned membership form also needs the applicant's valid ID: a picture of the ID with {requiredIdSignatures} specimen signatures (back to back), or the ID card captured with the live camera. When AI cannot recognize the 2x2 picture on the form, it asks for one. The system gives the membership number.</p><p>A scanned loan form needs the borrower's and the co-maker's valid IDs, each the front and back of the ID on one page with their {requiredIdSignatures} specimen signatures, uploaded or photographed. AI reads each ID and checks that it belongs to the borrower or co-maker on the form.</p><p>The Kadiwa Add Inventory and Daily Sales forms are printed from Kadiwa Store (Blank form). Scanned here, their products are added to the store inventory, or the sale is recorded with its goods, store items and expenses and the stock goes down, after AI checks that every line and total adds up.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
 
       {scannerOpen && <DocumentScannerModal onClose={() => setScannerOpen(false)} onScanned={(file) => { setScannerOpen(false); void processFile(file, 'camera'); }} />}
       {requirementsOpen && activeScan && requirementPanels && !requirementsDone(activeScan) && (

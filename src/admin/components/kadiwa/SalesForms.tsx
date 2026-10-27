@@ -9,6 +9,7 @@ import { addDateOnlyDays, dateOnlyToday, formatDate } from '../../../utils/dateT
 import { CATEGORIES, peso, productLabel } from './InventoryForms';
 import { KadiwaBlankForm } from './KadiwaBlankForm';
 import { StoreItemsPicker, storeQuantityProblem, storeSelection, type StoreQuantities } from './StoreItemsPicker';
+import { MemberPurchaseList, MemberPurchasesInput, memberPurchaseProblem, memberPurchaseTyped, type MemberPurchaseRow } from './MemberPurchases';
 
 // Kadiwa sales follow the Kadiwa ng Pangulo daily sales form: the seller, the
 // date, and each good sold with its unit, price, quantity and total amount.
@@ -40,7 +41,7 @@ const saleGross = (sale: Pick<KadiwaSale, 'groceries' | 'vegetables' | 'meat'>) 
 
 interface SaleRow { key: number; name: string; unit: string; category: KadiwaInventoryItem['category']; price: string; quantity: string; amount: string; typed: 'quantity' | 'amount' | null; custom: boolean }
 interface ExpenseRow { key: number; description: string; amount: string }
-interface SaleDraft { saleDate: string; rows: SaleRow[]; store: StoreQuantities; expenses: ExpenseRow[] }
+interface SaleDraft { saleDate: string; rows: SaleRow[]; store: StoreQuantities; expenses: ExpenseRow[]; members?: MemberPurchaseRow[] }
 
 // Offered when typing what an expense was for; anything else can be typed.
 const EXPENSE_KINDS = ['Transportation', 'Plastic bags', 'Ice', 'Labor', 'Load / communication', 'Stall rental', 'Electricity', 'Water', 'Meals', 'None'];
@@ -89,7 +90,7 @@ function readSaleDraft(): SaleDraft | null {
 }
 function writeSaleDraft(draft: SaleDraft | null) {
   try {
-    if (draft && (draft.rows.some(isFilled) || Object.values(draft.store).some((value) => value.trim()) || draft.expenses.some(expenseTyped))) window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    if (draft && (draft.rows.some(isFilled) || Object.values(draft.store).some((value) => value.trim()) || draft.expenses.some(expenseTyped) || draft.members?.some(memberPurchaseTyped))) window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     else window.localStorage.removeItem(DRAFT_KEY);
   } catch { /* storage unavailable: the form still works, it is only not kept */ }
 }
@@ -110,6 +111,9 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
   const [store, setStore] = useState<StoreQuantities>(draft?.store ?? {});
   const [expenses, setExpenses] = useState<ExpenseRow[]>(() => draft?.expenses ?? [blankExpense(1)]);
   const expenseKey = useRef(Math.max(1, ...(draft?.expenses ?? []).map((row) => row.key)) + 1);
+  // The members who bought today, for their patronage points.
+  const [members, setMembers] = useState<MemberPurchaseRow[]>(() => (draft?.members?.length ? draft.members : [{ key: 1, member: null, amount: '' }]));
+  const memberKey = useRef(Math.max(1, ...(draft?.members ?? []).map((row) => row.key)) + 1);
   const [expenseFocus, setExpenseFocus] = useState<number | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [error, setError] = useState('');
@@ -118,7 +122,7 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
   const [focusKey, setFocusKey] = useState<number | null>(null);
   const today = dateOnlyToday();
 
-  useEffect(() => { writeSaleDraft({ saleDate, rows, store, expenses }); }, [saleDate, rows, store, expenses]);
+  useEffect(() => { writeSaleDraft({ saleDate, rows, store, expenses, members }); }, [saleDate, rows, store, expenses, members]);
 
   const filled = rows.filter(isFilled);
   const goodsTotal = filled.reduce((sum, row) => sum + (validMoney(row.amount) ? Number(row.amount) : 0), 0);
@@ -130,6 +134,10 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
   const expensesValue = Math.round(expenseLines.reduce((sum, row) => sum + (validMoney(row.amount) ? Number(row.amount) : 0), 0) * 100) / 100;
   const changeExpense = (key: number, field: 'description' | 'amount', value: string) => { setError(''); setExpenses((current) => current.map((row) => (row.key === key ? { ...row, [field]: value } : row))); };
   const addExpense = () => { const key = expenseKey.current++; setExpenses((current) => [...current, blankExpense(key)]); setExpenseFocus(key); };
+  const memberLines = members.filter(memberPurchaseTyped);
+  const changeMember = (key: number, update: Partial<MemberPurchaseRow>) => { setError(''); setMembers((current) => current.map((row) => (row.key === key ? { ...row, ...update } : row))); };
+  const addMember = () => setMembers((current) => [...current, { key: memberKey.current++, member: null, amount: '' }]);
+  const removeMember = (key: number) => setMembers((current) => (current.length === 1 ? [{ key: memberKey.current++, member: null, amount: '' }] : current.filter((row) => row.key !== key)));
   const removeExpense = (key: number) => setExpenses((current) => (current.length === 1 ? [blankExpense(expenseKey.current++)] : current.filter((row) => row.key !== key)));
 
   const change = (key: number, field: 'name' | 'unit' | 'category' | 'price' | 'quantity' | 'amount', value: string) => {
@@ -164,14 +172,15 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
   const removeGood = (key: number) => setRows((current) => current.filter((row) => row.key !== key));
 
   const close = () => {
-    if ((filled.length || storeSelected.length || expenseLines.length) && !window.confirm('Close the sales form? What you typed stays in this browser until you save or clear it.')) return;
+    if ((filled.length || storeSelected.length || expenseLines.length || memberLines.length) && !window.confirm('Close the sales form? What you typed stays in this browser until you save or clear it.')) return;
     onClose();
   };
   const clear = () => {
-    if ((filled.length || storeSelected.length || expenseLines.length) && !window.confirm('Clear every amount on this form?')) return;
+    if ((filled.length || storeSelected.length || expenseLines.length || memberLines.length) && !window.confirm('Clear every amount on this form?')) return;
     setRows(rowsFromGoods(goods));
     setStore({});
     setExpenses([blankExpense(expenseKey.current++)]);
+    setMembers([{ key: memberKey.current++, member: null, amount: '' }]);
     setShowProblems(false);
     setError('');
   };
@@ -211,6 +220,10 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
     if (!expenseLines.length) { setError('Enter the expenses: what each was for and the amount (0 if there were none).'); return; }
     const badExpense = expenseLines.find((row) => expenseProblem(row));
     if (badExpense) { setError(`Expense ${expenses.indexOf(badExpense) + 1}: ${expenseProblem(badExpense)}`); return; }
+    const badMember = memberLines.find((row) => memberPurchaseProblem(row, members));
+    if (badMember) { setError(`Member purchase ${members.indexOf(badMember) + 1}: ${memberPurchaseProblem(badMember, members)}`); return; }
+    const membersTotal = memberLines.reduce((sum, row) => sum + Number(row.amount), 0);
+    if (membersTotal > gross + 0.001) { setError(`The member purchases (${peso(membersTotal)}) are more than the day's total sales (${peso(gross)}).`); return; }
     setSaving(true);
     try {
       const response = await createKadiwaSale({
@@ -222,6 +235,7 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
           quantity: row.typed === 'quantity' ? row.quantity.trim() : '', amount: row.amount.trim(),
         })),
         items: storeSelected.map(({ item, quantity }) => ({ inventoryId: item.id, quantity })),
+        memberPurchases: memberLines.map((row) => ({ memberId: row.member!.id, amount: row.amount.trim() })),
       });
       writeSaleDraft(null);
       toast.success(`Sale saved for ${formatDate(response.sale.saleDate)}`, { description: `${response.sale.seller} · Total ${peso(saleGross(response.sale))} · Net income ${peso(response.sale.netSales)}` });
@@ -317,6 +331,7 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
           <button type="button" onClick={addGood} className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add other goods</button>
 
           <StoreItemsPicker inventory={inventory} quantities={store} onChange={changeStore} showProblems={showProblems} query={query} />
+          <MemberPurchasesInput rows={members} onChange={changeMember} onAdd={addMember} onRemove={removeMember} showProblems={showProblems} salesTotal={gross} />
           <div className={`mt-3 rounded-xl border p-3 ${showProblems && !expenseLines.length ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -765,6 +780,12 @@ export function SaleSheetModal({ sale, onClose }: { sale: KadiwaSale; onClose: (
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {sale.memberPurchases.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">Member purchases <span className="font-normal text-gray-500">(patronage points)</span></h3>
+              <MemberPurchaseList purchases={sale.memberPurchases} />
             </div>
           )}
           {(sale.expenses.length > 0 || sale.totalExpenses > 0) && (

@@ -15,7 +15,10 @@ import { Modal, secondaryButton } from './shared';
 
 const peso = (value: number) => `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
 const plural = (count: number, word: string) => `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
-const days = (value: number) => `${value.toLocaleString('en-PH', { maximumFractionDigits: 1 })} ${value === 1 ? 'day' : 'days'}`;
+const days = (value: number) => {
+  const whole = Math.round(value);
+  return `${whole.toLocaleString('en-PH')} ${whole === 1 ? 'day' : 'days'}`;
+};
 
 // Actual vs forecast machine-days: two steps of one green (checked with the
 // data-viz palette validator: the light step still clears the white card).
