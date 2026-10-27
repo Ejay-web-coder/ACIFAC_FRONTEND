@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Camera, CameraOff, Check, ImagePlus, RefreshCw, ScanLine, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Camera, CameraOff, Check, ImagePlus, RefreshCw, ScanLine, Trash2, X } from 'lucide-react';
+import { assessImage, cropTo, describeProblems, enhance, frameCrop, type CropRect } from '../../lib/imageQuality';
 
 // Captures a paper form with the device camera. Each capture is one page; a
 // single page is sent as a JPEG, several pages are combined into one PDF so the
@@ -9,6 +10,10 @@ import { Camera, CameraOff, Check, ImagePlus, RefreshCw, ScanLine, Trash2, X } f
 // the front, then the back, joined into one picture like a back-to-back copy.
 // The "idCopy" variant photographs one page: a back-to-back copy of an ID with
 // the person's specimen signatures (a loan borrower's or co-maker's).
+//
+// Each capture is cropped to the frame, straightened and given more contrast
+// before it is sent. A blurry, dark or washed-out capture is held back until
+// it is retaken or kept on purpose, so a bad photo is caught at the form.
 
 const MAX_EDGE = 2200; // px; keeps text sharp while staying well under the 10 MB limit
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -16,7 +21,8 @@ const MAX_PAGES = 6;
 const ID_MAX_BYTES = 5 * 1024 * 1024;
 const ID_SIDES = ['Front', 'Back'];
 
-interface Page { blob: Blob; url: string; width: number; height: number }
+/** problems: what is wrong with the photo, until it is retaken or kept anyway. */
+interface Page { blob: Blob; url: string; width: number; height: number; problems: string[] }
 
 interface DocumentScannerModalProps {
   onClose: () => void;
@@ -33,26 +39,20 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
   return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Capture failed.'))), 'image/jpeg', quality));
 }
 
-function drawScaled(source: CanvasImageSource, width: number, height: number) {
-  const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Canvas is not supported on this device.');
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return canvas;
-}
-
-async function pageFromCanvas(canvas: HTMLCanvasElement): Promise<Page> {
+// A captured picture (cropped to crop), checked, then straightened (not an ID
+// card, whose edges are not text lines) and given more contrast.
+async function pageFrom(source: CanvasImageSource, width: number, height: number, { crop = null, straighten = true }: { crop?: CropRect | null; straighten?: boolean } = {}): Promise<Page> {
+  const raw = cropTo(source, width, height, { maxEdge: MAX_EDGE, crop });
+  const { problems } = assessImage(raw);
+  const canvas = enhance(raw, { straighten });
   const blob = await canvasToBlob(canvas, 0.9);
-  return { blob, url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height };
+  return { blob, url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, problems };
 }
 
-async function pageFromImageFile(file: File): Promise<Page> {
+async function pageFromImageFile(file: File, straighten: boolean): Promise<Page> {
   const bitmap = await createImageBitmap(file);
   try {
-    return await pageFromCanvas(drawScaled(bitmap, bitmap.width, bitmap.height));
+    return await pageFrom(bitmap, bitmap.width, bitmap.height, { straighten });
   } finally {
     bitmap.close();
   }
@@ -102,6 +102,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
   const maxPages = isId ? ID_SIDES.length : isCopy ? 1 : MAX_PAGES;
   const title = isId ? `Capture the ${titleCase(person)}'s ID` : isCopy ? `Photograph the ${titleCase(person)}'s ID Copy` : 'Scan Document';
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const pagesRef = useRef<Page[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
@@ -165,7 +166,9 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
     if (!video || !video.videoWidth || pages.length >= maxPages) return;
     setFlash(true);
     setTimeout(() => setFlash(false), 150);
-    const page = await pageFromCanvas(drawScaled(video, video.videoWidth, video.videoHeight));
+    // Only what is inside the frame is kept.
+    const crop = frameRef.current ? frameCrop(video, frameRef.current) : null;
+    const page = await pageFrom(video, video.videoWidth, video.videoHeight, { crop, straighten: !isId });
     setPages((current) => [...current, page]);
   };
 
@@ -173,9 +176,14 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
     const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('image/'));
     event.target.value = '';
     const added: Page[] = [];
-    for (const file of files.slice(0, maxPages - pages.length)) added.push(await pageFromImageFile(file));
+    for (const file of files.slice(0, maxPages - pages.length)) added.push(await pageFromImageFile(file, !isId));
     setPages((current) => [...current, ...added]);
   };
+
+  // The first capture that looks blurry, dark or washed out, waiting to be retaken or kept.
+  const doubtful = pages.findIndex((page) => page.problems.length > 0);
+  const pageName = (index: number) => (isId ? `The ${ID_SIDES[index].toLowerCase()} of the ID` : isCopy ? 'The picture' : `Page ${index + 1}`);
+  const keepPage = (index: number) => setPages((current) => current.map((page, position) => (position === index ? { ...page, problems: [] } : page)));
 
   const removePage = (index: number) => {
     setPages((current) => {
@@ -185,7 +193,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
   };
 
   const finish = async () => {
-    if (!pages.length) return;
+    if (!pages.length || doubtful >= 0) return;
     setBusy(true);
     try {
       const file = isId ? await joinSides(pages) : await buildFile(pages);
@@ -218,8 +226,12 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
             {ready && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
                 {isId
-                  ? <div className="w-[82%] rounded-xl border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '85.6 / 54' }} />
-                  : <div className="h-[88%] rounded-lg border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '8.5 / 11' }} />}
+                  ? <div ref={frameRef} className="w-[82%] rounded-xl border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '85.6 / 54' }} />
+                  : <div ref={frameRef} className="relative h-[88%] rounded-lg border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '8.5 / 11' }}>
+                    {['left-0 top-0 border-l-4 border-t-4 rounded-tl-lg', 'right-0 top-0 border-r-4 border-t-4 rounded-tr-lg', 'left-0 bottom-0 border-l-4 border-b-4 rounded-bl-lg', 'right-0 bottom-0 border-r-4 border-b-4 rounded-br-lg']
+                      .map((corner) => <span key={corner} className={`absolute -m-0.5 h-8 w-8 border-green-400 ${corner}`} />)}
+                    <span className="absolute inset-x-0 top-2 text-center text-xs font-medium text-white/90 drop-shadow">Fit the whole page inside the frame</span>
+                  </div>}
               </div>
             )}
             {flash && <div className="absolute inset-0 bg-white/70" aria-hidden="true" />}
@@ -243,6 +255,20 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
           </div>
           {cameraError && ready && <p className="text-center text-sm text-red-700">{cameraError}</p>}
 
+          {doubtful >= 0 && (
+            <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center" role="alert">
+              <img src={pages[doubtful].url} alt="" className="h-20 w-16 shrink-0 rounded border border-amber-200 object-cover" />
+              <div className="flex-1">
+                <p className="flex items-center gap-1.5 font-semibold"><AlertTriangle className="h-4 w-4" /> {pageName(doubtful)} looks {describeProblems(pages[doubtful].problems)}.</p>
+                <p className="mt-0.5 text-amber-800">AI reads a sharp, well-lit photo much more reliably. Hold the phone steady, move to better light, and take it again.</p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => removePage(doubtful)} className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 font-semibold text-white hover:bg-amber-700"><RefreshCw className="h-4 w-4" /> Retake</button>
+                <button type="button" onClick={() => keepPage(doubtful)} className="rounded-lg border border-amber-300 px-3 py-2 text-amber-900 hover:bg-amber-100">Use anyway</button>
+              </div>
+            </div>
+          )}
+
           {pages.length > 0 && (
             <div>
               <p className="mb-2 text-sm font-medium text-gray-700">{isId ? 'Captured sides' : 'Captured pages'} ({pages.length}/{maxPages})</p>
@@ -263,7 +289,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
           <p className="text-xs text-gray-500">{isId || isCopy ? `AI checks the ID${isCopy ? ', counts the specimen signatures,' : ''} and that it belongs to the ${person} on the form.` : 'AI reads the form, checks it is genuine, and saves it to the right module.'}</p>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-            <button type="button" onClick={() => void finish()} disabled={!pages.length || busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
+            <button type="button" onClick={() => void finish()} disabled={!pages.length || busy || doubtful >= 0} title={doubtful >= 0 ? 'Retake or keep the flagged photo first' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
               <Check className="h-4 w-4" /> {busy ? 'Preparing...' : isId ? (pages.length < maxPages ? 'Submit front only' : 'Submit ID') : isCopy ? 'Submit picture' : `Scan ${pages.length || ''} ${pages.length === 1 ? 'page' : 'pages'}`.replace('  ', ' ')}
             </button>
           </div>

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { dateOnlyToday } from '../../utils/dateTime';
-import { Camera, Check, FileSpreadsheet, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { Camera, Check, Download, FileSpreadsheet, ImagePlus, LoaderCircle, Plus, Trash2, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { DocumentScannerModal } from './DocumentScannerModal';
 import { IdDocumentPanel } from './IdDocumentPanel';
 import { SignaturePad } from './SignaturePad';
@@ -971,6 +972,7 @@ export function MemberFormModal({
             <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           </div>
           <div className="flex items-center gap-2">
+            {mode === 'add' && <BlankMembershipFormButton />}
             {onImport && (
               <button type="button" onClick={onImport} title="Import members from an Excel file" className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50">
                 <Plus className="h-4 w-4" />
@@ -999,6 +1001,29 @@ export function MemberFormModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Downloads the paper membership form. Filled in by the applicant, it is
+// scanned in the OCR Scanner, which registers the member.
+function BlankMembershipFormButton() {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const { downloadMembershipFormPdf } = await import('./memberFormPdf');
+      await downloadMembershipFormPdf();
+    } catch (error) {
+      toast.error('The form could not be made', { description: error instanceof Error ? error.message : 'Please try again.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" onClick={() => void download()} disabled={busy} title="Download the paper membership form to print. Scan the filled-in form in the OCR Scanner to register the member." className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+      {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+      <span>Blank form <span className="hidden sm:inline">(PDF)</span></span>
+    </button>
   );
 }
 

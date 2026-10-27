@@ -5,6 +5,7 @@ import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { PagedList } from '../../app/components/common/PagedList';
 import { sumMoney } from '../../utils/money';
+import { COOPERATIVE_NAME, drawPdfLogo, loadPdfLogo } from '../../lib/pdfLogo';
 import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
 
 interface TransactionProps {
@@ -57,7 +58,7 @@ const pdfText = (value: string) => value.replace(/₱/g, 'PHP ').replace(/[\u00A
 
 // Builds the same receipt as the View modal as an A4 PDF and saves it.
 async function downloadReceiptPdf(txn: Transaction) {
-  const { jsPDF } = await import('jspdf');
+  const [{ jsPDF }, logo] = await Promise.all([import('jspdf'), loadPdfLogo()]);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   doc.setProperties({ title: `Transaction Receipt - ${txn.id}` });
 
@@ -65,7 +66,8 @@ async function downloadReceiptPdf(txn: Transaction) {
   const right = 190;
   const center = (left + right) / 2;
   const lineHeight = 5;
-  let y = 28;
+  // The cooperative's logo above the title.
+  let y = drawPdfLogo(doc, logo, center - 11, 10, 22) ? 41 : 28;
 
   const valueLines = (value: string): string[] => {
     doc.setFont('helvetica', 'normal');
@@ -96,7 +98,8 @@ async function downloadReceiptPdf(txn: Transaction) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   doc.setTextColor(102);
-  doc.text('ACIFAC Cooperative', center, y, { align: 'center' });
+  doc.setFontSize(9.5);
+  doc.text(COOPERATIVE_NAME, center, y, { align: 'center' });
   y += 7;
   doc.setDrawColor(51);
   doc.setLineWidth(0.6);

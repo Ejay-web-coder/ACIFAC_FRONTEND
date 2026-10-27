@@ -1,14 +1,17 @@
-import { apiFetch, apiGet, apiPatch, apiPost } from '../../lib/api';
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from '../../lib/api';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail';
 
-export interface VerificationCheck { id: string; label: string; status: CheckStatus; message: string }
+/** fields: the form keys the check is about, highlighted in the review. */
+export interface VerificationCheck { id: string; label: string; status: CheckStatus; message: string; fields?: string[] }
 
 export interface OcrVerification {
   status?: 'passed' | 'warning' | 'failed';
   canPost?: boolean;
   checks?: VerificationCheck[];
   checkedAt?: string;
+  /** Share of checks passed (0-100). */
+  score?: number | null;
   /** memberNumber: the membership number the system will give a scanned membership form. */
   target?: { memberNumber?: string };
 }
@@ -63,12 +66,19 @@ export interface OcrScan {
   id: number;
   fileName: string;
   documentType: string;
+  /** Share of verification checks passed (0-100), worked out by the system. */
   confidence: number | null;
+  /** What the AI reported about its own reading (not used to decide anything but the form type). */
+  aiConfidence?: number | null;
   ocrText: string;
   extractedData: Record<string, string>;
   reviewStatus: string;
   processingStatus: 'completed' | 'failed';
   processingError: string | null;
+  /** Automatic re-reading while the AI is busy: nextAt = null when not queued. */
+  retry?: { count: number; max: number; nextAt: string | null };
+  /** The second, independent reading: error when it could not be done yet. */
+  crossCheck?: { done?: boolean; error?: string } | null;
   captureSource: 'upload' | 'camera';
   authenticity: OcrAuthenticity;
   verification: OcrVerification;
@@ -82,14 +92,17 @@ export interface OcrScan {
   idDocument: OcrIdDocument | null;
   photoExpected: boolean;
   photo: { reading: OcrPhotoReading } | null;
-  posted: { module: string; recordId: string; at: string; automatically: boolean } | null;
+  /** undoUntil: an automatic save can be undone until then (members, loan applications, rental requests). */
+  posted: { module: string; recordId: string; at: string; automatically: boolean; undoUntil?: string | null } | null;
+  /** The automatic save was undone: recordId is the record that was removed. */
+  undone?: { at: string; recordId: string } | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface OcrSummary { total: number; reviewed: number; needsReview: number; failed: number; posted: number; autoPosted: number }
+export interface OcrSummary { total: number; reviewed: number; needsReview: number; failed: number; posted: number; autoPosted: number; queued?: number }
 
-export interface OcrFormField { key: string; label: string; kind: 'text' | 'date' | 'money' | 'number' | 'integer'; required: boolean }
+export interface OcrFormField { key: string; label: string; kind: 'text' | 'date' | 'money' | 'number' | 'integer' | 'phone' | 'rsbsa'; required: boolean }
 /** The lines of a form's table: row n is the fields <id><n><column key>, e.g. line3CostPrice. */
 export interface OcrFormTable { id: string; label: string; rows: number; columns: Array<{ key: string; label: string; kind: OcrFormField['kind'] }> }
 /** legacy: kept for older scans; not offered as a type for new ones. */
@@ -132,6 +145,26 @@ export function attachPhoto(id: number, file: File) {
 
 export const photoPath = (id: number) => `/api/ocr/${id}/photo`;
 
+// Reads again the next scan queued while the AI was busy (the page calls it while scans are queued).
+export function retryQueuedScans() {
+  return apiPost<{ success: boolean; data: OcrScan[]; queued: number; nextAt: string | null }>('/api/ocr/retry-due');
+}
+
+// Rejects every flagged scan at once (failed checks or not read; queued scans are left alone).
+export function rejectFlaggedScans() {
+  return apiPost<{ success: boolean; data: OcrScan[]; message?: string }>('/api/ocr/reject-flagged');
+}
+
+// Deletes a scan that was never saved to records, with its files.
+export function deleteScan(id: number) {
+  return apiDelete<{ success: boolean; message?: string }>(`/api/ocr/${id}`);
+}
+
+// Takes back a form saved automatically (within the undo period).
+export function undoAutoPost(id: number) {
+  return apiPost<ScanResponse>(`/api/ocr/${id}/undo`);
+}
+
 export function verifyDocument(id: number) {
   return apiPost<ScanResponse>(`/api/ocr/${id}/verify`);
 }
@@ -145,5 +178,5 @@ export function fetchDocumentScans() {
 }
 
 export function fetchFormDefinitions() {
-  return apiGet<{ success: boolean; data: OcrFormDefinition[]; autoPost: boolean; autoPostMinConfidence: number; requiredIdSignatures: number }>('/api/ocr/forms');
+  return apiGet<{ success: boolean; data: OcrFormDefinition[]; autoPost: boolean; requiredIdSignatures: number; undoWindowHours?: number }>('/api/ocr/forms');
 }

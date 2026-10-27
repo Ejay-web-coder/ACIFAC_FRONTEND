@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { LoaderCircle, Search, X, XCircle } from 'lucide-react';
+import { Download, LoaderCircle, Search, X, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { fetchMembers } from '../../admin/services/membersApi';
 import { civilStatusOptions } from '../../admin/components/AddMemberModal';
 import { DocumentScannerModal } from '../../admin/components/DocumentScannerModal';
@@ -49,7 +50,32 @@ type Props = {
   submitLabel: string;
   onSubmit: (payload: LoanApplicationPayload, ids: LoanApplicationIds) => Promise<void>;
   onCancel: () => void;
+  /** Shows the button that downloads the printable loan form (admin New Loan). */
+  showBlankForm?: boolean;
 };
+
+// Downloads the paper loan form. Filled in by the borrower, it is scanned in
+// the OCR Scanner, which files the loan application for approval.
+function BlankLoanFormButton() {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const { downloadLoanFormPdf } = await import('../../admin/components/loanFormPdf');
+      await downloadLoanFormPdf();
+    } catch (error) {
+      toast.error('The form could not be made', { description: error instanceof Error ? error.message : 'Please try again.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" onClick={() => void download()} disabled={busy} title="Download the paper loan form to print. Scan the filled-in form in the OCR Scanner to file the application." className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+      {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+      <span>Blank form <span className="hidden sm:inline">(PDF)</span></span>
+    </button>
+  );
+}
 
 // The borrower's and the co-maker's valid IDs: each the front and back of the
 // ID on one page with the person's specimen signatures, uploaded or
@@ -134,7 +160,7 @@ function SectionBar({ children }: { children: ReactNode }) {
   return <h3 className="mb-2 mt-6 rounded-sm bg-slate-800 px-3 py-1.5 text-sm font-bold uppercase tracking-wide text-white">{children}</h3>;
 }
 
-export function LoanApplicationModal({ title, initialMember = null, allowMemberLookup = false, hideEmail = false, approvedBy = null, photoPath, submitLabel, onSubmit, onCancel }: Props) {
+export function LoanApplicationModal({ title, initialMember = null, allowMemberLookup = false, hideEmail = false, approvedBy = null, photoPath, submitLabel, onSubmit, onCancel, showBlankForm = false }: Props) {
   const [form, setForm] = useState<FormState>(() => ({ ...blank(), ...(initialMember ? memberToForm(initialMember) : {}) }));
   const [selectedMember, setSelectedMember] = useState<Member | null>(initialMember);
   const [memberSearch, setMemberSearch] = useState(initialMember?.memberId || '');
@@ -365,7 +391,10 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Loan Application Form (Agri)</p>
             <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           </div>
-          <button type="button" onClick={onCancel} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label={`Close ${title.toLowerCase()} window`}><X className="h-5 w-5" /></button>
+          <div className="flex items-center gap-2">
+            {showBlankForm && <BlankLoanFormButton />}
+            <button type="button" onClick={onCancel} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label={`Close ${title.toLowerCase()} window`}><X className="h-5 w-5" /></button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-slate-100 px-2 py-4 sm:px-6">

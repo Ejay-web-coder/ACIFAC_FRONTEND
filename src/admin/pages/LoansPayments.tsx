@@ -638,6 +638,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         <LoanApplicationModal
           title="New Loan"
           allowMemberLookup
+          showBlankForm
           approvedBy={approverName || 'Administrator'}
           photoPath={memberPhotoPath}
           submitLabel="Approve and release loan"
