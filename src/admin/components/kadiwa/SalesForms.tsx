@@ -7,6 +7,7 @@ import {
 } from '../../../app/services/authApi';
 import { addDateOnlyDays, dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { CATEGORIES, peso, productLabel } from './InventoryForms';
+import { KadiwaBlankForm } from './KadiwaBlankForm';
 import { StoreItemsPicker, storeQuantityProblem, storeSelection, type StoreQuantities } from './StoreItemsPicker';
 
 // Kadiwa sales follow the Kadiwa ng Pangulo daily sales form: the seller, the
@@ -263,6 +264,9 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
         </div>
 
         <div className="px-2 py-3 sm:px-4">
+          <div className="mb-3 px-2">
+            <KadiwaBlankForm formName="Daily Sales form" onPrint={() => import('./kadiwaFormPdf').then((pdf) => pdf.downloadSalesFormPdf(goods, inventory))} />
+          </div>
           <div className="hidden grid-cols-[minmax(0,2fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_2.25rem] gap-2 px-2 pb-2 text-xs font-medium uppercase text-gray-500 md:grid">
             <span>Goods Sold</span><span>Unit</span><span>Price</span><span>Quantity</span><span className="text-right">Total Amount</span><span />
           </div>

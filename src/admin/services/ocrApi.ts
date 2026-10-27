@@ -90,7 +90,10 @@ export interface OcrScan {
 export interface OcrSummary { total: number; reviewed: number; needsReview: number; failed: number; posted: number; autoPosted: number }
 
 export interface OcrFormField { key: string; label: string; kind: 'text' | 'date' | 'money' | 'number' | 'integer'; required: boolean }
-export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; idDocuments?: OcrIdRequirement[]; photoExpected: boolean; fields: OcrFormField[] }
+/** The lines of a form's table: row n is the fields <id><n><column key>, e.g. line3CostPrice. */
+export interface OcrFormTable { id: string; label: string; rows: number; columns: Array<{ key: string; label: string; kind: OcrFormField['kind'] }> }
+/** legacy: kept for older scans; not offered as a type for new ones. */
+export interface OcrFormDefinition { type: string; module: string; moduleLabel: string; description: string; requiresIdDocument: boolean; idDocuments?: OcrIdRequirement[]; photoExpected: boolean; fields: OcrFormField[]; tables?: OcrFormTable[]; legacy?: boolean }
 
 type ScanResponse = { success: boolean; data: OcrScan; message?: string };
 

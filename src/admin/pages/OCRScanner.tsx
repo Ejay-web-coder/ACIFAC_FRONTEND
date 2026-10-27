@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, AlertTriangle, Camera, CheckCircle, CheckCircle2, Database, FileText, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Upload, User, XCircle,
+  AlertCircle, AlertTriangle, Camera, CheckCircle, CheckCircle2, Database, FileText, Plus, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Upload, User, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
@@ -14,7 +14,7 @@ import { IdDocumentPanel } from '../components/IdDocumentPanel';
 import { ScanRequirementsModal } from '../components/ScanRequirementsModal';
 import {
   analyzeDocument, attachIdDocument, attachPhoto, fetchDocumentScans, fetchFormDefinitions, idDocumentPath, OcrFormDefinition, OcrScan, postDocument, retryDocumentReading, saveDocumentReview,
-  verifyDocument, type CheckStatus, type IdSlot, type IdSource, type OcrIdRequirement,
+  verifyDocument, type CheckStatus, type IdSlot, type IdSource, type OcrFormTable, type OcrIdRequirement,
 } from '../services/ocrApi';
 
 const UNRECOGNIZED = 'Document Type Not Recognized';
@@ -27,6 +27,17 @@ const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const TABLE_COLUMNS = ['Description', 'Quantity', 'Unit', 'UnitPrice', 'Total'] as const;
 const TABLE_COLUMN_LABELS: Record<(typeof TABLE_COLUMNS)[number], string> = { Description: 'Description', Quantity: 'Quantity', Unit: 'Unit', UnitPrice: 'Unit Price', Total: 'Total Amount' };
 const TABLE_FIELD = new RegExp(`^(.+)(${TABLE_COLUMNS.join('|')})$`);
+
+// The line tables of a form (the Kadiwa forms): the lines with something
+// read, plus the blank ones the admin added. A cell key is <id><n><column>.
+const cellKey = (table: OcrFormTable, line: number, column: string) => `${table.id}${line}${column}`;
+const isTableCell = (tables: OcrFormTable[], key: string) => tables.some((table) => new RegExp(`^${table.id}\\d+(${table.columns.map((column) => column.key).join('|')})$`).test(key));
+function shownLines(table: OcrFormTable, data: Record<string, string>, added: number) {
+  const filled = Array.from({ length: table.rows }, (_, index) => index + 1).filter((line) => table.columns.some((column) => data[cellKey(table, line, column.key)]?.trim()));
+  const last = Math.max(0, ...filled);
+  const extra = Array.from({ length: Math.min(added, table.rows - last) }, (_, index) => last + index + 1);
+  return [...new Set([...filled, ...extra])].sort((a, b) => a - b);
+}
 
 interface OCRScannerProps { userRole: UserRole; }
 
@@ -122,6 +133,8 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const [requiredIdSignatures, setRequiredIdSignatures] = useState(3);
   const [busy, setBusy] = useState<'' | 'save' | 'verify' | 'post' | 'reject' | 'retry' | `id-${IdSlot}` | 'photo'>('');
   const [acknowledged, setAcknowledged] = useState(false);
+  // Blank lines added to each line table of the form shown, by table id.
+  const [addedLines, setAddedLines] = useState<Record<string, number>>({});
   const idPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -138,6 +151,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
 
   const showScan = (scan: OcrScan) => {
     if (scan.id !== activeScan?.id) setRequirementsOpen(false);
+    if (scan.id !== activeScan?.id) setAddedLines({});
     setActiveScan(scan);
     setDirty(false);
     setAcknowledged(false);
@@ -322,12 +336,13 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   };
 
   const definition = activeScan ? forms.find((form) => form.type === activeScan.documentType) : undefined;
+  const lineTables = useMemo(() => definition?.tables ?? [], [definition]);
   const fields = useMemo(() => {
     if (!activeScan) return [];
-    if (definition) return definition.fields;
+    if (definition) return definition.fields.filter((field) => !isTableCell(lineTables, field.key));
     const keys = Object.keys(activeScan.extractedData);
     return (keys.length ? keys : ['Document Notes']).map((key) => ({ key, label: titleCase(key), kind: 'text' as const, required: false }));
-  }, [activeScan, definition]);
+  }, [activeScan, definition, lineTables]);
 
   const tableRows = useMemo(() => {
     const rows: Array<{ key: string; label: string }> = [];
@@ -354,7 +369,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     && (dirty || verification.status !== 'failed') && (!hasWarnings || dirty || acknowledged));
   const memberNumber = activeScan?.posted?.recordId || verification.target?.memberNumber;
   const authenticity = activeScan?.authenticity || {};
-  const typeOptions = [...forms.map((form) => form.type), ...REFERENCE_TYPES, UNRECOGNIZED];
+  const typeOptions = [...forms.filter((form) => !form.legacy || form.type === activeScan?.documentType).map((form) => form.type), ...REFERENCE_TYPES, UNRECOGNIZED];
 
   const requirementPanels = activeScan && requirements.length > 0 && activeScan.processingStatus !== 'failed' ? (
     <div className="space-y-4">
@@ -413,7 +428,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
           <div className="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
             <Camera className="w-12 h-12 mx-auto text-gray-400 mb-4" />
             <button type="button" onClick={() => setScannerOpen(true)} disabled={Boolean(processingStage)} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"><ScanLine className="h-4 w-4" /> Open camera</button>
-            <p className="text-sm text-gray-500 mt-2">Capture membership, loan, savings, machinery, or Kadiwa sales forms. Multi-page forms are supported.</p>
+            <p className="text-sm text-gray-500 mt-2">Capture membership, loan, savings, machinery, Kadiwa Add Inventory or Kadiwa Daily Sales forms. Multi-page forms are supported.</p>
           </div>
         </div>
         {processingStage && <p className="md:col-span-2 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 animate-pulse">{processingStage}</p>}
@@ -494,6 +509,30 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
               ))}</tbody>
             </table>
           </div>}
+          {lineTables.map((lines) => {
+            const shown = shownLines(lines, activeScan.extractedData, addedLines[lines.id] ?? 0);
+            const canAdd = canEdit && !locked && (shown[shown.length - 1] ?? 0) < lines.rows;
+            return (
+              <div key={lines.id} className="mt-4">
+                <p className="mb-2 text-sm font-semibold text-gray-800">{lines.label} <span className="font-normal text-gray-500">({shown.length} {shown.length === 1 ? 'line' : 'lines'})</span></p>
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="w-full text-sm" style={{ minWidth: `${Math.max(420, lines.columns.length * 120)}px` }}>
+                    <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="w-10 px-3 py-2 font-semibold">#</th>{lines.columns.map((column) => <th key={column.key} className="px-3 py-2 font-semibold">{column.label}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {shown.map((line) => (
+                        <tr key={line}>
+                          <td className="px-3 py-2 text-gray-500">{line}</td>
+                          {lines.columns.map((column) => <td key={column.key} className="px-2 py-1.5"><input aria-label={`${lines.label} line ${line} ${column.label}`} value={activeScan.extractedData[cellKey(lines, line, column.key)] || ''} onChange={(event) => updateField(cellKey(lines, line, column.key), event.target.value)} disabled={locked || !canEdit} inputMode={column.kind === 'money' || column.kind === 'number' ? 'decimal' : undefined} className="w-full rounded-lg border border-gray-300 p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600" /></td>)}
+                        </tr>
+                      ))}
+                      {!shown.length && <tr><td colSpan={lines.columns.length + 1} className="px-3 py-4 text-center text-gray-500">Nothing was read in this part of the form.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                {canAdd && <button type="button" onClick={() => setAddedLines((current) => ({ ...current, [lines.id]: (current[lines.id] ?? 0) + 1 }))} className="mt-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add line</button>}
+              </div>
+            );
+          })}
 
           {canEdit && !locked && <div className="mt-5 space-y-3">
             {definition && hasWarnings && !dirty && <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5" />I compared the flagged items with the original paper form and confirm the document is genuine.</label>}
@@ -509,7 +548,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
       </div>}
 
       <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200"><h2 className="text-lg font-bold text-gray-900 mb-4">Recent Scans</h2>{scans.length === 0 ? <p className="text-sm text-gray-500">Uploaded and scanned documents will appear here after AI analysis.</p> : <div className="space-y-3">{scanPages.pageItems.map((scan) => <button type="button" key={scan.id} onClick={() => showScan(scan)} className={`w-full text-left border rounded-lg p-4 hover:bg-gray-50 ${activeScan?.id === scan.id ? 'border-green-300 bg-green-50/40' : 'border-gray-200'}`}><div className="flex items-center gap-3"><div className="p-2 rounded-lg bg-blue-50">{scan.captureSource === 'camera' ? <Camera className="w-5 h-5 text-blue-600" /> : <User className="w-5 h-5 text-blue-600" />}</div><div className="min-w-0"><p className="font-bold text-gray-900 truncate">{scan.documentType}</p><p className="text-sm text-gray-500 truncate">{scan.fileName}{scan.posted ? ` · ${scan.posted.module} ${scan.posted.recordId}` : ''}</p></div><span className="ml-auto"><StatusBadge {...scanStatus(scan)} /></span></div></button>)}<Pagination className="-mx-6 -mb-6 mt-4" page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" /></div>}</div>
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>A scanned membership form also needs the applicant's valid ID: a picture of the ID with {requiredIdSignatures} specimen signatures (back to back), or the ID card captured with the live camera. When AI cannot recognize the 2x2 picture on the form, it asks for one. The system gives the membership number.</p><p>A scanned loan form needs the borrower's and the co-maker's valid IDs, each the front and back of the ID on one page with their {requiredIdSignatures} specimen signatures, uploaded or photographed. AI reads each ID and checks that it belongs to the borrower or co-maker on the form.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6"><div className="flex gap-3"><FileText className="w-5 h-5 text-blue-700 shrink-0" /><div className="text-sm text-blue-800 space-y-1"><p>AI reads each form, checks it for signs of tampering, blank templates, screen photos and missing signatures, then verifies it against the member, machinery and inventory records and the module's own rules.</p><p>{autoPost ? 'Forms that pass every check with high confidence are saved automatically; anything uncertain is held here for review. Loan and machinery forms enter their approval queues as pending requests.' : 'Automatic saving is turned off: every verified form waits here for an admin to save it.'}</p><p>A scanned membership form also needs the applicant's valid ID: a picture of the ID with {requiredIdSignatures} specimen signatures (back to back), or the ID card captured with the live camera. When AI cannot recognize the 2x2 picture on the form, it asks for one. The system gives the membership number.</p><p>A scanned loan form needs the borrower's and the co-maker's valid IDs, each the front and back of the ID on one page with their {requiredIdSignatures} specimen signatures, uploaded or photographed. AI reads each ID and checks that it belongs to the borrower or co-maker on the form.</p><p>The Kadiwa Add Inventory and Daily Sales forms are printed from Kadiwa Store (Blank form). Scanned here, their products are added to the store inventory, or the sale is recorded with its goods, store items and expenses and the stock goes down, after AI checks that every line and total adds up.</p><p className="flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Every scan and save is recorded in the audit log.</p></div></div></div>
 
       {scannerOpen && <DocumentScannerModal onClose={() => setScannerOpen(false)} onScanned={(file) => { setScannerOpen(false); void processFile(file, 'camera'); }} />}
       {requirementsOpen && activeScan && requirementPanels && !requirementsDone(activeScan) && (

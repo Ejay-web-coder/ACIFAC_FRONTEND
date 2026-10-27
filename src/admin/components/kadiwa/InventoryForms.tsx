@@ -5,6 +5,7 @@ import {
   createKadiwaInventory, deleteKadiwaInventory, updateKadiwaInventory,
   type KadiwaInventoryInput, type KadiwaInventoryItem, type KadiwaSizeUnit,
 } from '../../../app/services/authApi';
+import { KadiwaBlankForm } from './KadiwaBlankForm';
 
 // Products are kept like the store's inventory notebook: the product and its
 // size, the quantity, the selling price and the cost price, with
@@ -187,6 +188,9 @@ export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; o
             <input inputMode="decimal" value={reorderLevel} onChange={(event) => setReorderLevel(event.target.value)} className={`${FIELD} mt-1 block w-28 px-2.5 ${showProblems && !reorderOk ? 'border-red-400' : ''}`} aria-describedby="reorder-hint" />
           </label>
           <p id="reorder-hint" className="pb-2 text-xs text-gray-500">These apply to every line. Each product can be changed later with Edit.</p>
+          <div className="w-full border-t border-gray-200 pt-3">
+            <KadiwaBlankForm formName="Add Inventory form" onPrint={() => import('./kadiwaFormPdf').then((pdf) => pdf.downloadInventoryFormPdf())} />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 py-3 sm:px-4">
