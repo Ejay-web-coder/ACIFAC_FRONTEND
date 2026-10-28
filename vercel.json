@@ -43,7 +43,7 @@
       "destination": "https://acifac-backend.vercel.app/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ],
