@@ -5,8 +5,8 @@ import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type RenterCategory, type MemberSuggestion } from '../../app/services/authApi';
-import { formatDate } from '../../utils/dateTime';
+import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type RenterCategory, type MemberSuggestion } from '../../app/services/authApi';
+import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
@@ -60,6 +60,13 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   // operations (in the totals); the records are kept for members' booking history.
   const pendingRequests = rentalRequests.filter((request) => request.status === 'pending');
   const requestPages = usePagination(pendingRequests, { pageSize: 5 });
+  // Approved bookings: those still to come or running today (soonest first), or the completed ones.
+  const [bookingView, setBookingView] = useState<'current' | 'completed'>('current');
+  const today = dateOnlyToday();
+  const shownBookings = bookingView === 'current'
+    ? operations.filter((op) => op.status !== 'completed').sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id)
+    : operations.filter((op) => op.status === 'completed');
+  const bookingPages = usePagination(shownBookings, { pageSize: 8 });
   const totalOperations = operations.length;
 
   const canEdit = userRole === 'admin';
@@ -126,6 +133,17 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       toast.success(status === 'approved' ? 'Booking approved' : 'Booking declined');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to review rental request.');
+    }
+  };
+
+  const completeBooking = async (op: MachineryOperation) => {
+    if (!window.confirm(`Mark the ${op.machineryName} booking of ${op.memberName} as completed?`)) return;
+    try {
+      await completeMachineryOperation(op.id);
+      void loadData();
+      toast.success('Booking completed');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to complete the booking.');
     }
   };
 
@@ -276,6 +294,60 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
               <p className="mt-3 text-sm font-medium text-gray-700">No pending booking requests</p>
               <p className="mt-1 text-sm text-gray-500">New booking requests will appear here for review.</p>
             </div>
+          )}
+        </div>
+      )}
+
+      {canEdit && (
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+          <div className="flex flex-col gap-3 border-b border-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 ring-1 ring-green-100"><Check className="h-5 w-5 text-green-700" /></span>
+              <div>
+                <h2 className="font-bold text-gray-900">Approved Bookings</h2>
+                <p className="text-sm text-gray-600">Members' and non-members' approved bookings. The office is notified on the day a booking starts.</p>
+              </div>
+            </div>
+            <div className="flex w-full gap-1 rounded-xl bg-gray-100 p-1 sm:w-fit" role="tablist" aria-label="Approved bookings">
+              {([['current', 'Today & upcoming'], ['completed', 'Completed']] as const).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={bookingView === key} onClick={() => setBookingView(key)}
+                  className={`min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 text-sm font-semibold sm:flex-none ${bookingView === key ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:text-gray-900'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {shownBookings.length > 0 ? (
+            <div className="divide-y divide-gray-100">
+              {bookingPages.pageItems.map((op) => {
+                const runningToday = op.status !== 'completed' && op.startDate <= today && op.endDate >= today;
+                return (
+                  <div key={op.id} className={`flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${runningToday ? 'bg-green-50/60' : ''}`}>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-gray-900">{op.machineryName}</h3>
+                        <span className="text-xs text-gray-500">{op.machineryId}</span>
+                        {runningToday && <span className="rounded-full bg-green-600 px-2 py-0.5 text-xs font-semibold text-white">Today</span>}
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${op.status === 'ongoing' ? 'bg-blue-100 text-blue-800' : op.status === 'scheduled' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{op.status}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-gray-700">
+                        {op.memberName}{op.clientCategory === 'non_member' ? <span className="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Non-member</span> : op.memberId ? <span className="text-gray-500"> · {op.memberId}</span> : null}
+                        <span className="text-gray-500"> · {op.purpose}</span>
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-500">{formatDate(op.startDate)}{op.endDate !== op.startDate ? ` to ${formatDate(op.endDate)}` : ''} · {op.duration} day{op.duration === 1 ? '' : 's'}</p>
+                    </div>
+                    {op.status !== 'completed' && (
+                      <button type="button" onClick={() => void completeBooking(op)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        <Check className="h-4 w-4" />Mark completed
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <Pagination page={bookingPages.page} totalPages={bookingPages.totalPages} total={bookingPages.total} pageSize={bookingPages.pageSize} onPageChange={bookingPages.setPage} onPageSizeChange={bookingPages.setPageSize} label="bookings" />
+            </div>
+          ) : (
+            <p className="px-6 py-8 text-center text-sm text-gray-500">{bookingView === 'current' ? 'No approved bookings today or coming up.' : 'No completed bookings yet.'}</p>
           )}
         </div>
       )}
