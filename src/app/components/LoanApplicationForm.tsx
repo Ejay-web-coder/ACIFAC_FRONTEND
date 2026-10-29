@@ -7,7 +7,7 @@ import { DocumentScannerModal } from '../../admin/components/DocumentScannerModa
 import { IdDocumentPanel } from '../../admin/components/IdDocumentPanel';
 import { SignaturePad } from '../../admin/components/SignaturePad';
 import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../../admin/services/ocrApi';
-import { fetchLoanQuote, previewLoanIdChecks, readLoanId, type LoanApplicationIds, type LoanIdHolder, type LoanQuote } from '../services/authApi';
+import { fetchFarmInputs, fetchLoanQuote, previewLoanIdChecks, readLoanId, type FarmInput, type LoanApplicationIds, type LoanIdHolder, type LoanQuote } from '../services/authApi';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import type { Member } from '../../admin/pages/MembershipManagement';
@@ -100,7 +100,8 @@ type InputRowKey = (typeof INPUT_ROWS)[number][0];
 type InputRow = { description: string; quantity: string; unit: string; unitPrice: string };
 
 const COLLATERAL_OPTIONS = ['Land Title / Property', 'Harvest', 'Savings Deposit / Share Capital'];
-const TERMS = [3, 6, 9, 12, 18, 24, 36, 48, 60];
+// Every loan is for 6 months, repaid in one payment of the whole amount by the due date.
+const LOAN_TERM = '6';
 const PHONE = /^[+0-9()\s.-]{7,30}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DECIMAL = /^\d+(\.\d{1,2})?$/;
@@ -113,7 +114,7 @@ type FormState = Omit<LoanApplicationPayload, 'memberId' | 'inKindItems' | 'coll
 
 const blankRows = () => Object.fromEntries(INPUT_ROWS.map(([key]) => [key, { description: '', quantity: '', unit: '', unitPrice: '' }])) as Record<InputRowKey, InputRow>;
 const blank = (): FormState => ({
-  loanType: 'agricultural', term: '12', purpose: '', loanMode: 'cash', cashAmount: '',
+  loanType: 'agricultural', term: LOAN_TERM, purpose: '', loanMode: 'cash', cashAmount: '',
   borrowerEmail: '', borrowerPhone: '', borrowerAddress: '', borrowerAge: '', borrowerGender: '', borrowerCivilStatus: '', borrowerOccupation: '', yearsFarming: '',
   farmLocation: '', farmArea: '', cropsPlanted: '', cropSeason: '', irrigationType: 'rainfed', irrigationOther: '',
   rows: blankRows(), coMakerName: '', coMakerAddress: '', coMakerContact: '', coMakerRelationship: '', collateral: [], collateralDetails: '', certified: false,
@@ -183,6 +184,9 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
   const [signature, setSignature] = useState<File | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const rootRef = useRef<HTMLFormElement>(null);
+  // The office's farm input price list; rows typed in by hand instead (Other).
+  const [farmInputs, setFarmInputs] = useState<FarmInput[]>([]);
+  const [handTyped, setHandTyped] = useState<Set<InputRowKey>>(() => new Set());
   const today = useMemo(() => dateOnlyToday(), []);
 
   const usesInputs = form.loanMode !== 'cash';
@@ -198,12 +202,18 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
     if (!DECIMAL.test(farmArea)) { setQuote(null); return; }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      fetchLoanQuote({ farmArea, amount: (totalCents / 100).toFixed(2), term: form.term || '12' })
+      fetchLoanQuote({ farmArea, amount: (totalCents / 100).toFixed(2), term: LOAN_TERM })
         .then((result) => { if (!cancelled) { setQuote(result); setQuoteError(''); } })
         .catch((error: Error) => { if (!cancelled) { setQuote(null); setQuoteError(error.message); } });
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [form.farmArea, form.term, totalCents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFarmInputs().then((items) => { if (!cancelled) setFarmInputs(items); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!allowMemberLookup || selectedMember || memberSearch.trim().length < 2) { setMatches([]); return; }
@@ -291,9 +301,22 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
     setForm((current) => ({ ...current, rows: { ...current.rows, [key]: { ...current.rows[key], [field]: value } } }));
     clearError(`row-${key}`); clearError('rows');
   };
+  // A product picked from the price list fills its description, unit and unit price.
+  const pickProduct = (key: InputRowKey, value: string) => {
+    if (value === 'other') {
+      setHandTyped((current) => new Set(current).add(key));
+      setForm((current) => ({ ...current, rows: { ...current.rows, [key]: { ...current.rows[key], description: '', unit: '', unitPrice: '' } } }));
+    } else {
+      const product = farmInputs.find((item) => String(item.id) === value);
+      setForm((current) => ({ ...current, rows: { ...current.rows, [key]: product
+        ? { ...current.rows[key], description: product.name, unit: product.unit, unitPrice: product.unitPrice.toFixed(2) }
+        : { ...current.rows[key], description: '', unit: '', unitPrice: '' } } }));
+    }
+    clearError(`row-${key}`); clearError('rows');
+  };
   const toggleCollateral = (option: string) => { setForm((current) => ({ ...current, collateral: current.collateral.includes(option) ? current.collateral.filter((item) => item !== option) : [...current.collateral, option] })); clearError('collateral'); };
   const selectMember = (member: Member) => { setSelectedMember(member); setMemberSearch(member.memberId); setForm((current) => ({ ...current, ...memberToForm(member) })); setMatches([]); clearError('member'); setLookupMessage('Member record auto-filled. Changes below apply only to this application.'); };
-  const clearMember = () => { setSelectedMember(null); setMemberSearch(''); setForm(blank()); setErrors({}); setLookupMessage(''); setIds({ borrower: null, coMaker: null }); setIdChecks([]); setAcknowledgeIds(false); setSignature(null); };
+  const clearMember = () => { setSelectedMember(null); setMemberSearch(''); setForm(blank()); setHandTyped(new Set()); setErrors({}); setLookupMessage(''); setIds({ borrower: null, coMaker: null }); setIdChecks([]); setAcknowledgeIds(false); setSignature(null); };
 
   // ID checks that need a person to compare the ID with the borrower or co-maker.
   const idWarnings = ID_HOLDERS.flatMap((holder) => (ids[holder]?.readingId ? idChecks.filter((check) => ID_CHECK_IDS[holder].includes(check.id) && check.status === 'warn') : []));
@@ -493,10 +516,20 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
                     const cell = (field: keyof InputRow, props: { inputMode?: 'decimal'; placeholder?: string } = {}) => (
                       <td className="border border-slate-400 p-0.5"><input aria-label={`${label} ${field}`} value={row[field]} disabled={!usesInputs} onChange={(event) => updateRow(key, field, event.target.value)} className={`w-full rounded px-1.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:bg-transparent ${rowError ? 'bg-red-50' : ''}`} {...props} /></td>
                     );
+                    const products = farmInputs.filter((item) => item.category === key);
+                    const picked = products.find((item) => item.name === row.description && item.unit === row.unit);
                     return (
                       <tr key={key} data-error={rowError ? 'true' : undefined}>
                         <td className="whitespace-nowrap border border-slate-400 px-2 py-1.5 text-slate-800">{label}</td>
-                        {cell('description')}
+                        {products.length && !handTyped.has(key) && (picked || !row.description.trim()) ? (
+                          <td className="border border-slate-400 p-0.5">
+                            <select aria-label={`${label} product`} value={picked ? String(picked.id) : ''} disabled={!usesInputs} onChange={(event) => pickProduct(key, event.target.value)} className={`w-full rounded bg-transparent px-1 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 ${rowError ? 'bg-red-50' : ''}`}>
+                              <option value="">Choose product</option>
+                              {products.map((item) => <option key={item.id} value={item.id}>{item.name} ({money(item.unitPrice)}/{item.unit})</option>)}
+                              <option value="other">Other (type it in)</option>
+                            </select>
+                          </td>
+                        ) : cell('description')}
                         {cell('quantity', { inputMode: 'decimal' })}
                         {cell('unit', { placeholder: 'bag, kg, L' })}
                         {cell('unitPrice', { inputMode: 'decimal' })}
@@ -518,10 +551,11 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
             {/* Not on the printed form, but needed to release the loan */}
             <FormTable cols="grid-cols-1 sm:grid-cols-[1fr_1fr_2fr]" className="mt-2">
               <Cell label="Loan Type">
-                <select value={form.loanType} onChange={(event) => update('loanType', event.target.value)} className={INPUT}><option value="agricultural">Agricultural</option><option value="personal">Personal</option><option value="emergency">Emergency</option></select>
+                {/* ACIFAC gives agricultural loans only. */}
+                <p className="mt-1 py-1.5 text-sm font-semibold text-slate-900">Agricultural</p>
               </Cell>
               <Cell label="Loan Term" required>
-                <select value={form.term} onChange={(event) => update('term', event.target.value)} className={INPUT}>{TERMS.map((term) => <option key={term} value={term}>{term} months</option>)}</select>
+                <p className="mt-1 py-1.5 text-sm font-semibold text-slate-900">6 months <span className="font-normal text-slate-500">· one payment</span></p>
               </Cell>
               <Cell label="Purpose">{input('purpose', { placeholder: form.loanType === 'agricultural' ? `Agricultural loan for ${form.cropsPlanted || 'the crops above'}` : 'What the loan is for' })}</Cell>
             </FormTable>
@@ -532,7 +566,7 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
                 <div className="flex justify-between gap-3"><dt>Maximum eligible ({area.toFixed(2)} ha × {money(MAX_LOAN_PER_HECTARE)})</dt><dd className="font-semibold">{money(maximum)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Interest ({DEFAULT_INTEREST_RATE}% flat per term)</dt><dd className="font-semibold">{money(quote?.calculatedInterest ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Total repayment</dt><dd className="font-bold">{money(quote?.totalRepayment ?? 0)}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Est. monthly payment ({form.term} months)</dt><dd className="font-semibold">{money(quote?.monthlyPayment ?? 0)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>One payment, due 6 months after approval</dt><dd className="font-semibold">{money(quote?.totalRepayment ?? 0)}</dd></div>
               </dl>
               {errors.total ? <p className="mt-2 font-semibold text-red-700">{errors.total}</p>
                 : totalCents > maximum * 100 && quote ? <p className="mt-2 font-semibold text-red-700">The amount applied for is more than the maximum eligible amount.</p>

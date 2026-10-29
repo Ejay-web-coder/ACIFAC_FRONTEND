@@ -392,9 +392,9 @@ function Cell({ label, children }: { label: string; children: ReactNode }) {
   return <div className="min-w-0"><span className="mb-1 block text-xs font-medium text-gray-600 md:sr-only">{label}</span>{children}</div>;
 }
 
-// ----- Sales history: per day, per 15 days, per month ----------------------------------------------
+// ----- Sales history: per day, per 15 days, per month, overall ----------------------------------------------
 
-export type SalesPeriodMode = 'day' | 'half' | 'month';
+export type SalesPeriodMode = 'day' | 'half' | 'month' | 'all';
 export interface SalesPeriod { mode: SalesPeriodMode; date: string }
 
 const pad = (value: number) => String(value).padStart(2, '0');
@@ -407,6 +407,8 @@ export function periodRange({ mode, date }: SalesPeriod) {
   const ym = `${year}-${pad(month)}`;
   const last = lastDay(year, month);
   if (mode === 'day') return { from: date, to: date, title: `${monthName(year, month)} ${day}, ${year}` };
+  // Every sale: the server finds the first one; the heading is written once it has.
+  if (mode === 'all') return { from: '', to: '', title: 'OVERALL' };
   if (mode === 'month') return { from: `${ym}-01`, to: `${ym}-${pad(last)}`, title: `${monthName(year, month)} ${year}` };
   return day <= 15
     ? { from: `${ym}-01`, to: `${ym}-15`, title: `${monthName(year, month)} 1 TO 15, ${year}` }
@@ -415,6 +417,7 @@ export function periodRange({ mode, date }: SalesPeriod) {
 
 function shiftPeriod({ mode, date }: SalesPeriod, step: 1 | -1): SalesPeriod {
   if (mode === 'day') return { mode, date: addDateOnlyDays(date, step) };
+  if (mode === 'all') return { mode, date };
   const [year, month, day] = date.split('-').map(Number);
   const monthStart = (offset: number, startDay: number) => {
     const shifted = new Date(Date.UTC(year, month - 1 + offset, startDay));
@@ -430,6 +433,7 @@ const MODES: Array<{ key: SalesPeriodMode; label: string }> = [
   { key: 'day', label: 'Daily' },
   { key: 'half', label: '15 Days' },
   { key: 'month', label: 'Monthly' },
+  { key: 'all', label: 'Overall' },
 ];
 
 export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: SalesPeriod; onPeriodChange: (period: SalesPeriod) => void; refreshKey: number }) {
@@ -441,16 +445,19 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [openSale, setOpenSale] = useState<KadiwaSale | null>(null);
+  // Overall: the days the server found, from the first sale to today.
+  const [overallRange, setOverallRange] = useState<{ from: string; to: string } | null>(null);
+  const overall = period.mode === 'all';
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchKadiwaSales(range.from, range.to)
-      .then((data) => { if (!cancelled) { setSales(data.sales); setReport(data.report); setError(''); } })
+    fetchKadiwaSales(range.from, range.to, overall)
+      .then((data) => { if (!cancelled) { setSales(data.sales); setReport(data.report); setOverallRange(overall ? { from: data.from, to: data.to } : null); setError(''); } })
       .catch((loadError: Error) => { if (!cancelled) setError(loadError.message || 'Unable to load the sales.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [range.from, range.to, refreshKey]);
+  }, [range.from, range.to, overall, refreshKey]);
 
   const query = search.trim().toLowerCase();
   const shownSales = query ? sales.filter((sale) => `${sale.id} ${sale.seller}`.toLowerCase().includes(query)) : sales;
@@ -458,6 +465,10 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
   const nextStartsAfterToday = periodRange(next).from > today;
   const lines = report?.lines ?? [];
   const totals = report?.totals;
+  // Overall is headed by the days it covers, once the server has found the first sale.
+  const heading = overall
+    ? (overallRange && totals?.sales ? `OVERALL: ${formatDate(overallRange.from).toUpperCase()} TO ${formatDate(overallRange.to).toUpperCase()}` : 'OVERALL')
+    : range.title;
   const storeItems = useMemo(() => storeItemTotals(sales), [sales]);
   const expenseTotals = useMemo(() => expenseItemTotals(sales), [sales]);
 
@@ -466,7 +477,7 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
       <div className="flex flex-col gap-3 border-b border-gray-200 p-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Sales History</h2>
-          <p className="text-sm text-gray-600">Goods sold per day, per 15 days and per month. Select a sale to see its form.</p>
+          <p className="text-sm text-gray-600">Goods sold per day, per 15 days, per month and overall. Select a sale to see its form.</p>
         </div>
         <div className="flex w-full gap-1 rounded-xl bg-gray-100 p-1 sm:w-fit" role="tablist" aria-label="Sales period">
           {MODES.map((mode) => (
@@ -480,12 +491,12 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
 
       <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => onPeriodChange(shiftPeriod(period, -1))} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></button>
-          <p className="min-w-0 text-center text-sm font-bold tracking-wide text-gray-900 sm:text-base" aria-live="polite">{range.title}</p>
-          <button type="button" onClick={() => onPeriodChange(next)} disabled={nextStartsAfterToday} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40" aria-label="Next period"><ChevronRight className="h-4 w-4" /></button>
+          {!overall && <button type="button" onClick={() => onPeriodChange(shiftPeriod(period, -1))} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></button>}
+          <p className="min-w-0 text-center text-sm font-bold tracking-wide text-gray-900 sm:text-base" aria-live="polite">{heading}</p>
+          {!overall && <button type="button" onClick={() => onPeriodChange(next)} disabled={nextStartsAfterToday} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40" aria-label="Next period"><ChevronRight className="h-4 w-4" /></button>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {period.mode === 'day'
+          {overall ? <span className="text-xs text-gray-500">Every sale since the first one</span> : period.mode === 'day'
             ? <input type="date" value={period.date} max={today} onChange={(event) => event.target.value && onPeriodChange({ mode: 'day', date: event.target.value })} aria-label="Day" className={`${FIELD} px-2.5`} />
             : <input type="month" value={period.date.slice(0, 7)} max={today.slice(0, 7)} onChange={(event) => event.target.value && onPeriodChange({ mode: period.mode, date: `${event.target.value}-${period.mode === 'half' && Number(period.date.slice(8)) > 15 ? '16' : '01'}` })} aria-label="Month" className={`${FIELD} px-2.5`} />}
           {period.mode === 'half' && (

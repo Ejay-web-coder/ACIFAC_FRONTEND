@@ -174,62 +174,23 @@ export async function fetchServices(params: { machineryId?: string; croppingPeri
   };
 }
 
-/**
- * A booking of a machine rented by the day (the Day Rentals tab), with what has
- * been paid. A rental also recorded as a service (serviceId) is paid there.
- */
-export interface DayRental {
-  id: number;
+/** A machine taken on some days of the booking calendar: approved (booked) or awaiting the office (pending). */
+export interface MachineBooking {
+  status: 'booked' | 'pending';
   machineryId: string;
-  machineryName: string;
-  clientCategory: ClientCategory;
-  memberName: string;
-  memberNumber: string | null;
-  purpose: string;
   startDate: string;
   endDate: string;
-  duration: number;
-  dailyFee: number;
-  rentalFee: number;
-  status: 'scheduled' | 'ongoing' | 'completed';
-  amountPaid: number;
-  balance: number;
-  paymentStatus: PaymentStatus;
-  serviceId: number | null;
-  lastPaymentDate: string | null;
+  /** The office only: the booking, who it is for and why. */
+  requestId?: number | null;
+  renter?: string;
+  purpose?: string;
 }
 
-export interface RentalPayment { id: number; rentalId: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null }
-
-const mapDayRental = (row: Record<string, unknown>): DayRental => ({
-  ...(row as unknown as DayRental),
-  duration: toNumber(row.duration),
-  dailyFee: toNumber(row.dailyFee),
-  rentalFee: toNumber(row.rentalFee),
-  amountPaid: toNumber(row.amountPaid),
-  balance: toNumber(row.balance),
-});
-const mapRentalPayment = (row: Record<string, unknown>): RentalPayment => ({ ...(row as unknown as RentalPayment), amount: toNumber(row.amount) });
-const rentalWithPayments = (data: { rental: Record<string, unknown>; payments: Record<string, unknown>[] }) => ({ rental: mapDayRental(data.rental), payments: data.payments.map(mapRentalPayment) });
-
-export async function fetchDayRentals(params: { machineryId?: string; year?: number | string; paymentStatus?: string; search?: string; page?: number; limit?: number }) {
-  const data = await apiGet<{ rentals: Record<string, unknown>[]; totals: Record<string, unknown>; pagination: Pagination }>(`/api/machinery/day-rentals${query(params)}`);
-  return {
-    rentals: data.rentals.map(mapDayRental),
-    totals: {
-      count: toNumber(data.totals.count), days: toNumber(data.totals.days), rentalFees: toNumber(data.totals.rentalFees),
-      amountPaid: toNumber(data.totals.amountPaid), balance: toNumber(data.totals.balance),
-    },
-    pagination: data.pagination,
-  };
+/** The booking calendar for the days from `from` to `to` (at most 93): every machine and the bookings on those days. */
+export async function fetchMachineryAvailability(from: string, to: string) {
+  const data = await apiGet<{ machinery: Machinery[]; bookings: MachineBooking[] }>(`/api/machinery/availability${query({ from, to })}`);
+  return { machinery: data.machinery, bookings: data.bookings };
 }
-
-type RentalWithPayments = { rental: Record<string, unknown>; payments: Record<string, unknown>[] };
-export const fetchDayRental = async (id: number) => rentalWithPayments(await apiGet<RentalWithPayments>(`/api/machinery/day-rentals/${id}`));
-export const receiveRentalPayment = async (id: number, payload: { amount: string; paymentDate: string; notes?: string }) =>
-  rentalWithPayments(await apiPost<RentalWithPayments>(`/api/machinery/day-rentals/${id}/payments`, payload));
-export const voidRentalPayment = async (id: number, paymentId: number) =>
-  rentalWithPayments(await apiDelete<RentalWithPayments>(`/api/machinery/day-rentals/${id}/payments/${paymentId}`));
 
 export async function fetchService(id: number) {
   const data = await apiGet<{ service: Record<string, unknown>; payments: Record<string, unknown>[] }>(`/api/machinery/services/${id}`);

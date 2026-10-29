@@ -1,4 +1,4 @@
-import { apiDelete, apiFetch, apiGet, apiPatch, apiPost, toNumber } from '../../lib/api';
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut, toNumber } from '../../lib/api';
 import type { OcrIdReading, VerificationCheck } from '../../admin/services/ocrApi';
 
 export type UserRole = 'ADMIN' | 'MEMBER';
@@ -113,7 +113,10 @@ export interface AdminLoan {
   dateApproved: string;
   dueDate: string;
   nextPaymentDate: string | null;
+  /** The amount of each installment: for a single-payment loan, the whole amount. */
   monthlyPayment: number;
+  /** single: due in full by the due date, payable in parts before then (loans from October 2026); monthly: equal monthly installments (earlier loans). */
+  repayment?: 'single' | 'monthly';
   totalPaid: number;
   paymentCount: number;
   overdueAmount: number;
@@ -124,15 +127,20 @@ export interface AdminLoan {
   farmArea?: number | null;
   idDocuments?: LoanIdDocuments;
   borrowerSignature?: LoanSignature | null;
-  /** How many times the loan was given a new schedule, and the last time. */
+  /** How many times the loan was restructured, and the last time. */
   restructureCount: number;
   lastRestructuredOn: string | null;
+  /** For a loan that restructured an earlier one: that loan's number, the balance deducted from this one, and what was released. */
+  renewedFromLoan?: string | null;
+  renewalDeduction?: number | null;
+  netProceeds?: number | null;
 }
 
 export interface AdminPayment {
   id: number;
   loanId: number;
   loanNumber: string;
+  memberDatabaseId?: number | null;
   memberName: string;
   amount: number;
   paymentDate: string;
@@ -167,6 +175,32 @@ export interface AdminLoanRequest {
   collateralType?: string | null;
   idDocuments?: LoanIdDocuments;
   borrowerSignature?: LoanSignature | null;
+  // The rest of the application form (the office's View).
+  borrowerAddress?: string | null;
+  borrowerPhone?: string | null;
+  borrowerEmail?: string | null;
+  borrowerAge?: number | null;
+  borrowerGender?: string | null;
+  borrowerCivilStatus?: string | null;
+  borrowerOccupation?: string | null;
+  yearsFarming?: number | null;
+  farmLocation?: string | null;
+  barangay?: string | null;
+  municipality?: string | null;
+  province?: string | null;
+  cropsPlanted?: string | null;
+  cropSeason?: string | null;
+  irrigationType?: string | null;
+  irrigationOther?: string | null;
+  inKindItems?: Array<{ item: string; description?: string; quantity: string | number; unit: string; unitPrice: string | number }>;
+  coMakerAddress?: string | null;
+  coMakerContact?: string | null;
+  coMakerRelationship?: string | null;
+  collateralDetails?: string | null;
+  /** The member's open loan: approving restructures it (80% paid) - its balance is deducted - or it blocks approval. */
+  openLoanNumber?: string | null;
+  openLoanBalance?: number | null;
+  openLoanTotal?: number | null;
 }
 
 export interface LoanSummary {
@@ -210,6 +244,8 @@ export function mapLoan(loan: Record<string, unknown>): AdminLoan {
     overdueAmount: toNumber(loan.overdueAmount),
     nextAmountDue: loan.nextAmountDue === null || loan.nextAmountDue === undefined ? null : toNumber(loan.nextAmountDue),
     farmArea: optionalNumber(loan.farmArea) ?? null,
+    renewalDeduction: optionalNumber(loan.renewalDeduction) ?? null,
+    netProceeds: optionalNumber(loan.netProceeds) ?? null,
   };
 }
 
@@ -233,6 +269,8 @@ export function mapLoanRequest(request: Record<string, unknown>): AdminLoanReque
     interestRate: optionalNumber(request.interestRate),
     calculatedInterest: optionalNumber(request.calculatedInterest),
     totalRepayment: optionalNumber(request.totalRepayment),
+    openLoanBalance: optionalNumber(request.openLoanBalance) ?? null,
+    openLoanTotal: optionalNumber(request.openLoanTotal) ?? null,
   };
 }
 
@@ -240,6 +278,68 @@ export async function fetchAdminLoans(params: { page?: number; limit?: number; s
   const data = await apiGet<{ loans: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown> }>(`/api/admin/loans${query(params)}`);
   const summary = Object.fromEntries(Object.entries(data.summary).map(([key, value]) => [key, toNumber(value)])) as unknown as LoanSummary;
   return { loans: data.loans.map(mapLoan), pagination: data.pagination, summary };
+}
+
+/** The rows of the loan form's in-kind table, in its order. */
+export const FARM_INPUT_CATEGORIES = [
+  ['fertilizer', 'Fertilizer'], ['pesticides', 'Pesticides'], ['herbicides', 'Herbicides'],
+  ['insecticides', 'Insecticides'], ['seeds', 'Seeds'], ['plantChemicals', 'Plant Chemicals for Spray'],
+] as const;
+export type FarmInputCategory = (typeof FARM_INPUT_CATEGORIES)[number][0];
+
+/** A product on the office's farm input price list. */
+export interface FarmInput {
+  id: number;
+  category: FarmInputCategory;
+  name: string;
+  unit: string;
+  unitPrice: number;
+  active: boolean;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+const mapFarmInput = (item: Record<string, unknown>): FarmInput => ({ ...(item as unknown as FarmInput), unitPrice: toNumber(item.unitPrice) });
+
+/** The products the loan form offers; `all` (admins) includes hidden ones. */
+export async function fetchFarmInputs(all = false) {
+  return (await apiGet<{ items: Record<string, unknown>[] }>(`/api/loans/farm-inputs${all ? '?all=true' : ''}`)).items.map(mapFarmInput);
+}
+
+export async function createFarmInput(payload: { category: FarmInputCategory; name: string; unit: string; unitPrice: string }) {
+  return mapFarmInput((await apiPost<{ item: Record<string, unknown> }>('/api/admin/farm-inputs', payload)).item);
+}
+
+export async function updateFarmInput(id: number, payload: Partial<{ category: FarmInputCategory; name: string; unit: string; unitPrice: string; active: boolean }>) {
+  return mapFarmInput((await apiPut<{ item: Record<string, unknown> }>(`/api/admin/farm-inputs/${id}`, payload)).item);
+}
+
+/** A member's loans and every payment on them, with totals (the same for the admin and for the member). */
+export interface MemberLoanHistory {
+  member: { id: number; memberNumber: string | null; name: string; farmArea: number | null };
+  summary: {
+    loans: number; openLoans: number; paidLoans: number; overdueLoans: number; payments: number; restructurings: number;
+    totalBorrowed: number; totalInterest: number; totalRepayment: number; totalPaid: number; outstandingBalance: number;
+  };
+  loans: AdminLoan[];
+  payments: AdminPayment[];
+}
+
+function mapLoanHistory(data: { member: Record<string, unknown>; summary: Record<string, unknown>; loans: Record<string, unknown>[]; payments: Record<string, unknown>[] }): MemberLoanHistory {
+  return {
+    member: { ...(data.member as unknown as MemberLoanHistory['member']), farmArea: optionalNumber(data.member.farmArea) ?? null },
+    summary: Object.fromEntries(Object.entries(data.summary).map(([key, value]) => [key, toNumber(value)])) as unknown as MemberLoanHistory['summary'],
+    loans: data.loans.map(mapLoan),
+    payments: data.payments.map(mapPayment),
+  };
+}
+
+export async function fetchMemberLoanHistory(memberId: number) {
+  return mapLoanHistory(await apiGet(`/api/admin/members/${memberId}/loan-history`));
+}
+
+export async function fetchMyLoanHistory() {
+  return mapLoanHistory(await apiGet('/api/members/me/loan-history'));
 }
 
 export async function fetchAdminPayments(params: { page?: number; limit?: number; search?: string } = {}) {
@@ -312,10 +412,14 @@ export async function recordAdminLoanPayment(id: number, payload: { amount: numb
   return { payment: mapPayment(data.payment) };
 }
 
-/** Gives an open loan a new schedule for what is still owed, from today: term months, plus interestRate% of that balance. */
-export async function restructureAdminLoan(id: number, payload: { term: number; interestRate: string; reason: string }) {
-  const data = await apiPost<{ loan: Record<string, unknown> }>(`/api/admin/loans/${id}/restructure`, payload);
-  return mapLoan(data.loan);
+/**
+ * Restructures a loan at least 80% paid into a new loan of `amount` (at most
+ * farmArea x PHP 50,000): what is still owed is deducted from it and closes the
+ * old loan. Returns the new loan and the closed one.
+ */
+export async function restructureAdminLoan(id: number, payload: { amount: string; farmArea: string; reason: string }) {
+  const data = await apiPost<{ loan: Record<string, unknown>; previousLoan: Record<string, unknown> }>(`/api/admin/loans/${id}/restructure`, payload);
+  return { loan: mapLoan(data.loan), previousLoan: mapLoan(data.previousLoan) };
 }
 
 export interface LoanQuote {
@@ -627,6 +731,10 @@ export interface AdminDashboardData {
     netIncomeBreakdown: { kadiwa: number; machinery: number; loans: number };
     /** Reserve 10%, Education & Training 10%, Community Development 3%, Optional 7% of the net income. */
     statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
+    /** Where the cooperative's money is: share capital, savings, loans to collect, machinery and Kadiwa Store cash, and their total. */
+    capital?: { total: number; parts: Array<{ key: string; label: string; amount: number }> };
+    /** What is shared out to the members: Dividends 35% and Patronage Refund 35% of the net income. */
+    netIncomeShares?: Array<{ key: string; label: string; percent: number; amount: number }>;
   };
   /** Members (terminated ones left out) by their share capital now, lowest band first; max is exclusive, null for the PHP 20,000 maximum. */
   shareCapitalLevels: Array<{ key: 'below1k' | 'from1kTo5k' | 'from5kTo15k' | 'from15kTo20k' | 'maximum'; min: number; max: number | null; members: number }>;
@@ -980,11 +1088,14 @@ export async function fetchKadiwaData(params: { page?: number; limit?: number } 
 }
 
 // Sales dated from..to (YYYY-MM-DD, inclusive), newest first, with the report
-// of every good sold in the period.
-export async function fetchKadiwaSales(from: string, to: string) {
-  const data = await apiGet<{ sales: Record<string, unknown>[]; report: { lines: Record<string, unknown>[]; totals: Record<string, unknown> } }>(`/api/kadiwa/sales${query({ from, to })}`);
+// of every good sold in the period; `overall`: every sale, from the first one
+// to today (from and to say which days that was).
+export async function fetchKadiwaSales(from: string, to: string, overall = false) {
+  const data = await apiGet<{ from: string; to: string; sales: Record<string, unknown>[]; report: { lines: Record<string, unknown>[]; totals: Record<string, unknown> } }>(`/api/kadiwa/sales${query(overall ? { overall: 'true' } : { from, to })}`);
   const totals = data.report.totals;
   return {
+    from: data.from,
+    to: data.to,
     sales: data.sales.map(mapSale),
     report: {
       lines: data.report.lines.map(mapSalesLine),

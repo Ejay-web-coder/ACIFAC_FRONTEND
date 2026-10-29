@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus } from 'lucide-react';
+import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus, History } from 'lucide-react';
 import { EmptyState, StatCard } from '../../app/components/common/UiKit';
 import { PagedList } from '../../app/components/common/PagedList';
 import { UserRole } from '../../app/App';
@@ -7,6 +7,7 @@ import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authA
 import { toast } from 'sonner';
 import { formatDate, formatDateTime } from '../../utils/dateTime';
 import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
+import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import type { Member } from '../../admin/pages/MembershipManagement';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { sumMoney } from '../../utils/money';
@@ -27,6 +28,7 @@ interface Loan {
   interestRate: number;
   term: number;
   monthlyPayment: number;
+  repayment?: 'single' | 'monthly';
   dateApproved: string;
   dueDate: string;
   nextPaymentDate: string;
@@ -67,6 +69,8 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
   const [loanRequests, setLoanRequests] = useState<LoanRequest[]>([]);
   const [applicationMember, setApplicationMember] = useState<Member | null>(null);
   const [showApplyLoanForm, setShowApplyLoanForm] = useState(false);
+  // The loan summary: every loan and payment, as the office sees it.
+  const [showLoanHistory, setShowLoanHistory] = useState(false);
   const [activeSection, setActiveSection] = useState<'loans' | 'applications' | 'payments'>('loans');
 
 
@@ -101,12 +105,14 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         interestRate: loan.interestRate,
         term: Number(loan.term),
         monthlyPayment: loan.monthlyPayment,
+        repayment: loan.repayment,
         dateApproved: loan.dateApproved,
         dueDate: loan.dueDate,
         nextPaymentDate: loan.nextPaymentDate || '',
         status: loan.status,
         paymentsMade: loan.paidInstallments,
-        paymentsRemaining: Math.max(0, Number(loan.term) - loan.paidInstallments),
+        // A single-payment loan has one payment to make.
+        paymentsRemaining: Math.max(0, (loan.repayment === 'single' ? 1 : Number(loan.term)) - loan.paidInstallments),
         totalPaid: loan.totalPaid,
         overdueAmount: loan.overdueAmount,
         nextAmountDue: loan.nextAmountDue,
@@ -153,6 +159,12 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
           <p className="text-gray-600 mt-1">View your loan details and payment history</p>
         </div>
 
+        <div className="flex flex-col gap-2 sm:flex-row">
+        <button type="button" onClick={() => setShowLoanHistory(true)}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
+          <History className="h-4 w-4" />
+          Loan Summary
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -164,7 +176,9 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
           <Plus className="h-4 w-4" />
           Apply Loan
         </button>
+        </div>
       </div>
+      {showLoanHistory && <LoanHistoryModal onClose={() => setShowLoanHistory(false)} />}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
@@ -243,7 +257,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                     <p className="text-sm font-medium text-gray-900">{loan.interestRate}% flat (whole term)</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Monthly Payment</p>
+                    <p className="text-xs text-gray-500">{loan.repayment === 'single' ? 'Due at end of term' : 'Monthly Payment'}</p>
                     <p className="text-sm font-medium text-gray-900">₱{loan.monthlyPayment.toLocaleString()}</p>
                   </div>
                 </div>
@@ -252,15 +266,21 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-sm text-gray-600">Payment Progress</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {loan.paymentsMade} of {loan.term} payments made
+                      {/* A single-payment loan may be paid in parts: progress is the share of the total paid. */}
+                      {loan.repayment === 'single'
+                        ? `₱${loan.totalPaid.toLocaleString()} of ₱${loan.totalAmount.toLocaleString()} paid (${loan.totalAmount > 0 ? Math.floor((loan.totalPaid / loan.totalAmount) * 100) : 0}%)`
+                        : `${loan.paymentsMade} of ${loan.term} payments made`}
                     </p>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className="bg-blue-600 h-2 rounded-full"
-                      style={{ width: `${(loan.paymentsMade / loan.term) * 100}%` }}
+                      style={{ width: `${loan.repayment === 'single' ? (loan.totalAmount > 0 ? Math.min(100, (loan.totalPaid / loan.totalAmount) * 100) : 0) : (loan.paymentsMade / loan.term) * 100}%` }}
                     />
                   </div>
+                  {loan.repayment === 'single' && loan.status !== 'paid' && loan.totalAmount > 0 && loan.totalPaid / loan.totalAmount >= 0.8 && (
+                    <p className="mt-2 text-xs text-green-700">You have paid at least 80%: you may apply to restructure this loan into a new one at the office.</p>
+                  )}
                 </div>
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">

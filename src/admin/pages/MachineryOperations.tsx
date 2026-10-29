@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Plus, Calendar, Check, X, ClipboardList, Tractor, PhilippinePeso, Settings2 } from 'lucide-react';
+import { Plus, Calendar, Check, X, ClipboardList, Tractor, Settings2 } from 'lucide-react';
 import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
@@ -9,20 +9,19 @@ import { createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMe
 import { formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
-import { DayRentalsPanel } from '../components/machinery/DayRentalsPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
+import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
 
 interface MachineryOperationsProps {
   userRole: UserRole;
 }
 
 const TABS = [
-  { id: 'rentals', label: 'Fleet & Rentals' },
+  { id: 'rentals', label: 'Fleet & Bookings' },
   { id: 'services', label: 'Services' },
-  { id: 'day-rentals', label: 'Day Rentals' },
   { id: 'expenses', label: 'Expenses' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
@@ -62,7 +61,6 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const pendingRequests = rentalRequests.filter((request) => request.status === 'pending');
   const requestPages = usePagination(pendingRequests, { pageSize: 5 });
   const totalOperations = operations.length;
-  const totalRevenue = operations.reduce((sum, op) => sum + op.rentalFee, 0);
 
   const canEdit = userRole === 'admin';
 
@@ -125,7 +123,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       // Leaves the pending list immediately; the reload brings the new operation.
       setRentalRequests((current) => current.map((request) => request.id === id ? { ...request, status } : request));
       void loadData();
-      toast.success(status === 'approved' ? 'Rental request approved' : 'Rental request declined');
+      toast.success(status === 'approved' ? 'Booking approved' : 'Booking declined');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to review rental request.');
     }
@@ -174,7 +172,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       const rental = { machineryId: formData.machineryId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' };
       await createRentalRequest(renterType === 'member' ? { ...rental, memberDatabaseId: selectedMemberId! } : { ...rental, clientCategory: 'non_member', clientName });
       void loadData();
-      toast.success('Rental request created');
+      toast.success('Booking created');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create rental.');
       return;
@@ -212,13 +210,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
 
       {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
-      {canEdit && tab === 'day-rentals' && <DayRentalsPanel machinery={machinery} />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
 
       {tab === 'rentals' && (<>
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-600">Track farm equipment and rental operations</p>
+        <p className="text-sm text-gray-600">Track the fleet and members' bookings. Record the work done on a booking under Services.</p>
         {canEdit && (
           <button
             type="button"
@@ -226,17 +223,17 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
           >
             <Plus className="h-4 w-4" />
-            New Rental
+            New Booking
           </button>
         )}
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
-        <StatCard label="Total Operations" value={totalOperations} icon={Calendar} tone="dark" />
-        <StatCard label="Ongoing Operations" value={ongoingOperations} icon={Tractor} tone="soft" />
+        <StatCard label="Approved Bookings" value={totalOperations} icon={Calendar} tone="dark" />
+        <StatCard label="In Use Today" value={ongoingOperations} icon={Tractor} tone="soft" />
         <div className="col-span-2 md:col-span-1">
-          <StatCard label="Total Revenue" value={`₱${totalRevenue.toLocaleString()}`} icon={PhilippinePeso} />
+          <StatCard label="Pending Requests" value={pendingRequests.length} icon={ClipboardList} />
         </div>
       </div>
 
@@ -247,7 +244,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-50 ring-1 ring-green-100"><ClipboardList className="h-5 w-5 text-green-700" /></span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-bold text-gray-900">Rental Requests</h2>
+                <h2 className="font-bold text-gray-900">Booking Requests</h2>
                 <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">{pendingRequests.length} pending</span>
               </div>
               <p className="text-sm text-gray-600">Review bookings from the member portal and rentals added here, for members and non-members.</p>
@@ -265,7 +262,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                   <p className="mt-1 text-sm text-gray-600">
                     {request.memberName} · {request.clientCategory === 'non_member' ? <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Non-member</span> : request.memberId} · {request.purpose}
                   </p>
-                  <p className="mt-1 text-xs text-gray-500">{formatDate(request.startDate)} to {formatDate(request.endDate)} · {request.duration} day(s) · ₱{request.rentalFee.toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-gray-500">{formatDate(request.startDate)} to {formatDate(request.endDate)} · {request.duration} day(s){request.rentalFee > 0 ? ` · ₱${request.rentalFee.toLocaleString()}` : ''}</p>
                   {request.notes && <p className="mt-1 text-xs text-gray-500">Note: {request.notes}</p>}
                 </div>
                 {request.status === 'pending' && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => updateRequestStatus(request.id, 'approved')} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Check className="h-4 w-4" />Approve</button><button type="button" onClick={() => updateRequestStatus(request.id, 'declined')} className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><X className="h-4 w-4" />Decline</button></div>}
@@ -276,18 +273,20 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
           ) : (
             <div className="px-6 py-10 text-center">
               <ClipboardList className="mx-auto h-10 w-10 text-gray-300" />
-              <p className="mt-3 text-sm font-medium text-gray-700">No pending rental requests</p>
+              <p className="mt-3 text-sm font-medium text-gray-700">No pending booking requests</p>
               <p className="mt-1 text-sm text-gray-500">New booking requests will appear here for review.</p>
             </div>
           )}
         </div>
       )}
 
+      <MachineAvailabilityCalendar />
+
       <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         <div className="flex flex-col gap-3 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Machinery Fleet</h2>
-            <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved rentals.</p>
+            <p className="mt-1 text-sm text-gray-600">Availability updates automatically from approved bookings.</p>
           </div>
           {canEdit && (
             <button type="button" onClick={() => setShowAddMachine(true)} className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-green-600 px-4 text-sm font-semibold text-green-700 hover:bg-green-50">
@@ -348,7 +347,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Add New Rental</h2>
+              <h2 className="text-xl font-bold text-gray-900">New Booking</h2>
               <button
                 onClick={() => setShowForm(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -359,8 +358,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <fieldset>
-                <legend className="mb-1 block text-sm font-medium text-gray-700">Rented by</legend>
-                <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1" role="radiogroup" aria-label="Rented by">
+                <legend className="mb-1 block text-sm font-medium text-gray-700">Booked for</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1" role="radiogroup" aria-label="Booked for">
                   {([['member', 'Member', 'Needs a member ID'], ['non_member', 'Non-member', 'Name only']] as const).map(([value, label, hint]) => (
                     <button key={value} type="button" role="radio" aria-checked={renterType === value} onClick={() => chooseRenterType(value)}
                       className={`rounded-lg px-3 py-2 text-left ${renterType === value ? 'bg-white text-green-800 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:text-gray-900'}`}>
@@ -389,7 +388,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                       className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                       placeholder="e.g., Juan Dela Cruz"
                     />
-                    <p className="mt-1 text-xs text-gray-500">Non-members are recorded by name only, with the same daily fee.</p>
+                    <p className="mt-1 text-xs text-gray-500">Non-members are recorded by name only; their service fee uses the non-member rate.</p>
                   </div>
                 )}
 
@@ -454,9 +453,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   >
                     <option value="">Select machinery</option>
-                    {machinery.filter(m => m.pricingMode !== 'per_service').map(m => (
+                    {machinery.map(m => (
                       <option key={m.id} value={m.id} disabled={m.status === 'maintenance'}>
-                        {m.name} — ₱{m.dailyFee.toLocaleString('en-PH')}/day{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
+                        {m.id} · {m.name}{m.pricingMode === 'per_day' ? ` — ₱${m.dailyFee.toLocaleString('en-PH')}/day` : ''}{m.status === 'maintenance' ? ' (maintenance)' : m.status === 'in-use' ? ' (in use)' : ''}
                       </option>
                     ))}
                   </select>
@@ -511,7 +510,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                   type="submit"
                   className="flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700"
                 >
-                  Create Rental
+                  Create Booking
                 </button>
                 <button
                   type="button"

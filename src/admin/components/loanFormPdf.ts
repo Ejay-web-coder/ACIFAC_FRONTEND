@@ -54,7 +54,9 @@ export async function downloadLoanFormPdf() {
   y = sectionTitle(doc, 'III. LOAN', '', y);
   y += 5;
   checkboxes(doc, 'Loan Mode (tick one)', ['Cash', 'In-Kind', 'Combination'], PAGE.left, y);
-  blank(doc, 'Loan Term (months)', 140, y, PAGE.right);
+  // Every loan is for 6 months, the whole amount due at the end of the term.
+  font(doc, 'bold', 9.5);
+  doc.text('Term: 6 months, due at end of term', PAGE.right, y, { align: 'right' });
   y += 4;
   autoTable(doc, {
     ...tableStyles,

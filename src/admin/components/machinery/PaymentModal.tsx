@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import {
-  fetchDayRental, fetchService, receivePayment, receiveRentalPayment, voidPayment, voidRentalPayment,
-  type DayRental, type MachineryService, type PaymentStatus, type RentalPayment, type ServicePayment,
+  fetchService, receivePayment, voidPayment,
+  type MachineryService, type PaymentStatus, type ServicePayment,
 } from '../../../app/services/machineryApi';
 import { errorMessage } from '../../../lib/api';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
@@ -13,7 +13,7 @@ interface Account { fee: number; amountPaid: number; balance: number; paymentSta
 interface PaymentEntry { id: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null }
 type Loaded = { account: Account; payments: PaymentEntry[] };
 
-// One payment window for services and day rentals; each passes how to load, receive and void.
+// The payment window of a service: how to load, receive and void its payments.
 function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive, remove, onClose, onChanged }: {
   initial: Account;
   description: string;
@@ -126,22 +126,6 @@ export function PaymentModal({ service, onClose, onChanged }: { service: Machine
       load={async () => fromService(await fetchService(service.id))}
       receive={async (payment) => fromService(await receivePayment(service.id, payment))}
       remove={async (paymentId) => fromService(await voidPayment(service.id, paymentId))}
-      onClose={onClose} onChanged={onChanged} />
-  );
-}
-
-const rentalAccount = (rental: DayRental): Account => ({ fee: rental.rentalFee, amountPaid: rental.amountPaid, balance: rental.balance, paymentStatus: rental.paymentStatus, payer: rental.memberName });
-const fromRental = (data: { rental: DayRental; payments: RentalPayment[] }): Loaded => ({ account: rentalAccount(data.rental), payments: data.payments });
-
-/** Payments for a machine rented by the day (not one also recorded as a service: that is paid under Services). */
-export function RentalPaymentModal({ rental, onClose, onChanged }: { rental: DayRental; onClose: () => void; onChanged: () => void }) {
-  return (
-    <PaymentsDialog initial={rentalAccount(rental)}
-      description={`${rental.memberName} · ${rental.machineryName}, ${formatDate(rental.startDate)} to ${formatDate(rental.endDate)} (${rental.duration} day${rental.duration === 1 ? '' : 's'})`}
-      feeLabel="Rental fee" paidOff="This rental is fully paid."
-      load={async () => fromRental(await fetchDayRental(rental.id))}
-      receive={async (payment) => fromRental(await receiveRentalPayment(rental.id, payment))}
-      remove={async (paymentId) => fromRental(await voidRentalPayment(rental.id, paymentId))}
       onClose={onClose} onChanged={onChanged} />
   );
 }

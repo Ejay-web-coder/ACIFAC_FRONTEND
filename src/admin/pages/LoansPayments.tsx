@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw, Tags } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, fetchPaymentHours, isPaymentDay, loanIdPath, loanSignaturePath, officeOpenAt, recordAdminLoanPayment, weekdayName, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination, type PaymentHours } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
-import { escapeHtml } from '../../utils/html';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
 import { RestructureLoanModal } from '../components/RestructureLoanModal';
+import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
+import { FarmInputPricesModal } from '../components/FarmInputPricesModal';
+import { LoanPaymentsList } from '../components/LoanPaymentsList';
+import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
 import type { Member } from './MembershipManagement';
 
 type Loan = AdminLoan;
@@ -83,6 +86,18 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
   // The open loan being given a new schedule.
   const [restructuringLoan, setRestructuringLoan] = useState<Loan | null>(null);
+  // The member whose loan summary and payment history is open.
+  const [historyMember, setHistoryMember] = useState<{ id: number; name: string } | null>(null);
+  const [showFarmInputs, setShowFarmInputs] = useState(false);
+  // The loan whose details and payments are open (View); it follows the reloaded list.
+  const [viewingLoanId, setViewingLoanId] = useState<number | null>(null);
+  // The loan application whose form is open (View), to approve or decline from it.
+  const [viewingRequestId, setViewingRequestId] = useState<number | null>(null);
+  const viewingRequest = viewingRequestId === null ? null : loanRequests.find((row) => row.id === viewingRequestId && row.status === 'pending') ?? null;
+  const viewingLoan = viewingLoanId === null ? null : loans.find((row) => row.databaseId === viewingLoanId) ?? null;
+  const memberLink = (id: number | null | undefined, name: string, className: string) => id
+    ? <button type="button" onClick={() => setHistoryMember({ id, name })} className={`${className} text-left hover:text-green-700 hover:underline`} title="Loan summary and payment history">{name}</button>
+    : <span className={className}>{name}</span>;
   const [selectedPaymentForReceipt, setSelectedPaymentForReceipt] = useState<Payment | null>(null);
   const [paymentData, setPaymentData] = useState({
     amount: '',
@@ -149,6 +164,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     }
     try {
       await reviewAdminLoanRequest(Number(request.id), status, reason);
+      setViewingRequestId(null);
       void loadData();
       toast.success(status === 'approved' ? 'Loan request approved' : 'Loan request declined', {
         description: `${request.memberName}'s request #${request.id} was ${status}.`
@@ -186,8 +202,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
   const handleRecordPayment = (loan: Loan) => {
     setSelectedLoanForPayment(loan);
-    // Default to what is currently due on the next installment (never more than the balance).
-    const suggested = Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
+    // A single-payment loan defaults to the whole balance (a part may be paid);
+    // otherwise to what is due on the next installment (never more than the balance).
+    const suggested = loan.repayment === 'single' ? loan.balance : Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
     setPaymentData({
       amount: suggested.toFixed(2),
       paymentDate: lastPaymentDay()
@@ -224,97 +241,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     setShowReceiptModal(true);
   };
 
-  const handleDownloadReceipt = (payment: Payment) => {
-    const receiptContent = generateReceiptHTML(payment);
-    const element = document.createElement('a');
-    const file = new Blob([receiptContent], { type: 'text/html' });
-    element.href = URL.createObjectURL(file);
-    element.download = `Receipt-${payment.id}.html`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    toast.success('Receipt downloaded!', {
-      description: `Receipt for payment ${payment.id} has been downloaded`
-    });
-  };
-
-  const generateReceiptHTML = (payment: Payment) => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payment Receipt - ${payment.id}</title>
-        <style>
-          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-          .receipt-container { border: 1px solid #ddd; border-radius: 8px; padding: 30px; background: white; }
-          .receipt-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-          .receipt-title { font-size: 24px; font-weight: bold; margin: 0; }
-          .receipt-subtitle { color: #666; margin: 5px 0 0 0; }
-          .receipt-section { margin: 20px 0; }
-          .receipt-label { font-weight: bold; color: #333; }
-          .receipt-value { color: #666; margin-left: 10px; }
-          .receipt-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-          .receipt-summary { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
-          .receipt-total { font-size: 18px; font-weight: bold; color: #28a745; }
-          .receipt-footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; }
-          .amount { text-align: right; }
-        </style>
-      </head>
-      <body>
-        <div class="receipt-container">
-          <div class="receipt-header">
-            <h1 class="receipt-title">PAYMENT RECEIPT</h1>
-            <p class="receipt-subtitle">ACIFAC Cooperative</p>
-          </div>
-          
-          <div class="receipt-section">
-            <div class="receipt-row">
-              <span class="receipt-label">Receipt Number:</span>
-              <span class="receipt-value">${payment.id}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Date:</span>
-              <span class="receipt-value">${formatDate(payment.paymentDate)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Member Name:</span>
-              <span class="receipt-value">${escapeHtml(payment.memberName)}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Loan ID:</span>
-              <span class="receipt-value">${escapeHtml(payment.loanNumber || String(payment.loanId))}</span>
-            </div>
-          </div>
-
-          <div class="receipt-summary">
-            <h3 style="margin-top: 0;">Payment Details</h3>
-            <div class="receipt-row">
-              <span class="receipt-label">Principal Paid:</span>
-              <span class="receipt-value amount">₱${payment.principalPaid.toLocaleString()}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Interest Paid:</span>
-              <span class="receipt-value amount">₱${payment.interestPaid.toLocaleString()}</span>
-            </div>
-            <div class="receipt-row" style="border-bottom: 2px solid #333; font-weight: bold;">
-              <span class="receipt-label">Total Payment:</span>
-              <span class="receipt-value amount receipt-total">₱${payment.amount.toLocaleString()}</span>
-            </div>
-            <div class="receipt-row">
-              <span class="receipt-label">Remaining Balance:</span>
-              <span class="receipt-value amount">₱${payment.remainingBalance.toLocaleString()}</span>
-            </div>
-          </div>
-
-          <div class="receipt-footer">
-            <p>Thank you for your payment!</p>
-            <p>This is a computer-generated receipt. No signature is required.</p>
-            <p style="margin-top: 20px; color: #333;">Printed on ${formatDateTime(new Date())}</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+  const handleDownloadReceipt = async (payment: Payment) => {
+    try {
+      const { downloadLoanReceiptPdf } = await import('../components/loanReceiptPdf');
+      await downloadLoanReceiptPdf(payment);
+      toast.success('Receipt downloaded!', { description: `Receipt for payment ${payment.id} was saved as a PDF.` });
+    } catch (error) {
+      toast.error('The receipt could not be made', { description: error instanceof Error ? error.message : 'Please try again.' });
+    }
   };
 
   return (
@@ -323,13 +257,20 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-600">Track loan disbursements and payment collections</p>
         {canEdit && (
-          <button
-            onClick={() => setShowAddLoanModal(true)}
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto"
-          >
-            <Plus className="h-4 w-4" />
-            New Loan
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => setShowFarmInputs(true)}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
+              <Tags className="h-4 w-4" />
+              Farm Input Prices
+            </button>
+            <button
+              onClick={() => setShowAddLoanModal(true)}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto"
+            >
+              <Plus className="h-4 w-4" />
+              New Loan
+            </button>
+          </div>
         )}
       </div>
 
@@ -429,74 +370,22 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
           {activeTab === 'loans' ? (
             <div className="space-y-4">
               {filteredLoans.map((loan) => (
-                <div key={loan.id} className="rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
-                        <h3 className="break-words font-bold text-gray-900">{loan.memberName}</h3>
-                        <StatusBadge status={loan.status} />
-                        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">
-                          {loan.loanType}
-                        </span>
-                        {loan.restructureCount > 0 && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200" title={`Last restructured on ${formatDate(loan.lastRestructuredOn)}`}>
-                            <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Restructured{loan.restructureCount > 1 ? ` ×${loan.restructureCount}` : ''}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}
-                        {hasIds(loan.idDocuments) && (['borrower', 'coMaker'] as const).filter((holder) => loan.idDocuments?.[holder]).map((holder) => (
-                          <button key={holder} type="button" onClick={() => openLoanId('loans', loan.databaseId, holder)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><IdCard className="h-3.5 w-3.5" />{ID_LABELS[holder]}</button>
-                        ))}
-                        {loan.borrowerSignature && <button type="button" onClick={() => openLoanSignature('loans', loan.databaseId)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><PenLine className="h-3.5 w-3.5" />Borrower&apos;s signature</button>}
-                      </p>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
-                        <div>
-                          <p className="text-xs text-gray-500">Loan Amount</p>
-                          <p className="text-sm font-medium text-gray-900">{peso(loan.amount)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Total Repayment</p>
-                          <p className="text-sm font-medium text-green-700">{peso(loan.totalAmount)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Balance</p>
-                          <p className="text-sm font-medium text-gray-900">{peso(loan.balance)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Interest Rate</p>
-                          <p className="text-sm font-medium text-gray-900">{loan.interestRate}%</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Monthly Payment</p>
-                          <p className="text-sm font-medium text-gray-900">{peso(loan.monthlyPayment)}</p>
-                        </div>
-                      </div>
-                      {loan.status !== 'paid' && loan.nextPaymentDate && (
-                        <div className={`mt-3 flex items-start gap-2 rounded-xl p-3 ${loan.status === 'overdue' ? 'bg-red-50 ring-1 ring-red-100' : 'bg-green-50 ring-1 ring-green-100'}`}>
-                          {loan.status === 'overdue' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : <Clock className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />}
-                          <p className={`text-sm ${loan.status === 'overdue' ? 'text-red-800' : 'text-green-800'}`}>
-                            {loan.status === 'overdue'
-                              ? `Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`
-                              : `Next payment of ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} due on ${formatDate(loan.nextPaymentDate)}`}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    {canEdit && loan.status !== 'paid' && (
-                      <div className="flex shrink-0 flex-col gap-2 sm:ml-4">
-                        <button
-                          onClick={() => handleRecordPayment(loan)}
-                            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:w-auto">
-                          Record Payment
-                        </button>
-                        <button type="button" onClick={() => setRestructuringLoan(loan)}
-                          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 hover:bg-amber-50 sm:w-auto">
-                          <RefreshCcw className="h-4 w-4" />Restructure
-                        </button>
-                      </div>
-                    )}
+                <div key={loan.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h3>{memberLink(loan.memberDatabaseId, loan.memberName, 'break-words font-bold text-gray-900')}</h3>
+                    <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${loan.status === 'overdue' ? 'text-red-700' : loan.status === 'paid' ? 'text-gray-500' : 'text-gray-700'}`}>
+                      {loan.status === 'overdue' ? <AlertTriangle className="h-4 w-4 shrink-0" /> : loan.status === 'paid' ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Clock className="h-4 w-4 shrink-0 text-green-700" />}
+                      {loan.status === 'paid' || !loan.nextPaymentDate
+                        ? 'Fully paid'
+                        : loan.status === 'overdue'
+                          ? `Overdue: ${peso(loan.overdueAmount)} since ${formatDate(loan.nextPaymentDate)}`
+                          : `Next payment: ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} on ${formatDate(loan.nextPaymentDate)}`}
+                    </p>
                   </div>
+                  <button type="button" onClick={() => setViewingLoanId(loan.databaseId)}
+                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
+                    <Eye className="h-4 w-4" />View
+                  </button>
                 </div>
               ))}
               {filteredLoans.length === 0 && <EmptyState icon={PhilippinePeso} title={searchTerm || filterStatus !== 'all' ? 'No loans match your filters' : 'No loans yet'} message={searchTerm || filterStatus !== 'all' ? 'Try a different search or status.' : 'Loans will appear here once they are released to members.'} />}
@@ -509,7 +398,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   <li key={payment.id} className="rounded-2xl border border-gray-200 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-900">{payment.memberName}</p>
+                        <p className="truncate">{memberLink(payment.memberDatabaseId, payment.memberName, 'font-semibold text-gray-900')}</p>
                         <p className="text-xs text-gray-500">{payment.id} · {formatDate(payment.paymentDate)}</p>
                       </div>
                       <p className="shrink-0 text-lg font-bold tabular-nums text-gray-900">₱{payment.amount.toLocaleString()}</p>
@@ -544,7 +433,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   {filteredPayments.map((payment) => (
                     <tr key={payment.id} className="hover:bg-green-50/40">
                       <td className="px-4 py-3 text-sm text-gray-900">{payment.id}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{payment.memberName}</td>
+                      <td className="px-4 py-3 text-sm">{memberLink(payment.memberDatabaseId, payment.memberName, 'text-gray-900')}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">₱{payment.amount.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.principalPaid.toLocaleString()}</td>
@@ -588,41 +477,19 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 </span>
               </div>
               {loanRequests.filter(request => request.status === 'pending').map(request => (
-                <div key={request.id} className="flex flex-col gap-4 rounded-2xl border border-gray-200 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
+                <div key={request.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-bold text-gray-900">{request.memberName}</h3>
-                      <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{request.loanType}</span>
+                      <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">{request.loanType}</span>
+                      {request.openLoanNumber && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200"><RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Has open loan {request.openLoanNumber}</span>}
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">Application {request.id} · Member ID: {request.memberNumber || request.memberId || '—'} · Submitted {formatDateTime(request.submittedAt)}</p>
-                    <p className="text-sm text-gray-700 mt-2">₱{request.amount.toLocaleString()} for {request.term} months · {request.purpose}</p>
-                    {request.monthlyIncome > 0 && <p className="text-xs text-gray-500 mt-1">Monthly income: ₱{request.monthlyIncome.toLocaleString()}</p>}
-                    {request.farmArea !== undefined && (
-                      <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 rounded-xl bg-gray-50 p-3 text-xs text-gray-600 min-[420px]:grid-cols-2 sm:grid-cols-4">
-                        <span>Farm area: <strong>{Number(request.farmArea).toFixed(2)} ha</strong></span>
-                        <span>Eligible: <strong>₱{Number(request.maximumEligibleAmount || 0).toLocaleString()}</strong></span>
-                        <span>Interest: <strong>{request.interestRate}% / ₱{Number(request.calculatedInterest || 0).toLocaleString()}</strong></span>
-                        <span>Total: <strong>₱{Number(request.totalRepayment || 0).toLocaleString()}</strong></span>
-                        <span className="capitalize">Mode: <strong>{request.loanMode || 'cash'}</strong></span>
-                        <span>Co-maker: <strong>{request.coMakerName || '—'}</strong></span>
-                        <span>Collateral: <strong>{request.collateralType || '—'}</strong></span>
-                      </div>
-                    )}
-                    {hasIds(request.idDocuments) && <LoanIdSummary requestId={request.id} documents={request.idDocuments!} />}
-                    {request.borrowerSignature && (
-                      <p className="mt-2 text-xs text-gray-700"><PenLine className="mr-1 inline h-4 w-4 align-[-3px]" /><span className="font-semibold">Borrower signature:</span> signed {formatDate(request.borrowerSignature.signedOn)}
-                        <button type="button" onClick={() => openLoanSignature('loan-requests', request.id)} className="ml-2 inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline"><Eye className="h-3.5 w-3.5" />View</button>
-                      </p>
-                    )}
+                    <p className="mt-1 text-sm text-gray-700">{peso(request.amount)} · Application {request.id} · Submitted {formatDateTime(request.submittedAt)}</p>
                   </div>
-                  <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
-                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'declined')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 sm:flex-none"><XCircle className="h-4 w-4" />
-                      Decline
-                    </button>
-                    <button type="button" onClick={() => updateLoanRequestStatus(request, 'approved')} className="inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 sm:flex-none"><CheckCircle className="h-4 w-4" />
-                      Approve
-                    </button>
-                  </div>
+                  <button type="button" onClick={() => setViewingRequestId(request.id)}
+                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
+                    <Eye className="h-4 w-4" />View
+                  </button>
                 </div>
               ))}
               {loanRequests.filter(request => request.status === 'pending').length === 0 && (
@@ -681,6 +548,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="0"
                   />
+                  {selectedLoanForPayment.repayment === 'single' && <p className="mt-1 text-xs text-gray-500">The whole balance is due by {formatDate(selectedLoanForPayment.dueDate)}; a part of it may be paid now. Once 80% is paid, the loan can be restructured into a new one.</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -740,6 +608,102 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       {restructuringLoan && (
         <RestructureLoanModal loan={restructuringLoan} onClose={() => setRestructuringLoan(null)} onDone={() => { setRestructuringLoan(null); void loadData(); }} />
       )}
+      {viewingRequest && (
+        <LoanRequestFormModal request={viewingRequest}
+          idSummary={hasIds(viewingRequest.idDocuments) ? <LoanIdSummary requestId={viewingRequest.id} documents={viewingRequest.idDocuments!} /> : undefined}
+          onViewSignature={() => openLoanSignature('loan-requests', viewingRequest.id)}
+          onDecide={(status) => { void updateLoanRequestStatus(viewingRequest, status); }}
+          onClose={() => setViewingRequestId(null)} />
+      )}
+      {viewingLoan && (() => {
+        const loan = viewingLoan;
+        return (
+          <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="loan-view-title">
+            <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-6 py-4">
+                <div className="min-w-0">
+                  <h2 id="loan-view-title" className="text-xl font-bold text-gray-900">Loan Details</h2>
+                  <p className="mt-1 text-sm text-gray-600">{loan.memberName} · {loan.id}</p>
+                </div>
+                <button type="button" onClick={() => setViewingLoanId(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close"><X className="h-5 w-5" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-5">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
+                  <h3>{memberLink(loan.memberDatabaseId, loan.memberName, 'break-words font-bold text-gray-900')}</h3>
+                  <StatusBadge status={loan.status} />
+                  <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">
+                    {loan.loanType}
+                  </span>
+                  {loan.restructureCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200" title={`Last restructured on ${formatDate(loan.lastRestructuredOn)}`}>
+                      <RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Restructured{loan.restructureCount > 1 ? ` ×${loan.restructureCount}` : ''}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 mb-3">Loan ID: {loan.id}
+                  {hasIds(loan.idDocuments) && (['borrower', 'coMaker'] as const).filter((holder) => loan.idDocuments?.[holder]).map((holder) => (
+                    <button key={holder} type="button" onClick={() => openLoanId('loans', loan.databaseId, holder)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><IdCard className="h-3.5 w-3.5" />{ID_LABELS[holder]}</button>
+                  ))}
+                  {loan.borrowerSignature && <button type="button" onClick={() => openLoanSignature('loans', loan.databaseId)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><PenLine className="h-3.5 w-3.5" />Borrower&apos;s signature</button>}
+                </p>
+                {loan.renewedFromLoan && (
+                  <p className="-mt-2 mb-3 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted; {peso(loan.netProceeds ?? 0)} released.</p>
+                )}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
+                  <div>
+                    <p className="text-xs text-gray-500">Loan Amount</p>
+                    <p className="text-sm font-medium text-gray-900">{peso(loan.amount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Total Repayment</p>
+                    <p className="text-sm font-medium text-green-700">{peso(loan.totalAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Balance</p>
+                    <p className="text-sm font-medium text-gray-900">{peso(loan.balance)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Interest Rate</p>
+                    <p className="text-sm font-medium text-gray-900">{loan.interestRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">{loan.repayment === 'single' ? 'Due at end of term' : 'Monthly Payment'}</p>
+                    <p className="text-sm font-medium text-gray-900">{peso(loan.monthlyPayment)}</p>
+                  </div>
+                </div>
+                {loan.status !== 'paid' && loan.nextPaymentDate && (
+                  <div className={`mt-3 flex items-start gap-2 rounded-xl p-3 ${loan.status === 'overdue' ? 'bg-red-50 ring-1 ring-red-100' : 'bg-green-50 ring-1 ring-green-100'}`}>
+                    {loan.status === 'overdue' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : <Clock className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />}
+                    <p className={`text-sm ${loan.status === 'overdue' ? 'text-red-800' : 'text-green-800'}`}>
+                      {loan.status === 'overdue'
+                        ? `Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`
+                        : `Next payment of ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} due on ${formatDate(loan.nextPaymentDate)}`}
+                    </p>
+                  </div>
+                )}
+
+                <h3 className="mt-5 text-sm font-bold uppercase tracking-wide text-gray-700">Payments</h3>
+                <div className="mt-2"><LoanPaymentsList loanId={loan.databaseId} version={loan} /></div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-6 py-4">
+                {canEdit && loan.status !== 'paid' && (<>
+                  <button type="button" onClick={() => { setViewingLoanId(null); setRestructuringLoan(loan); }}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 hover:bg-amber-50">
+                    <RefreshCcw className="h-4 w-4" />Restructure
+                  </button>
+                  <button type="button" onClick={() => { setViewingLoanId(null); handleRecordPayment(loan); }}
+                    className="inline-flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
+                    Record Payment
+                  </button>
+                </>)}
+                <button type="button" onClick={() => setViewingLoanId(null)} className="rounded-xl bg-gray-100 px-4 text-sm font-medium text-gray-700 hover:bg-gray-200">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {showFarmInputs && <FarmInputPricesModal onClose={() => setShowFarmInputs(false)} />}
+      {historyMember && <LoanHistoryModal memberId={historyMember.id} memberName={historyMember.name} onClose={() => setHistoryMember(null)} />}
 
       {/* Receipt View Modal */}
       {showReceiptModal && selectedPaymentForReceipt && (

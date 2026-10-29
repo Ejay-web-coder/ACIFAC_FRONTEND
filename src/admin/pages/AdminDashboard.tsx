@@ -69,13 +69,31 @@ export function AdminDashboard() {
 
   const stats = data?.stats;
   const loading = !data && !loadError;
-  // The statutory funds set aside from the net income, under its total.
+  // The capital card: what the cooperative holds in each module, under its total.
+  const capitalParts = stats?.capital && (
+    <span className="mt-1 grid gap-0.5">
+      {stats.capital.parts.map((part) => (
+        <span key={part.key} className="flex justify-between gap-3">
+          <span>{part.label}</span>
+          <span className="tabular-nums text-gray-700">{formatCurrency(part.amount)}</span>
+        </span>
+      ))}
+    </span>
+  );
+  // The statutory funds set aside from the net income, under its total, then
+  // what is shared out to the members (dividends and patronage refunds).
   const netIncomeFunds = stats && (
     <span className="mt-1 grid gap-0.5">
       {stats.statutoryFunds.map((fund) => (
         <span key={fund.key} className="flex justify-between gap-3">
           <span>{FUND_NAMES[fund.key] ?? fund.label} ({fund.percent}%)</span>
           <span className="tabular-nums text-gray-700">{formatCurrency(fund.amount)}</span>
+        </span>
+      ))}
+      {(stats.netIncomeShares ?? []).map((share, index) => (
+        <span key={share.key} className={`flex justify-between gap-3 font-medium text-green-800 ${index === 0 ? 'mt-1 border-t border-gray-200 pt-1' : ''}`}>
+          <span>{share.label} ({share.percent}%)</span>
+          <span className="tabular-nums">{formatCurrency(share.amount)}</span>
         </span>
       ))}
     </span>
@@ -93,7 +111,7 @@ export function AdminDashboard() {
       {/* Key figures: 2 columns on phones and tablets (net income full width), 3 on desktops */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-5">
         <StatCard label="Total Members" value={stats ? stats.totalMembers.toLocaleString('en-PH') : '—'} icon={Users} href="/admin/members" detail="Active members" tone="dark" loading={loading} />
-        <StatCard label="Total Loans" value={formatCurrency(stats?.outstandingLoans)} icon={PhilippinePeso} href="/admin/loans" detail="Outstanding balance" tone="green" loading={loading} />
+        <StatCard label="Capital" value={formatCurrency(stats?.capital?.total ?? stats?.outstandingLoans)} icon={PhilippinePeso} detail={capitalParts || 'Share capital, savings, loans, machinery and Kadiwa Store'} tone="green" loading={loading} />
         <div className="col-span-2 lg:col-span-1">
           <StatCard label="Net Income" value={formatCurrency(stats?.netIncome)} icon={TrendingUp} onClick={() => setShowIncome(true)} detail={netIncomeFunds || 'Statutory funds from the net income'} tone="soft" loading={loading} />
         </div>

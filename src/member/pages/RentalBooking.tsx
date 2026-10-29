@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
@@ -9,9 +9,12 @@ import { createRentalRequest, fetchMachineryCatalog, type Machinery } from '../.
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
+import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
 
 const statusLabel: Record<Machinery['status'], string> = { available: 'Available', 'in-use': 'In use today', maintenance: 'Under maintenance' };
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
+// A per-service machine's fee is charged by the office after the work: per hectare or per 100 bags.
+const feeBasis = (machine: Machinery) => /harvest/i.test(`${machine.type} ${machine.name}`) ? 'per 100 bags of palay harvested' : 'per hectare worked';
 // Days as the cooperative counts them: end date - start date, at least one.
 // "Oct 8–10", "Sep 30 – Oct 2" (and the year after it): one short range for the request list.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -43,6 +46,12 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 	const { memberData, reload } = useMyMemberData();
 	const selectedMachine = machinery.find(machine => machine.id === form.machineryId);
 	const update = (field: string, value: string) => setForm(current => ({ ...current, [field]: value }));
+	const formRef = useRef<HTMLFormElement>(null);
+	// "Book" on the calendar: that machine from that day (the end date kept if it still fits).
+	const bookFromCalendar = (machineryId: string, date: string) => {
+		setForm(current => ({ ...current, machineryId, startDate: date, endDate: current.endDate && current.endDate >= date ? current.endDate : date }));
+		formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	};
 
 	const loadCatalog = useCallback(() => {
 		fetchMachineryCatalog().then(setMachinery).catch((error: Error) => toast.error('Unable to load machinery', { description: error.message }));
@@ -87,12 +96,14 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 			))}
 		</nav>
 
-		{tab === 'book' && <form onSubmit={submit} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+		{tab === 'book' && <MachineAvailabilityCalendar onBook={bookFromCalendar} />}
+
+		{tab === 'book' && <form ref={formRef} onSubmit={submit} className="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 				<label className="text-sm font-medium text-gray-700 sm:col-span-2">Machinery<select required value={form.machineryId} onChange={event => update('machineryId', event.target.value)} className={inputClass}>
 					<option value="">Select machinery</option>
 					{machinery.map(machine => <option key={machine.id} value={machine.id} disabled={machine.status === 'maintenance'}>
-						{machine.name} · ₱{machine.dailyFee.toLocaleString('en-PH')} a day{machine.status === 'maintenance' ? ' (under maintenance)' : ''}
+						{machine.id} · {machine.name}{machine.pricingMode === 'per_day' ? ` · ₱${machine.dailyFee.toLocaleString('en-PH')} a day` : ''}{machine.status === 'maintenance' ? ' (under maintenance)' : ''}
 					</option>)}
 				</select>
 					{selectedMachine && <span className={`mt-1 block text-xs font-normal ${selectedMachine.status === 'maintenance' ? 'text-yellow-700' : 'text-green-700'}`}>{statusLabel[selectedMachine.status]}</span>}
@@ -106,7 +117,11 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 			<div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
 				<p className="flex items-center gap-2 text-sm text-gray-600">
 					<CalendarDays className="h-4 w-4 shrink-0 text-gray-400" />
-					{selectedMachine && days ? <span>Estimated fee <strong className="tabular-nums text-gray-900">{peso(selectedMachine.dailyFee * days)}</strong> for {days} day{days === 1 ? '' : 's'}</span> : 'The cooperative approves each booking.'}
+					{selectedMachine && days
+						? (selectedMachine.pricingMode === 'per_day'
+							? <span>Estimated fee <strong className="tabular-nums text-gray-900">{peso(selectedMachine.dailyFee * days)}</strong> for {days} day{days === 1 ? '' : 's'}</span>
+							: <span>{days} day{days === 1 ? '' : 's'} reserved. The fee is {feeBasis(selectedMachine)}, charged by the office after the work.</span>)
+						: 'The cooperative approves each booking.'}
 				</p>
 				<button type="submit" disabled={isSubmitting} className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{isSubmitting ? 'Sending...' : 'Request Rental'}</button>
 			</div>
@@ -136,7 +151,7 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 									<td className="whitespace-nowrap px-2 py-3 font-medium text-gray-900 max-sm:w-full max-sm:max-w-0 sm:px-4"><span className="block truncate" title={rental.machineryName}>{rental.machineryName}</span></td>
 									<td className="whitespace-nowrap px-2 py-3 sm:px-4 text-gray-700">{dateRange(rental.startDate, rental.endDate).range}<span className="hidden sm:inline">, {dateRange(rental.startDate, rental.endDate).year}</span></td>
 									<td className="hidden whitespace-nowrap px-2 py-3 sm:px-4 text-right tabular-nums text-gray-700 sm:table-cell">{rental.duration}</td>
-									<td className="whitespace-nowrap px-2 py-3 sm:px-4 text-right tabular-nums text-gray-900">{wholePeso(rental.rentalFee)}</td>
+									<td className="whitespace-nowrap px-2 py-3 sm:px-4 text-right tabular-nums text-gray-900">{rental.rentalFee > 0 ? wholePeso(rental.rentalFee) : <span className="text-xs text-gray-500">After the work</span>}</td>
 									<td className="hidden whitespace-nowrap px-2 py-3 sm:px-4 text-gray-600 md:table-cell">{formatDate(rental.submittedAt, true)}</td>
 									<td className="whitespace-nowrap px-2 py-3 sm:px-4"><span className={`rounded-full px-2 py-1 text-xs capitalize sm:px-2.5 ${rental.status === 'approved' ? 'bg-green-100 text-green-800' : rental.status === 'declined' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{rental.status}{rental.status === 'approved' && rental.operationStatus ? <span className="hidden sm:inline"> · {rental.operationStatus}</span> : null}</span></td>
 								</tr>)}

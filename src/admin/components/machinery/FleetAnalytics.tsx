@@ -12,6 +12,7 @@ import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { formatDate } from '../../../utils/dateTime';
 import { Modal, secondaryButton } from './shared';
+import { MachineHistoryModal } from './MachineHistoryModal';
 
 const peso = (value: number) => `${value < 0 ? '-' : ''}₱${Math.abs(value).toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
 const plural = (count: number, word: string) => `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
@@ -55,6 +56,8 @@ export function FleetAnalytics({ from, to, periodLabel, refreshKey }: { from: st
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [showInsights, setShowInsights] = useState(false);
+  // The machine whose income and expenses are open (a row of the table clicked).
+  const [historyMachine, setHistoryMachine] = useState<FleetMachine | null>(null);
   const [advice, setAdvice] = useState<{ status: 'idle' | 'loading' | 'done' | 'error'; result?: FleetRecommendations; label?: string; error?: string }>({ status: 'idle' });
   // Re-reads the figures when machinery records change (the AI is not asked again).
   const [changes, setChanges] = useState(0);
@@ -124,7 +127,8 @@ export function FleetAnalytics({ from, to, periodLabel, refreshKey }: { from: st
             <Tile label="Downtime" value={days(fleet.downtimeDays)} detail={`${fleet.availability === null ? '—' : `${fleet.availability}%`} available · ${fleet.inMaintenance} in maintenance now`} />
           </div>
 
-          <MachineTable machines={machines} fleet={fleet} />
+          <MachineTable machines={machines} fleet={fleet} onOpen={setHistoryMachine} />
+          {historyMachine && <MachineHistoryModal machine={historyMachine} from={from} to={to} periodLabel={periodLabel} onClose={() => setHistoryMachine(null)} />}
 
           {showInsights && (
             <Modal title="AI insights" description={`Machinery Fleet · ${periodLabel}`} onClose={() => setShowInsights(false)} wide
@@ -167,11 +171,11 @@ function UtilizationMeter({ value }: { value: number | null }) {
   </div>;
 }
 
-function MachineTable({ machines, fleet }: { machines: FleetMachine[]; fleet: FleetData['fleet'] }) {
+function MachineTable({ machines, fleet, onOpen }: { machines: FleetMachine[]; fleet: FleetData['fleet']; onOpen: (machine: FleetMachine) => void }) {
   const costLine = (machine: FleetMachine) => (Object.entries(machine.costByCategory) as Array<[ExpenseCategory, number]>)
     .filter(([, amount]) => amount > 0).map(([category, amount]) => `${EXPENSE_LABELS[category].replace(' & maintenance', 's')} ${peso(amount)}`).join(' · ');
   return <div className="mt-6">
-    <h3 className="text-sm font-semibold text-gray-900">Per machine</h3>
+    <h3 className="text-sm font-semibold text-gray-900">Per machine <span className="font-normal text-gray-500">· select a machine to see its income and expenses</span></h3>
     {machines.length ? <div className="mt-2 overflow-x-auto rounded-xl border border-gray-200">
       <table className="w-full min-w-[820px] text-left text-sm">
         <thead className="bg-gray-50 text-xs uppercase text-gray-500">
@@ -179,9 +183,9 @@ function MachineTable({ machines, fleet }: { machines: FleetMachine[]; fleet: Fl
         </thead>
         <tbody className="divide-y divide-gray-100">
           {machines.map((machine) => (
-            <tr key={machine.id} className="align-top">
+            <tr key={machine.id} className="cursor-pointer align-top hover:bg-green-50/50" onClick={() => onOpen(machine)}>
               <td className="px-3 py-2.5">
-                <p className="font-medium text-gray-900">{machine.name} <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[machine.status]}`}>{machine.status}</span></p>
+                <p className="font-medium text-gray-900"><button type="button" onClick={(event) => { event.stopPropagation(); onOpen(machine); }} className="text-left font-medium text-green-800 hover:underline">{machine.name}</button> <span className={`ml-1 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[machine.status]}`}>{machine.status}</span></p>
                 <p className="text-xs text-gray-500">{machine.id} · {machine.type}{machine.pricingMode === 'per_service' ? ' · per service' : ` · ${peso(machine.dailyFee)}/day`}</p>
               </td>
               <td className="px-3 py-2.5 tabular-nums">{machine.bookings} · {machine.jobs}<p className="text-xs text-gray-500">{plural(machine.usedDays, 'day')} used</p></td>
