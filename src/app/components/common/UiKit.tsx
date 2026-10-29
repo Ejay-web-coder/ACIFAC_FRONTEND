@@ -109,7 +109,7 @@ export function StatusBadge({ status, label, className = '' }: { status: string 
   const tone = STATUS_TONES[key] ?? 'neutral';
   const { className: toneClass, icon } = TONE_STYLE[tone];
   const Icon = SPECIFIC_ICONS[key] ?? icon;
-  const text = label ?? (key ? key.replace(/\b\w/g, (char) => char.toUpperCase()) : '—');
+  const text = label ?? (key ? key.replace(/\b\w/g, (char) => char.toUpperCase()) : '');
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${toneClass} ${className}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

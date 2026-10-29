@@ -7,6 +7,7 @@ import {
 import { errorMessage } from '../../../lib/api';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { Modal, PaymentBadge, inputClass, labelClass, peso, primaryButton, secondaryButton } from './shared';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 /** What is being paid for: its fee, what has been paid so far and who pays. */
 interface Account { fee: number; amountPaid: number; balance: number; paymentStatus: PaymentStatus; payer: string }
@@ -57,7 +58,7 @@ function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive
   };
 
   const voidEntry = async (payment: PaymentEntry) => {
-    if (!window.confirm(`Void the ${peso(payment.amount)} payment of ${formatDate(payment.paymentDate)}? The balance goes back up.`)) return;
+    if (!(await confirmAction(`Void the ${peso(payment.amount)} payment of ${formatDate(payment.paymentDate)}? The balance goes back up.`, { confirmLabel: 'Void payment', danger: true }))) return;
     setBusy(true);
     try {
       const data = await remove(payment.id);

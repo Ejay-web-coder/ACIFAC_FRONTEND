@@ -277,7 +277,7 @@ export const fetchMyAttendance = () => apiGet<{ success: boolean; data: Particip
 /** "8:30 AM" from "08:30" (activity times are Manila wall-clock times). */
 export function formatClock(value: string | null | undefined) {
   const match = /^(\d{2}):(\d{2})/.exec(value ?? '');
-  if (!match) return '—';
+  if (!match) return '';
   const hours = Number(match[1]);
   return `${hours % 12 || 12}:${match[2]} ${hours < 12 ? 'AM' : 'PM'}`;
 }

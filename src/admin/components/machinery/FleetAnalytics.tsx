@@ -118,13 +118,13 @@ export function FleetAnalytics({ from, to, periodLabel, refreshKey }: { from: st
         // A refresh keeps the last figures on screen, dimmed, instead of a loading flash.
         <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-            <Tile label="Utilization" value={fleet.utilization === null ? '—' : `${fleet.utilization}%`} detail={fleet.ownedDays ? `${plural(fleet.usedDays, 'machine-day')} used of ${fleet.ownedDays.toLocaleString()}` : 'Period not started'} />
+            <Tile label="Utilization" value={fleet.utilization === null ? '' : `${fleet.utilization}%`} detail={fleet.ownedDays ? `${plural(fleet.usedDays, 'machine-day')} used of ${fleet.ownedDays.toLocaleString()}` : 'Period not started'} />
             <Tile label="Revenue" value={peso(fleet.revenue)} detail={fleet.uncollected > 0 ? `${peso(fleet.uncollected)} not yet collected` : `Rentals ${peso(fleet.rentalRevenue)} · services ${peso(fleet.serviceRevenue)}`} />
             <Tile label="Operating cost" value={peso(fleet.cost)} detail="Fuel, labor, repairs, other" />
             <Tile label="Net income" value={peso(fleet.net)} detail="Revenue less operating cost" negative={fleet.net < 0} />
             <Tile label="Bookings & jobs" value={(data.bookings.operations.scheduled + data.bookings.operations.ongoing + data.bookings.operations.completed + data.bookings.services.jobs).toLocaleString()}
               detail={data.bookings.requests.pendingNow ? `${plural(data.bookings.requests.pendingNow, 'request')} waiting for review` : 'No requests waiting'} />
-            <Tile label="Downtime" value={days(fleet.downtimeDays)} detail={`${fleet.availability === null ? '—' : `${fleet.availability}%`} available · ${fleet.inMaintenance} in maintenance now`} />
+            <Tile label="Downtime" value={days(fleet.downtimeDays)} detail={`${fleet.availability === null ? '' : `${fleet.availability}%`} available · ${fleet.inMaintenance} in maintenance now`} />
           </div>
 
           <MachineTable machines={machines} fleet={fleet} onOpen={setHistoryMachine} />
@@ -164,7 +164,7 @@ function Tile({ label, value, detail, negative = false }: { label: string; value
 }
 
 function UtilizationMeter({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-gray-400">—</span>;
+  if (value === null) return <span className="text-gray-400"></span>;
   return <div className="flex items-center gap-2">
     <span className="h-1.5 w-16 overflow-hidden rounded-full bg-green-100" aria-hidden="true"><span className="block h-full rounded-full bg-green-600" style={{ width: `${Math.min(100, value)}%` }} /></span>
     <span className="tabular-nums">{value}%</span>
@@ -194,7 +194,7 @@ function MachineTable({ machines, fleet, onOpen }: { machines: FleetMachine[]; f
               <td className="px-3 py-2.5 text-right tabular-nums">{peso(machine.cost)}{machine.cost > 0 && <p className="text-xs text-gray-500">{costLine(machine)}</p>}</td>
               <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${machine.net < 0 ? 'text-red-700' : 'text-gray-900'}`}>{peso(machine.net)}</td>
               <td className="px-3 py-2.5">
-                <span className="tabular-nums">{machine.downtimeDays ? days(machine.downtimeDays) : '—'}</span>
+                <span className="tabular-nums">{machine.downtimeDays ? days(machine.downtimeDays) : ''}</span>
                 {machine.status === 'maintenance' && <p className="text-xs text-amber-800">{machine.downSince ? `Down since ${formatDate(machine.downSince, true)}` : 'Down (start not recorded)'}</p>}
               </td>
             </tr>
@@ -208,7 +208,7 @@ function MachineTable({ machines, fleet, onOpen }: { machines: FleetMachine[]; f
             <td className="px-3 py-2 text-right tabular-nums">{peso(fleet.revenue)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{peso(fleet.cost)}</td>
             <td className={`px-3 py-2 text-right tabular-nums ${fleet.net < 0 ? 'text-red-700' : ''}`}>{peso(fleet.net)}</td>
-            <td className="px-3 py-2 tabular-nums">{fleet.downtimeDays ? days(fleet.downtimeDays) : '—'}</td>
+            <td className="px-3 py-2 tabular-nums">{fleet.downtimeDays ? days(fleet.downtimeDays) : ''}</td>
           </tr>
         </tfoot>
       </table>
@@ -314,7 +314,7 @@ function RoiBlock({ machines, method }: { machines: FleetMachine[]; method: stri
   const missing = rows.filter((machine) => machine.roi.status === 'no_cost').length;
   const payback = (roi: FleetMachine['roi']) => {
     if (roi.status === 'grant') return 'Grant';
-    if (roi.status !== 'ok') return '—';
+    if (roi.status !== 'ok') return '';
     if (roi.paybackYears === null) return <span className="text-red-700">Not paying back</span>;
     return <>{roi.paybackYears.toLocaleString()} yrs<p className="text-xs font-normal text-gray-500">{roi.yearsToPayback ? `${roi.yearsToPayback.toLocaleString()} yrs to go` : 'Paid back'}</p></>;
   };
@@ -335,8 +335,8 @@ function RoiBlock({ machines, method }: { machines: FleetMachine[]; method: stri
               <td className="px-3 py-2.5 text-right tabular-nums">{peso(roi.lifetimeRevenue)}</td>
               <td className="px-3 py-2.5 text-right tabular-nums">{peso(roi.lifetimeCost)}</td>
               <td className={`px-3 py-2.5 text-right font-semibold tabular-nums ${roi.lifetimeNet < 0 ? 'text-red-700' : 'text-gray-900'}`}>{peso(roi.lifetimeNet)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums">{roi.earnedBack === null ? (roi.status === 'too_new' ? 'Too new' : '—') : `${roi.earnedBack}%`}</td>
-              <td className={`px-3 py-2.5 text-right tabular-nums ${(roi.roiPerYear ?? 0) < 0 ? 'text-red-700' : ''}`}>{roi.roiPerYear === null ? '—' : `${roi.roiPerYear}%`}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{roi.earnedBack === null ? (roi.status === 'too_new' ? 'Too new' : '') : `${roi.earnedBack}%`}</td>
+              <td className={`px-3 py-2.5 text-right tabular-nums ${(roi.roiPerYear ?? 0) < 0 ? 'text-red-700' : ''}`}>{roi.roiPerYear === null ? '' : `${roi.roiPerYear}%`}</td>
               <td className="px-3 py-2.5 text-right font-medium tabular-nums">{payback(roi)}</td>
             </tr>
           ))}

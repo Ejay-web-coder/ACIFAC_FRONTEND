@@ -60,7 +60,7 @@ export function MemberCreditAdviceModal({ member, advice, onRefresh, onClose }: 
         </section>
 
         <section aria-label="Repayment record" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Figure label="Paid on time" value={member.installmentsDue ? `${member.onTimePayments} of ${member.installmentsDue}` : '—'} />
+          <Figure label="Paid on time" value={member.installmentsDue ? `${member.onTimePayments} of ${member.installmentsDue}` : ''} />
           <Figure label="Paid late" value={member.latePayments} tone={member.latePayments ? 'bad' : undefined} />
           <Figure label="Overdue" value={member.overdueInstallments} tone={member.overdueInstallments ? 'bad' : undefined} />
           <Figure label="Balance" value={peso(member.outstandingBalance)} detail={`of ${peso(member.totalBorrowed)}`} tone={member.restructuredLoans ? 'warn' : undefined} />

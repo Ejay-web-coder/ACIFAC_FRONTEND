@@ -184,7 +184,7 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {cards.map((card) => (
-            <StatCard key={card.label} label={card.label} value={card.value ?? '—'} icon={card.icon} detail={card.detail} tone={card.tone} loading={!summary} />
+            <StatCard key={card.label} label={card.label} value={card.value ?? ''} icon={card.icon} detail={card.detail} tone={card.tone} loading={!summary} />
           ))}
         </div>
 

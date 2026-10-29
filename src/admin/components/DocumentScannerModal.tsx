@@ -10,6 +10,10 @@ import { assessImage, cropTo, describeProblems, enhance, frameCrop, type CropRec
 // the front, then the back, joined into one picture like a back-to-back copy.
 // The "idCopy" variant photographs one page: a back-to-back copy of an ID with
 // the person's specimen signatures (a loan borrower's or co-maker's).
+// The "photo" variant takes an applicant's 2x2 picture inside a square box.
+//
+// Every variant shows a box the size of what it captures (a page, an ID card,
+// a 2x2 picture); only what is inside the box is kept.
 //
 // Each capture is cropped to the frame, straightened and given more contrast
 // before it is sent. A blurry, dark or washed-out capture is held back until
@@ -20,6 +24,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_PAGES = 6;
 const ID_MAX_BYTES = 5 * 1024 * 1024;
 const ID_SIDES = ['Front', 'Back'];
+const PHOTO_MAX_EDGE = 1000; // px; plenty for a 2x2 picture
 
 /** problems: what is wrong with the photo, until it is retaken or kept anyway. */
 interface Page { blob: Blob; url: string; width: number; height: number; problems: string[] }
@@ -27,7 +32,7 @@ interface Page { blob: Blob; url: string; width: number; height: number; problem
 interface DocumentScannerModalProps {
   onClose: () => void;
   onScanned: (file: File) => void;
-  variant?: 'document' | 'id' | 'idCopy';
+  variant?: 'document' | 'id' | 'idCopy' | 'photo';
   /** Whose ID is captured: applicant, borrower or co-maker. */
   person?: string;
   requiredSignatures?: number;
@@ -40,11 +45,12 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
 }
 
 // A captured picture (cropped to crop), checked, then straightened (not an ID
-// card, whose edges are not text lines) and given more contrast.
-async function pageFrom(source: CanvasImageSource, width: number, height: number, { crop = null, straighten = true }: { crop?: CropRect | null; straighten?: boolean } = {}): Promise<Page> {
-  const raw = cropTo(source, width, height, { maxEdge: MAX_EDGE, crop });
+// card, whose edges are not text lines) and given more contrast (not a 2x2
+// picture, which stays as the camera saw it).
+async function pageFrom(source: CanvasImageSource, width: number, height: number, { crop = null, straighten = true, sharpen = true, maxEdge = MAX_EDGE }: { crop?: CropRect | null; straighten?: boolean; sharpen?: boolean; maxEdge?: number } = {}): Promise<Page> {
+  const raw = cropTo(source, width, height, { maxEdge, crop });
   const { problems } = assessImage(raw);
-  const canvas = enhance(raw, { straighten });
+  const canvas = sharpen ? enhance(raw, { straighten }) : raw;
   const blob = await canvasToBlob(canvas, 0.9);
   return { blob, url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height, problems };
 }
@@ -99,8 +105,14 @@ async function joinSides(pages: Page[]): Promise<File> {
 export function DocumentScannerModal({ onClose, onScanned, variant = 'document', person = 'applicant', requiredSignatures = 3 }: DocumentScannerModalProps) {
   const isId = variant === 'id';
   const isCopy = variant === 'idCopy';
-  const maxPages = isId ? ID_SIDES.length : isCopy ? 1 : MAX_PAGES;
-  const title = isId ? `Capture the ${titleCase(person)}'s ID` : isCopy ? `Photograph the ${titleCase(person)}'s ID Copy` : 'Scan Document';
+  const isPhoto = variant === 'photo';
+  const single = isCopy || isPhoto;
+  const maxPages = isId ? ID_SIDES.length : single ? 1 : MAX_PAGES;
+  const title = isId ? `Capture the ${titleCase(person)}'s ID` : isCopy ? `Photograph the ${titleCase(person)}'s ID Copy` : isPhoto ? `Take the ${titleCase(person)}'s 2x2 Picture` : 'Scan Document';
+  // The box drawn on the camera: the shape and size of what is captured.
+  const frame = isId ? { className: 'w-[82%]', aspectRatio: '85.6 / 54', label: 'Fit the ID card inside the box' }
+    : isPhoto ? { className: 'h-[72%]', aspectRatio: '1 / 1', label: 'Fit the 2x2 picture inside the box' }
+      : { className: 'h-[88%]', aspectRatio: '8.5 / 11', label: 'Fit the whole page inside the box' };
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -145,13 +157,13 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
         if (!cancelled) setCanSwitch(devices.filter((device) => device.kind === 'videoinput').length > 1);
       } catch (error) {
         const name = error instanceof DOMException ? error.name : '';
-        setCameraError(name === 'NotAllowedError' ? `Camera permission was denied. Allow camera access in the browser, ${isId || isCopy ? 'or upload a back-to-back copy of the ID instead.' : 'or use the phone camera button below.'}`
+        setCameraError(name === 'NotAllowedError' ? `Camera permission was denied. Allow camera access in the browser, ${isPhoto ? 'or upload the 2x2 picture instead.' : isId || isCopy ? 'or upload a back-to-back copy of the ID instead.' : 'or use the phone camera button below.'}`
           : name === 'NotFoundError' ? 'No camera was found on this device.' : 'The camera could not be started.');
       }
     };
     void start();
     return () => { cancelled = true; stopCamera(); };
-  }, [facingMode, isId, isCopy, stopCamera]);
+  }, [facingMode, isId, isCopy, isPhoto, stopCamera]);
 
   useEffect(() => () => pagesRef.current.forEach((page) => URL.revokeObjectURL(page.url)), []);
 
@@ -166,9 +178,11 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
     if (!video || !video.videoWidth || pages.length >= maxPages) return;
     setFlash(true);
     setTimeout(() => setFlash(false), 150);
-    // Only what is inside the frame is kept.
-    const crop = frameRef.current ? frameCrop(video, frameRef.current) : null;
-    const page = await pageFrom(video, video.videoWidth, video.videoHeight, { crop, straighten: !isId });
+    // Only what is inside the box is kept (a 2x2 picture exactly, the others with a little margin).
+    const crop = frameRef.current ? frameCrop(video, frameRef.current, isPhoto ? 0 : undefined) : null;
+    const page = await pageFrom(video, video.videoWidth, video.videoHeight, isPhoto
+      ? { crop, straighten: false, sharpen: false, maxEdge: PHOTO_MAX_EDGE }
+      : { crop, straighten: !isId });
     setPages((current) => [...current, page]);
   };
 
@@ -182,7 +196,7 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
 
   // The first capture that looks blurry, dark or washed out, waiting to be retaken or kept.
   const doubtful = pages.findIndex((page) => page.problems.length > 0);
-  const pageName = (index: number) => (isId ? `The ${ID_SIDES[index].toLowerCase()} of the ID` : isCopy ? 'The picture' : `Page ${index + 1}`);
+  const pageName = (index: number) => (isId ? `The ${ID_SIDES[index].toLowerCase()} of the ID` : single ? 'The picture' : `Page ${index + 1}`);
   const keepPage = (index: number) => setPages((current) => current.map((page, position) => (position === index ? { ...page, problems: [] } : page)));
 
   const removePage = (index: number) => {
@@ -196,8 +210,8 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
     if (!pages.length || doubtful >= 0) return;
     setBusy(true);
     try {
-      const file = isId ? await joinSides(pages) : await buildFile(pages);
-      if (file.size > (isId || isCopy ? ID_MAX_BYTES : MAX_BYTES)) throw new Error(isId || isCopy ? 'The ID picture is larger than 5 MB. Capture it again.' : 'The scan is larger than 10 MB. Remove a page and try again.');
+      const file = isId ? await joinSides(pages) : isPhoto ? new File([pages[0].blob], `photo-${stamp()}.jpg`, { type: 'image/jpeg' }) : await buildFile(pages);
+      if (file.size > (isId || single ? ID_MAX_BYTES : MAX_BYTES)) throw new Error(isId || single ? 'The picture is larger than 5 MB. Capture it again.' : 'The scan is larger than 10 MB. Remove a page and try again.');
       stopCamera();
       onScanned(file);
     } catch (error) {
@@ -213,9 +227,10 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 sm:px-6">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-            <p className="text-sm text-gray-500">{isId ? 'Hold the ID card itself inside the frame in good light, without glare. Capture the front, then turn it over and capture the back.'
-              : isCopy ? `Place the page with the front and back of the ID and the ${person}'s ${requiredSignatures} specimen signatures flat in good light, and fit the whole page inside the frame.`
-                : 'Place the form flat in good light and fit it inside the frame. Capture each page in order.'}</p>
+            <p className="text-sm text-gray-500">{isId ? 'Hold the ID card itself inside the box in good light, without glare. Capture the front, then turn it over and capture the back.'
+              : isPhoto ? `Hold the ${person}'s 2x2 picture (or their face, against a plain background) inside the square box in good light. Only what is inside the box is kept.`
+              : isCopy ? `Place the page with the front and back of the ID and the ${person}'s ${requiredSignatures} specimen signatures flat in good light, and fit the whole page inside the box.`
+                : 'Place the form flat in good light and fit it inside the box. Capture each page in order.'}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} aria-label="Close scanner" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 disabled:opacity-50"><X className="h-5 w-5" /></button>
         </div>
@@ -225,13 +240,12 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
             <video ref={videoRef} playsInline muted className={`h-full w-full object-contain ${ready ? '' : 'invisible'}`} />
             {ready && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
-                {isId
-                  ? <div ref={frameRef} className="w-[82%] rounded-xl border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '85.6 / 54' }} />
-                  : <div ref={frameRef} className="relative h-[88%] rounded-lg border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" style={{ aspectRatio: '8.5 / 11' }}>
-                    {['left-0 top-0 border-l-4 border-t-4 rounded-tl-lg', 'right-0 top-0 border-r-4 border-t-4 rounded-tr-lg', 'left-0 bottom-0 border-l-4 border-b-4 rounded-bl-lg', 'right-0 bottom-0 border-r-4 border-b-4 rounded-br-lg']
-                      .map((corner) => <span key={corner} className={`absolute -m-0.5 h-8 w-8 border-green-400 ${corner}`} />)}
-                    <span className="absolute inset-x-0 top-2 text-center text-xs font-medium text-white/90 drop-shadow">Fit the whole page inside the frame</span>
-                  </div>}
+                {/* Everything outside the box is darkened; only the box is kept. */}
+                <div ref={frameRef} className={`relative rounded-lg border-2 border-dashed border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] ${frame.className}`} style={{ aspectRatio: frame.aspectRatio }}>
+                  {['left-0 top-0 border-l-4 border-t-4 rounded-tl-lg', 'right-0 top-0 border-r-4 border-t-4 rounded-tr-lg', 'left-0 bottom-0 border-l-4 border-b-4 rounded-bl-lg', 'right-0 bottom-0 border-r-4 border-b-4 rounded-br-lg']
+                    .map((corner) => <span key={corner} className={`absolute -m-0.5 h-8 w-8 border-green-400 ${corner}`} />)}
+                  <span className="absolute inset-x-0 top-2 text-center text-xs font-medium text-white drop-shadow">{frame.label}</span>
+                </div>
               </div>
             )}
             {flash && <div className="absolute inset-0 bg-white/70" aria-hidden="true" />}
@@ -245,10 +259,10 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
 
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button type="button" onClick={() => void capture()} disabled={!ready || busy || pages.length >= maxPages} className="inline-flex items-center gap-2 rounded-full bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow hover:bg-green-700 disabled:opacity-50">
-              <ScanLine className="h-5 w-5" /> {isId ? (pages.length < maxPages ? `Capture ${ID_SIDES[pages.length].toLowerCase()}` : 'Both sides captured') : isCopy ? (pages.length ? 'Captured' : 'Capture') : pages.length ? `Capture page ${pages.length + 1}` : 'Capture'}
+              <ScanLine className="h-5 w-5" /> {isId ? (pages.length < maxPages ? `Capture ${ID_SIDES[pages.length].toLowerCase()}` : 'Both sides captured') : single ? (pages.length ? 'Captured' : 'Capture') : pages.length ? `Capture page ${pages.length + 1}` : 'Capture'}
             </button>
             {canSwitch && <button type="button" onClick={() => setFacingMode((mode) => (mode === 'environment' ? 'user' : 'environment'))} disabled={busy} className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"><RefreshCw className="h-4 w-4" /> Switch camera</button>}
-            {!isId && <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-300 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
+            {!isId && !isPhoto && <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-gray-300 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50">
               <ImagePlus className="h-4 w-4" /> Use phone camera
               <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => void addFromDeviceCamera(event)} />
             </label>}
@@ -286,11 +300,11 @@ export function DocumentScannerModal({ onClose, onScanned, variant = 'document',
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p className="text-xs text-gray-500">{isId || isCopy ? `AI checks the ID${isCopy ? ', counts the specimen signatures,' : ''} and that it belongs to the ${person} on the form.` : 'AI reads the form, checks it is genuine, and saves it to the right module.'}</p>
+          <p className="text-xs text-gray-500">{isPhoto ? 'AI checks that the face is clear.' : isId || isCopy ? `AI checks the ID${isCopy ? ', counts the specimen signatures,' : ''} and that it belongs to the ${person} on the form.` : 'AI reads the form, checks it is genuine, and saves it to the right module.'}</p>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
             <button type="button" onClick={() => void finish()} disabled={!pages.length || busy || doubtful >= 0} title={doubtful >= 0 ? 'Retake or keep the flagged photo first' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
-              <Check className="h-4 w-4" /> {busy ? 'Preparing...' : isId ? (pages.length < maxPages ? 'Submit front only' : 'Submit ID') : isCopy ? 'Submit picture' : `Scan ${pages.length || ''} ${pages.length === 1 ? 'page' : 'pages'}`.replace('  ', ' ')}
+              <Check className="h-4 w-4" /> {busy ? 'Preparing...' : isId ? (pages.length < maxPages ? 'Submit front only' : 'Submit ID') : isPhoto ? 'Use this picture' : isCopy ? 'Submit picture' : `Scan ${pages.length || ''} ${pages.length === 1 ? 'page' : 'pages'}`.replace('  ', ' ')}
             </button>
           </div>
         </div>

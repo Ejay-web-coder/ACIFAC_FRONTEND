@@ -180,9 +180,9 @@ export function AttendanceHistory({ onOpenActivity, onOpenMember }: { onOpenActi
                             <p className="text-xs text-gray-500">{row.memberNumber}</p>
                           </td>
                           <td className="px-4 py-3"><AttendanceBadge status={row.status} /></td>
-                          <td className="whitespace-nowrap px-4 py-3 text-gray-700">{row.checkInTime ? formatClock(row.checkInTime) : '—'}</td>
-                          <td className="px-4 py-3 text-gray-600">{row.remarks || '—'}</td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{row.source === 'finalization' ? 'Not marked; absent at finalization' : row.recordedBy ?? '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-gray-700">{row.checkInTime ? formatClock(row.checkInTime) : ''}</td>
+                          <td className="px-4 py-3 text-gray-600">{row.remarks || ''}</td>
+                          <td className="px-4 py-3 text-xs text-gray-500">{row.source === 'finalization' ? 'Not marked; absent at finalization' : row.recordedBy ?? ''}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -311,7 +311,7 @@ export function ParticipationReport({ onOpenMember }: { onOpenMember: (id: numbe
                           <td className="px-4 py-3"><p className="font-medium text-gray-900">{row.name}</p><p className="text-xs text-gray-500">{row.memberNumber}{row.memberStatus !== 'active' ? ` · ${row.memberStatus === 'archived' ? 'terminated' : row.memberStatus}` : ''}</p></td>
                           {[row.eligible, row.present, row.late, row.excused, row.absent, row.attended].map((value, index) => <td key={index} className="px-4 py-3 text-right tabular-nums text-gray-700">{value}</td>)}
                           <td className="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{rateLabel(row.rate)}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-gray-700">{row.lastAttended ? formatDate(row.lastAttended, true) : '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-gray-700">{row.lastAttended ? formatDate(row.lastAttended, true) : ''}</td>
                         </tr>
                       ))}
                     </tbody>

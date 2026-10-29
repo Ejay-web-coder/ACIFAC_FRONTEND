@@ -45,7 +45,7 @@ const QUICK_ACTIONS = [
   { title: 'Reports', text: 'View analytics', href: '/admin/analytics', icon: BarChart3 },
 ];
 
-const formatCurrency = (value: number | null | undefined) => value === null || value === undefined ? '—' : `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatCurrency = (value: number | null | undefined) => value === null || value === undefined ? '' : `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function AdminDashboard() {
   const [data, setData] = useState<AdminDashboardData | null>(null);
@@ -110,7 +110,7 @@ export function AdminDashboard() {
 
       {/* Key figures: 2 columns on phones and tablets (net income full width), 3 on desktops */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-5">
-        <StatCard label="Total Members" value={stats ? stats.totalMembers.toLocaleString('en-PH') : '—'} icon={Users} href="/admin/members" detail="Active members" tone="dark" loading={loading} />
+        <StatCard label="Total Members" value={stats ? stats.totalMembers.toLocaleString('en-PH') : ''} icon={Users} href="/admin/members" detail="Active members" tone="dark" loading={loading} />
         <StatCard label="Capital" value={formatCurrency(stats?.capital?.total ?? stats?.outstandingLoans)} icon={PhilippinePeso} detail={capitalParts || 'Share capital, savings, loans, machinery and Kadiwa Store'} tone="green" loading={loading} />
         <div className="col-span-2 lg:col-span-1">
           <StatCard label="Net Income" value={formatCurrency(stats?.netIncome)} icon={TrendingUp} onClick={() => setShowIncome(true)} detail={netIncomeFunds || 'Statutory funds from the net income'} tone="soft" loading={loading} />

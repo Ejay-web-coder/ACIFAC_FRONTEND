@@ -10,6 +10,7 @@ import { openProtectedFile } from '../../lib/api';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { formatDate, formatDateTime } from '../../utils/dateTime';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
+import { confirmAction } from '../../app/components/common/ConfirmDialog';
 
 interface SettingsProps {
   userRole: UserRole;
@@ -101,7 +102,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
   };
 
   const handleDocumentDelete = async (document: LegalDocumentRecord) => {
-    if (!window.confirm(`Delete "${document.name}"? This cannot be undone.`)) return;
+    if (!(await confirmAction(`Delete "${document.name}"? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteLegalDocumentRequest(document.id);
       toast.success('Document deleted');
@@ -352,7 +353,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                     <h3 className="font-medium text-gray-900 mb-2">Active Sessions</h3>
                     <p className="text-sm text-gray-600 mb-4">Manage your active login sessions</p>
                     <div className="text-sm text-gray-700">
-                      <p>Signed in as {account?.username || '—'}. Previous sign-in: {account?.last_login ? formatDateTime(account.last_login) : '—'}.</p>
+                      <p>Signed in as {account?.username || ''}. Previous sign-in: {account?.last_login ? formatDateTime(account.last_login) : ''}.</p>
                       <p className="mt-1 text-gray-500">Sessions expire after 8 hours. Changing your password signs out every device.</p>
                     </div>
                   </div>
@@ -382,7 +383,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
                     <div className="text-sm text-gray-700 space-y-2 mt-4">
                       <p>Version: 1.0.0</p>
                       <p>Database: Supabase PostgreSQL (automatic backups managed by Supabase)</p>
-                      <p>Signed-in administrator: {account?.username || '—'}</p>
+                      <p>Signed-in administrator: {account?.username || ''}</p>
                     </div>
                   </div>
                   <div className="p-4 border border-gray-200 rounded-lg">

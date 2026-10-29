@@ -35,7 +35,7 @@ export function LoanPaymentsList({ loanId, version }: { loanId: number; version:
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.principalPaid)}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.interestPaid)}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.remainingBalance)}</td>
-              <td className="py-2 text-gray-600">{payment.recordedBy ?? '—'}</td>
+              <td className="py-2 text-gray-600">{payment.recordedBy ?? ''}</td>
             </tr>
           ))}
         </tbody>

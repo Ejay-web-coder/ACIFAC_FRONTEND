@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Search, Plus, Receipt, ShoppingCart, Package, Pencil, Trash2, TrendingUp, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
-import { fetchKadiwaData, restockKadiwaInventory, type KadiwaGood, type KadiwaInventoryItem, type KadiwaSummary } from '../../app/services/authApi';
+import { fetchKadiwaData, restockKadiwaInventory, type KadiwaGood, type KadiwaInventoryItem, type KadiwaSale, type KadiwaSummary } from '../../app/services/authApi';
 import { AddInventorySheet, DeleteInventoryItem, EditInventoryItem, lineValue, peso, productLabel, sizeLabel, unitProfit } from '../components/kadiwa/InventoryForms';
 import { NewSaleSheet, SalesHistory, type SalesPeriod } from '../components/kadiwa/SalesForms';
+import { VendorSalesReview } from '../components/kadiwa/VendorSalesReview';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { dateOnlyToday } from '../../utils/dateTime';
 import { Pagination } from '../../app/components/common/UiKit';
@@ -27,6 +28,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState<'inventory' | 'sales'>('inventory');
   const [summary, setSummary] = useState<KadiwaSummary | null>(null);
+  // Vendors' sales waiting for an administrator to confirm or reject them.
+  const [pendingSales, setPendingSales] = useState<KadiwaSale[]>([]);
   const [restockQuantities, setRestockQuantities] = useState<Record<string, string>>({});
   const [restockingId, setRestockingId] = useState<string | null>(null);
   // Sales History opens on today; it reloads whenever the Kadiwa data does.
@@ -39,6 +42,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
         setGoods(data.goods);
         setInventory(data.inventory);
         setSummary(data.summary);
+        setPendingSales(data.pendingSales);
         setHistoryRefresh((key) => key + 1);
         setError('');
       })
@@ -186,6 +190,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
           </div>
         )}
       </div>
+
+      {canEdit && <VendorSalesReview sales={pendingSales} onReviewed={loadData} />}
 
       {/* Today: what was sold, what it cost and what is left. Each card opens today's sales to check them. */}
       <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">

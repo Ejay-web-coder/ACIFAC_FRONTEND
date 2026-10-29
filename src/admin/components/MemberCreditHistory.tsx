@@ -66,7 +66,7 @@ export function MemberCreditHistory({ members, methodology, loading }: { members
   const onTimeRate = due ? Math.round((sum('onTimePayments') / due) * 1000) / 10 : null;
   const tiles: Array<[string, string, string]> = [
     ['Members with loans', borrowers.length.toLocaleString(), `of ${plural(members.length, 'member')}`],
-    ['On-time payments', onTimeRate === null ? '—' : `${onTimeRate}%`, `of ${plural(due, 'installment')} due`],
+    ['On-time payments', onTimeRate === null ? '' : `${onTimeRate}%`, `of ${plural(due, 'installment')} due`],
     ['Late payments', sum('latePayments').toLocaleString(), plural(members.filter(FILTERS.late.test).length, 'member')],
     ['Restructured loans', sum('restructuredLoans').toLocaleString(), plural(members.filter(FILTERS.restructured.test).length, 'member')],
   ];
@@ -114,7 +114,7 @@ export function MemberCreditHistory({ members, methodology, loading }: { members
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block truncate font-semibold text-green-800">{member.memberName}</span>
-                    <span className="block text-xs text-gray-500">{member.memberId ?? '—'} · {plural(member.totalLoans, 'loan')}</span>
+                    <span className="block text-xs text-gray-500">{member.memberId ?? ''} · {plural(member.totalLoans, 'loan')}</span>
                   </span>
                   <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
                 </span>
@@ -143,7 +143,7 @@ export function MemberCreditHistory({ members, methodology, loading }: { members
                 <tr key={member.databaseId} className="align-top">
                   <td className="px-3 py-2.5">
                     <button type="button" onClick={() => openMember(member.databaseId)} aria-haspopup="dialog" className="text-left font-medium text-green-800 underline-offset-2 hover:underline">{member.memberName}</button>
-                    <p className="text-xs text-gray-500">{member.memberId ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{member.memberId ?? ''}</p>
                   </td>
                   <td className="px-3 py-2.5 tabular-nums">{member.totalLoans}<p className="text-xs text-gray-500">{member.activeLoans} open · {member.completedLoans} paid</p></td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{peso(member.totalBorrowed)}</td>

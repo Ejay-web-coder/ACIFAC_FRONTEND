@@ -12,6 +12,7 @@ import { dateOnlyToday } from '../../../utils/dateTime';
 import { downloadFormExcel, downloadFormPdf, printForm, type CashInputRow } from './philmechExport';
 import { CashflowSheet, ClientsSheet, UtilizationSheet, type CashValues, type ReportFilters } from './PhilmechFormSheets';
 import { MONTHS, inputClass, labelClass, primaryButton, secondaryButton, yearOptions } from './shared';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 const SHEETS = [
   { id: 'utilization', label: '1. Utilization Report & Feedback' },
@@ -138,9 +139,9 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
 
   const updateForm = (patch: Partial<ReportForm>) => setForm((current) => (current ? { ...current, ...patch } : current));
 
-  const updateFilters = (patch: Partial<ReportFilters>) => {
+  const updateFilters = async (patch: Partial<ReportFilters>) => {
     const switching = (patch.croppingPeriod !== undefined && patch.croppingPeriod !== filters.croppingPeriod) || (patch.year !== undefined && patch.year !== filters.year);
-    if (switching && (dirty || changedCash.length) && !window.confirm('This report has unsaved changes. Open the other cropping without saving them?')) return;
+    if (switching && (dirty || changedCash.length) && !(await confirmAction('This report has unsaved changes. Open the other cropping without saving them?', { confirmLabel: 'Open without saving', danger: true }))) return;
     setFilters((current) => {
       const next = { ...current, ...patch };
       return { ...next, toMonth: Math.max(next.toMonth, next.fromMonth) };

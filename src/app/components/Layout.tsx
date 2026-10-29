@@ -42,6 +42,7 @@ import { useIsMobile } from './ui/use-mobile';
 import { formatDateTime } from '../../utils/dateTime';
 import { EmptyState, ListSkeleton } from './common/UiKit';
 import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
+import { confirmAction } from './common/ConfirmDialog';
 
 const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 
@@ -116,6 +117,8 @@ const navigation: NavItem[] = [
 const bottomNavHrefs: Record<UserRole, string[]> = {
   admin: ['/dashboard', '/membership', '/loans', '/kadiwa'],
   member: ['/member-dashboard', '/loan-status', '/transaction', '/member-profile'],
+  // A vendor has no menus: their one page is outside this layout.
+  vendor: [],
 };
 
 const groupOrder: NavItem['group'][] = ['Overview', 'My Account', 'Members', 'Finance', 'Operations', 'System'];
@@ -286,7 +289,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   // Delete: posted by mistake; it is removed for everyone, members' notifications included.
   const [removingAnnouncement, setRemovingAnnouncement] = useState<string | null>(null);
   const removeAnnouncement = async (announcement: Announcement, action: 'done' | 'delete') => {
-    if (action === 'delete' && !window.confirm(`Delete "${announcement.title}"? It is removed for everyone, including from members' notifications.`)) return;
+    if (action === 'delete' && !(await confirmAction(`Delete "${announcement.title}"? It is removed for everyone, including from members' notifications.`, { confirmLabel: 'Delete', danger: true }))) return;
     setRemovingAnnouncement(announcement.id);
     try {
       if (action === 'done') await markAnnouncementDoneRequest(Number(announcement.id));
@@ -362,8 +365,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     return matchesSearch && matchesFilter;
   });
 
-  const roleLabel = userRole === 'admin' ? 'Administrator' : 'Member';
-  const initial = userRole === 'admin' ? 'A' : 'M';
+  const roleLabel = userRole === 'admin' ? 'Administrator' : userRole === 'vendor' ? 'Kadiwa Vendor' : 'Member';
+  const initial = userRole === 'admin' ? 'A' : userRole === 'vendor' ? 'V' : 'M';
   const profilePicture = useProfilePhoto();
 
   const brand = (compact = false) => (
@@ -448,7 +451,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
               {isMobile && <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 rounded-full border border-green-100 object-cover" />}
               <div className="min-w-0">
                 <h1 className="truncate text-base font-bold leading-tight text-gray-900 min-[400px]:text-lg md:text-xl">{current}</h1>
-                <p className="hidden truncate text-xs text-gray-500 sm:block">{userRole === 'admin' ? 'ACIFAC administration' : 'ACIFAC member portal'}</p>
+                <p className="hidden truncate text-xs text-gray-500 sm:block">{userRole === 'admin' ? 'ACIFAC administration' : userRole === 'vendor' ? 'ACIFAC Kadiwa store' : 'ACIFAC member portal'}</p>
               </div>
             </div>
 

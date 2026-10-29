@@ -55,7 +55,7 @@ export function dateOnlyToday(now = new Date()) {
 }
 
 export function formatDate(value: string | null | undefined, compact = false) {
-  if (!value) return '—';
+  if (!value) return '';
   if (DATE_ONLY_PATTERN.test(value)) {
     const [year, month, day] = value.split('-').map(Number);
     return new Intl.DateTimeFormat('en-PH', {
@@ -66,17 +66,17 @@ export function formatDate(value: string | null | undefined, compact = false) {
     }).format(new Date(Date.UTC(year, month - 1, day)));
   }
   const date = parseTimestamp(value);
-  return date ? (compact ? compactDateFormatter : dateFormatter).format(date) : '—';
+  return date ? (compact ? compactDateFormatter : dateFormatter).format(date) : '';
 }
 
 export function formatTime(value: string | Date | null | undefined) {
   const date = value ? parseTimestamp(value) : null;
-  return date ? timeFormatter.format(date) : '—';
+  return date ? timeFormatter.format(date) : '';
 }
 
 export function formatDateTime(value: string | Date | null | undefined) {
   const date = value ? parseTimestamp(value) : null;
-  return date ? dateTimeFormatter.format(date) : '—';
+  return date ? dateTimeFormatter.format(date) : '';
 }
 
 export function dateOnlySortValue(value: string) {

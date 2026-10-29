@@ -175,11 +175,11 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
 
       {/* The four headline figures for the period, above every tab. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Net income" value={summary ? formatCurrency(netIncomeOf(summary)) : '—'} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Kadiwa, machinery and loan interest, as on the Dashboard" />
-        <StatCard label="Outstanding loans" value={summary ? formatCurrency(summary.outstandingBalance) : '—'} icon={HandCoins} loading={loading && !summary}
+        <StatCard label="Net income" value={summary ? formatCurrency(netIncomeOf(summary)) : ''} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Kadiwa, machinery and loan interest, as on the Dashboard" />
+        <StatCard label="Outstanding loans" value={summary ? formatCurrency(summary.outstandingBalance) : ''} icon={HandCoins} loading={loading && !summary}
           tone={summary?.overdueLoans ? 'warning' : 'green'} detail={summary ? (summary.overdueLoans ? `${summary.overdueLoans} overdue` : 'None overdue') : undefined} onClick={() => selectTab('loans')} />
-        <StatCard label="Kadiwa net income" value={summary ? formatCurrency(summary.kadiwaNetSales) : '—'} icon={Store} loading={loading && !summary} detail="Sales less costs and expenses" onClick={() => selectTab('kadiwa')} />
-        <StatCard label="Machinery net income" value={summary ? formatCurrency(machineryNetOf(summary)) : '—'} icon={Tractor} loading={loading && !summary} detail="Rentals and services, less expenses" onClick={() => selectTab('machinery')} />
+        <StatCard label="Kadiwa net income" value={summary ? formatCurrency(summary.kadiwaNetSales) : ''} icon={Store} loading={loading && !summary} detail="Sales less costs and expenses" onClick={() => selectTab('kadiwa')} />
+        <StatCard label="Machinery net income" value={summary ? formatCurrency(machineryNetOf(summary)) : ''} icon={Tractor} loading={loading && !summary} detail="Rentals and services, less expenses" onClick={() => selectTab('machinery')} />
       </div>
 
       {/* Four equal tabs on a phone, so none is cut off. */}
@@ -324,7 +324,7 @@ function LoanDisbursementChart({ rows, loading }: { rows: LoanRow[]; loading: bo
                 <td className="hidden py-1 pr-3 text-right sm:table-cell">{row.count}</td>
                 <td className="py-1 pr-3 text-right">{formatCurrency(row.amount)}</td>
                 <td className="whitespace-nowrap py-1 pr-3 text-right">{signedPesos(row.change)}</td>
-                <td className="hidden whitespace-nowrap py-1 text-right sm:table-cell">{row.changePercent === null ? '—' : `${row.changePercent > 0 ? '+' : row.changePercent < 0 ? '−' : ''}${Math.abs(row.changePercent)}%`}</td>
+                <td className="hidden whitespace-nowrap py-1 text-right sm:table-cell">{row.changePercent === null ? '' : `${row.changePercent > 0 ? '+' : row.changePercent < 0 ? '−' : ''}${Math.abs(row.changePercent)}%`}</td>
               </tr>)}
             </tbody>
           </table>

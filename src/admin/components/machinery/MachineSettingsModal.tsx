@@ -9,6 +9,7 @@ import {
 import { errorMessage } from '../../../lib/api';
 import { formatDate } from '../../../utils/dateTime';
 import { Modal, inputClass, labelClass, primaryButton, secondaryButton } from './shared';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 export function MachineSettingsModal({ machine, machinery, onClose, onChanged }: { machine: Machinery; machinery: Machinery[]; onClose: () => void; onChanged: () => void }) {
   const [details, setDetails] = useState({
@@ -96,7 +97,7 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
   };
 
   const removeRate = async (rate: ServiceRate) => {
-    if (!window.confirm(`Delete the ${rate.serviceType} rate from ${formatDate(rate.effectiveFrom)}?`)) return;
+    if (!(await confirmAction(`Delete the ${rate.serviceType} rate from ${formatDate(rate.effectiveFrom)}?`, { confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteRate(rate.id);
       toast.success('Rate deleted');

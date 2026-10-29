@@ -6,6 +6,7 @@ import {
   type KadiwaInventoryInput, type KadiwaInventoryItem, type KadiwaSizeUnit,
 } from '../../../app/services/authApi';
 import { KadiwaBlankForm } from './KadiwaBlankForm';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 // Products are kept like the store's inventory notebook: the product and its
 // size, the quantity, the selling price and the cost price, with
@@ -114,12 +115,12 @@ export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; o
   };
   const removeRow = (key: number) => setRows((current) => (current.length === 1 ? [blankRow(nextKey.current++, current[0])] : current.filter((row) => row.key !== key)));
 
-  const close = () => {
-    if (filled.length && !window.confirm(`Close the sheet? ${filled.length === 1 ? 'The line you typed stays in this browser until you save or clear it.' : `The ${filled.length} lines you typed stay in this browser until you save or clear them.`}`)) return;
+  const close = async () => {
+    if (filled.length && !(await confirmAction(`Close the sheet? ${filled.length === 1 ? 'The line you typed stays in this browser until you save or clear it.' : `The ${filled.length} lines you typed stay in this browser until you save or clear them.`}`, { confirmLabel: 'Close' }))) return;
     onClose();
   };
-  const clear = () => {
-    if (filled.length && !window.confirm('Clear every line of this sheet?')) return;
+  const clear = async () => {
+    if (filled.length && !(await confirmAction('Clear every line of this sheet?', { confirmLabel: 'Clear', danger: true }))) return;
     nextKey.current = 4;
     setRows([1, 2, 3].map((key) => blankRow(key)));
     setShowProblems(false);
@@ -230,7 +231,7 @@ export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; o
                     <Cell label="Cost Price">
                       <input data-row={row.key} inputMode="decimal" value={row.costPrice} onChange={(event) => update(row.key, 'costPrice', event.target.value)} placeholder="0.00" aria-label={`Cost price of line ${index + 1}`} className={`${INPUT} ${bad('cost price') ? 'border-red-400' : ''}`} />
                     </Cell>
-                    <p className="self-center text-sm font-semibold tabular-nums text-gray-900 lg:text-right"><span className="text-xs font-normal text-gray-500 lg:hidden">Total </span>{isBlank(row) ? '—' : peso(rowTotal(row))}</p>
+                    <p className="self-center text-sm font-semibold tabular-nums text-gray-900 lg:text-right"><span className="text-xs font-normal text-gray-500 lg:hidden">Total </span>{isBlank(row) ? '' : peso(rowTotal(row))}</p>
                     <button type="button" onClick={() => removeRow(row.key)} className="justify-self-end rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove line ${index + 1}`}><Trash2 className="h-4 w-4" /></button>
                   </div>
                   {rowErrors.length > 0 && <p className="px-2 pt-1 text-xs text-red-600 lg:pl-12">{rowErrors.join(' ')}</p>}
@@ -340,7 +341,7 @@ export function EditInventoryItem({ item, onClose, onSaved }: { item: KadiwaInve
           <Field label="Low stock at"><input inputMode="decimal" value={values.reorderLevel} onChange={(event) => set('reorderLevel', event.target.value)} className={INPUT} /></Field>
           <Field label={`Selling price per ${values.unit}`}><input inputMode="decimal" value={values.price} onChange={(event) => set('price', event.target.value)} className={INPUT} /></Field>
           <Field label={`Cost price per ${values.unit}`}><input inputMode="decimal" value={values.costPrice} onChange={(event) => set('costPrice', event.target.value)} className={INPUT} /></Field>
-          <p className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700 sm:col-span-2">Total: <strong className="tabular-nums">{Number.isFinite(preview) ? peso(Math.round(preview * 100) / 100) : '—'}</strong> <span className="text-gray-500">(quantity × cost price)</span>
+          <p className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700 sm:col-span-2">Total: <strong className="tabular-nums">{Number.isFinite(preview) ? peso(Math.round(preview * 100) / 100) : ''}</strong> <span className="text-gray-500">(quantity × cost price)</span>
             {Number.isFinite(margin) && <span className="block text-gray-600">Net income per {values.unit} sold: <strong className={`tabular-nums ${margin < 0 ? 'text-red-700' : 'text-green-700'}`}>{peso(margin)}</strong> (selling price − cost price)</span>}
           </p>
         </div>

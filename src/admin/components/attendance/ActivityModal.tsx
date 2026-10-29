@@ -11,6 +11,7 @@ import {
 } from '../../../app/services/attendanceApi';
 import { ActivityFormModal } from './ActivityFormModal';
 import { AttendanceSheet } from './AttendanceSheet';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 /** One activity: its details and counts, the attendance list (recorded here),
  * Finalize, Edit and Cancel, and the history of changes. */
@@ -55,8 +56,8 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
   }, [startRecording, loaded]);
 
   const afterChange = () => { load(); setSheetKey((key) => key + 1); onChanged(); };
-  const requestClose = () => {
-    if (pendingCount && !window.confirm(`Close without saving? ${pendingCount} attendance ${pendingCount === 1 ? 'change is' : 'changes are'} not saved yet.`)) return;
+  const requestClose = async () => {
+    if (pendingCount && !(await confirmAction(`Close without saving? ${pendingCount} attendance ${pendingCount === 1 ? 'change is' : 'changes are'} not saved yet.`, { confirmLabel: 'Close without saving', danger: true }))) return;
     onClose();
   };
 
@@ -150,11 +151,11 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
                   ))}
                   <div className="rounded-xl border border-gray-200 bg-white p-3">
                     <p className="text-xs text-gray-500">Not marked</p>
-                    <p className="text-xl font-bold tabular-nums text-gray-900">{details.status === 'cancelled' ? '—' : details.unmarked}</p>
+                    <p className="text-xl font-bold tabular-nums text-gray-900">{details.status === 'cancelled' ? '' : details.unmarked}</p>
                   </div>
                   <div className="rounded-xl bg-green-700 p-3 text-white">
                     <p className="text-xs text-green-100">Attendance rate</p>
-                    <p className="text-xl font-bold tabular-nums">{details.final ? rateLabel(details.rate) : '—'}</p>
+                    <p className="text-xl font-bold tabular-nums">{details.final ? rateLabel(details.rate) : ''}</p>
                     {!details.final && details.status !== 'cancelled' && <p className="text-[11px] text-green-100">after finalizing</p>}
                   </div>
                 </div>

@@ -68,7 +68,7 @@ export function ActivityLog() {
       <p className="text-sm text-gray-600">Everything that happens on your account: your sign-ins and changes, and what the ACIFAC office recorded for you.</p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Last sign-in" value={summary?.lastSignIn ? formatDateTime(summary.lastSignIn) : '—'} icon={LogIn} loading={!summary && loading} />
+        <StatCard label="Last sign-in" value={summary?.lastSignIn ? formatDateTime(summary.lastSignIn) : ''} icon={LogIn} loading={!summary && loading} />
         <StatCard label="Failed sign-in attempts (30 days)" value={summary?.failedSignIns30Days ?? 0} icon={ShieldAlert} tone={summary && summary.failedSignIns30Days > 0 ? 'warning' : 'green'} detail={summary && summary.failedSignIns30Days > 0 ? 'If these were not you, change your password in Settings.' : undefined} loading={!summary && loading} />
         <StatCard label={filtered ? 'Matching entries' : 'Entries'} value={pageInfo?.total ?? 0} icon={History} loading={!pageInfo && loading} />
       </div>

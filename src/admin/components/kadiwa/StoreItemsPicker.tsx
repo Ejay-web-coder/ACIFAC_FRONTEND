@@ -39,9 +39,13 @@ export function storeSelection(inventory: KadiwaInventoryItem[], quantities: Sto
   return { selected, revenue, cost, net: cents(revenue - cost) };
 }
 
-/** `query` is the New Sale quick search (lower case): only matching products are shown. */
-export function StoreItemsPicker({ inventory, quantities, onChange, showProblems, query }: {
-  inventory: KadiwaInventoryItem[]; quantities: StoreQuantities; onChange: Dispatch<SetStateAction<StoreQuantities>>; showProblems: boolean; query: string;
+/**
+ * `query` is the New Sale quick search (lower case): only matching products are shown.
+ * `fill`: a panel of its own (the Kadiwa vendor's page), without the box and the height limit; the panel scrolls.
+ * `bare`: the products only, without the heading, the counts and Show selected only (the vendor's search results).
+ */
+export function StoreItemsPicker({ inventory, quantities, onChange, showProblems, query, fill = false, bare = false }: {
+  inventory: KadiwaInventoryItem[]; quantities: StoreQuantities; onChange: Dispatch<SetStateAction<StoreQuantities>>; showProblems: boolean; query: string; fill?: boolean; bare?: boolean;
 }) {
   const [selectedOnly, setSelectedOnly] = useState(false);
   // Products that can be sold first, in the inventory's order; sold-out ones and ones without a cost price last.
@@ -56,10 +60,10 @@ export function StoreItemsPicker({ inventory, quantities, onChange, showProblems
   };
 
   return (
-    <div className="mt-4 rounded-xl border border-gray-200 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <div className={fill ? '' : 'mt-4 rounded-xl border border-gray-200 p-3'}>
+      {!bare && <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Store items from the inventory <span className="font-normal text-gray-500">(optional)</span></h3>
+          <h3 className="text-sm font-semibold text-gray-900">Store items from the inventory{!fill && <span className="font-normal text-gray-500"> (optional)</span>}</h3>
           <p className="text-xs text-gray-500">Deducted from stock and counted under GROCERIES. Net income is the selling price less the cost price.</p>
         </div>
         {selected.length > 0 && (
@@ -68,9 +72,9 @@ export function StoreItemsPicker({ inventory, quantities, onChange, showProblems
             <span className="block text-xs">cost {peso(cost)} · <span className={net < 0 ? 'text-red-700' : 'text-green-700'}>net {peso(net)}</span></span>
           </p>
         )}
-      </div>
+      </div>}
 
-      {inventory.length > 0 && (
+      {inventory.length > 0 && !bare && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           {query ? <p className="text-xs text-gray-600">{shown.length} of {inventory.length} products match the search.</p> : <span />}
           <label className={`inline-flex items-center gap-2 text-sm ${selected.length ? 'text-gray-700' : 'text-gray-400'}`}>
@@ -81,9 +85,9 @@ export function StoreItemsPicker({ inventory, quantities, onChange, showProblems
       )}
 
       {/* On wider screens the list scrolls on its own so the expenses stay close. */}
-      <div className="mt-2 md:max-h-96 md:overflow-y-auto">
+      <div className={bare ? '' : fill ? 'mt-2' : 'mt-2 md:max-h-96 md:overflow-y-auto'}>
         {!inventory.length ? (
-          <p className="p-4 text-center text-sm text-gray-500">No products in the inventory yet. Use Add Inventory first.</p>
+          <p className="p-4 text-center text-sm text-gray-500">{fill ? 'No products to show.' : 'No products in the inventory yet. Use Add Inventory first.'}</p>
         ) : !shown.length ? (
           <p className="p-4 text-center text-sm text-gray-500">{selectedOnly ? 'No selected product matches your search.' : 'No product matches your search.'}</p>
         ) : (
@@ -116,7 +120,7 @@ export function StoreItemsPicker({ inventory, quantities, onChange, showProblems
                         <span className="ml-1 w-12 text-xs text-gray-500">{item.unit}</span>
                       </div>
                       <div className="w-24 text-right">
-                        <p className="text-sm font-semibold tabular-nums text-gray-900">{lineTotal ? peso(lineTotal) : '—'}</p>
+                        <p className="text-sm font-semibold tabular-nums text-gray-900">{lineTotal ? peso(lineTotal) : ''}</p>
                         {lineTotal > 0 && <p className={`text-xs tabular-nums ${lineNet < 0 ? 'text-red-700' : 'text-green-700'}`}>{lineNet < 0 ? '−' : '+'}{peso(Math.abs(lineNet))} net</p>}
                       </div>
                     </div>

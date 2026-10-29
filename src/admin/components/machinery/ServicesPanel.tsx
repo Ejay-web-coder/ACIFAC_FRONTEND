@@ -10,6 +10,7 @@ import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { PaymentModal } from './PaymentModal';
 import { RecordServiceModal } from './RecordServiceModal';
 import { PaymentBadge, bags, hectares, peso, primaryButton, yearOptions } from './shared';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 const selectClass = 'h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm';
 
@@ -39,7 +40,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
   const setFilter = (field: keyof typeof filters, value: string) => { setFilters((current) => ({ ...current, [field]: value })); setPage(1); };
 
   const remove = async (service: MachineryService) => {
-    if (!window.confirm(`Delete the ${service.serviceType} service for ${service.clientName} on ${formatDate(service.serviceDate)}?`)) return;
+    if (!(await confirmAction(`Delete the ${service.serviceType} service for ${service.clientName} on ${formatDate(service.serviceDate)}?`, { confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteService(service.id);
       toast.success('Service deleted');

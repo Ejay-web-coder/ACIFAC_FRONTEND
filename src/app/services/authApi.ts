@@ -1,7 +1,8 @@
 import { apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut, toNumber } from '../../lib/api';
 import type { OcrIdReading, VerificationCheck } from '../../admin/services/ocrApi';
 
-export type UserRole = 'ADMIN' | 'MEMBER';
+/** VENDOR: a Kadiwa store vendor, who sends the day's sales and expenses for review. */
+export type UserRole = 'ADMIN' | 'MEMBER' | 'VENDOR';
 
 export interface Pagination { page: number; limit: number; total: number; totalPages: number }
 
@@ -683,6 +684,13 @@ export const createMemberAccountRequest = (payload: { memberId: number; password
 export const updateAccountStatusRequest = (id: number, status: Account['account_status']) => apiPatch<{ message: string }>(`/api/admin/accounts/${id}/status`, { status });
 export const resetMemberPasswordRequest = (id: number) => apiPost<{ message: string }>(`/api/admin/accounts/${id}/reset-password`);
 
+// Kadiwa store vendors: a name, a username and a password the administrator gives; both name and password can be changed.
+export const createVendorAccountRequest = (payload: { fullName: string; username: string; password: string; confirmPassword: string }) =>
+  apiPost<{ message: string }>('/api/admin/accounts/vendors', payload);
+export const updateVendorAccountRequest = (id: number, fullName: string) => apiPatch<{ message: string }>(`/api/admin/accounts/vendors/${id}`, { fullName });
+export const setVendorPasswordRequest = (id: number, password: string, confirmPassword: string) =>
+  apiPost<{ message: string }>(`/api/admin/accounts/vendors/${id}/password`, { password, confirmPassword });
+
 export interface AuditLogEntry {
   id: number;
   user_id: number | null;
@@ -981,7 +989,14 @@ export interface KadiwaSale {
   /** Net income: goods sold - expenses - cost of goods. */
   netSales: number;
   paymentMethod: 'cash';
-  status: 'completed' | 'pending';
+  /** pending: a vendor's sale waiting for an administrator; rejected: sent back (reviewNotes says why). Only completed sales count. */
+  status: 'completed' | 'pending' | 'rejected';
+  /** Sent by a Kadiwa store vendor (createdBy: their account); reviewedBy confirmed or rejected it. */
+  byVendor: boolean;
+  createdBy: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
   /** Store items sold from the inventory; counted in the GROCERIES line. */
   items: KadiwaSaleItem[];
   /** The expenses, one line each; empty for sales saved before expenses were listed (their total only). */
@@ -1077,8 +1092,9 @@ const toNumberOrNull = (value: unknown) => (value === null || value === undefine
 const mapInventory = (item: Record<string, unknown>): KadiwaInventoryItem => ({ ...(item as unknown as KadiwaInventoryItem), sizeValue: toNumberOrNull(item.sizeValue), stock: toNumber(item.stock), price: toNumber(item.price), costPrice: toNumberOrNull(item.costPrice), reorderLevel: toNumber(item.reorderLevel) });
 
 export async function fetchKadiwaData(params: { page?: number; limit?: number } = {}) {
-  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown>; goods?: Record<string, unknown>[] }>(`/api/kadiwa${query(params)}`);
+  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown>; goods?: Record<string, unknown>[]; pendingSales?: Record<string, unknown>[] }>(`/api/kadiwa${query(params)}`);
   return {
+    pendingSales: (data.pendingSales || []).map(mapSale),
     inventory: data.inventory.map(mapInventory),
     sales: data.sales.map(mapSale),
     pagination: data.pagination,
@@ -1107,6 +1123,34 @@ export async function fetchKadiwaSales(from: string, to: string, overall = false
 // The New Sale form sends `expenses` (their sum is the sale's expenses); Sell Products sends `totalExpenses`.
 export async function createKadiwaSale(payload: { sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string; memberPurchases?: Array<{ memberId: number; amount: string }> }) {
   const data = await apiPost<{ sale: Record<string, unknown> }>('/api/kadiwa/sales', payload);
+  return { sale: mapSale(data.sale) };
+}
+
+// A vendor's sale: confirm counts it; reject sends it back with the reason (required).
+export async function reviewKadiwaSaleRequest(id: string, decision: 'confirm' | 'reject', notes = '') {
+  const data = await apiPost<{ sale: Record<string, unknown> }>(`/api/kadiwa/sales/${encodeURIComponent(id)}/review`, { decision, notes });
+  return { sale: mapSale(data.sale) };
+}
+
+// One vendor's report for a day, sent in several parts: all confirmed or rejected together.
+export async function reviewKadiwaSalesRequest(ids: string[], decision: 'confirm' | 'reject', notes = '') {
+  const data = await apiPost<{ sales: Record<string, unknown>[] }>('/api/kadiwa/sales/review', { ids, decision, notes });
+  return { sales: data.sales.map(mapSale) };
+}
+
+// The vendor's page: the goods and store items for the sale form, and the vendor's own sales, newest first.
+export async function fetchVendorKadiwa() {
+  const data = await apiGet<{ goods: Record<string, unknown>[]; inventory?: Record<string, unknown>[]; sales: Record<string, unknown>[] }>('/api/vendor/kadiwa');
+  return {
+    goods: data.goods.map((good) => ({ ...(good as unknown as KadiwaGood), price: toNumberOrNull(good.price) })),
+    inventory: (data.inventory || []).map(mapInventory),
+    sales: data.sales.map(mapSale),
+  };
+}
+
+// Store items leave the stock when the sale is sent; a rejected sale puts them back.
+export async function submitVendorKadiwaSale(payload: { saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses: Array<{ description: string; amount: string }>; memberPurchases: Array<{ memberId: number; amount: string }> }) {
+  const data = await apiPost<{ sale: Record<string, unknown> }>('/api/vendor/kadiwa/sales', payload);
   return { sale: mapSale(data.sale) };
 }
 

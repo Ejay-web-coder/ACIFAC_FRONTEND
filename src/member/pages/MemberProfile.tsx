@@ -143,7 +143,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
               <PiggyBank className="w-5 h-5 text-purple-600" />
               <p className="text-sm text-purple-700">Estimated Dividend</p>
             </div>
-            <p className="text-2xl font-bold tabular-nums text-purple-900">{dividend ? peso(dividend.dividend) : '—'}</p>
+            <p className="text-2xl font-bold tabular-nums text-purple-900">{dividend ? peso(dividend.dividend) : ''}</p>
             {dividend && <p className="mt-1 text-xs text-purple-700">{percent(dividend.shareRatio)} of the dividend pool</p>}
           </div>
 
@@ -152,7 +152,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
               <HandCoins className="w-5 h-5 text-teal-600" />
               <p className="text-sm text-teal-700">Estimated Patronage Refund</p>
             </div>
-            <p className="text-2xl font-bold tabular-nums text-teal-900">{dividend?.patronage ? peso(dividend.patronage.refund) : '—'}</p>
+            <p className="text-2xl font-bold tabular-nums text-teal-900">{dividend?.patronage ? peso(dividend.patronage.refund) : ''}</p>
             {dividend?.patronage && <p className="mt-1 text-xs text-teal-700">{percent(dividend.patronage.poolShare)} of the patronage refund pool</p>}
           </div>
         </div>
@@ -175,7 +175,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
           <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Contributions</p><p className="mt-1 text-lg font-bold text-gray-900">{shareDetails.contributions.length}</p></div>
         </div>
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-green-100"><div className="h-full rounded-full bg-green-600" style={{ width: `${Math.min(100, (shareDetails.total / shareDetails.maximum) * 100)}%` }} /></div>
-        <div className="mt-5"><h3 className="mb-3 font-semibold text-gray-900">Contribution History</h3><div className="max-h-72 overflow-auto rounded-lg border border-green-100"><table className="min-w-full text-sm"><thead className="sticky top-0 bg-green-100"><tr><th className="px-3 py-2 text-left font-semibold text-gray-700">Date</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Amount</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Payment Method</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Reference</th></tr></thead><tbody className="divide-y divide-green-100">{shareDetails.contributions.map((contribution) => <tr key={contribution.id}><td className="px-3 py-2 whitespace-nowrap">{formatDate(contribution.contributionDate)}</td><td className="px-3 py-2 font-medium text-green-700">₱{contribution.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-3 py-2">{contribution.paymentMethod || '—'}</td><td className="px-3 py-2">{contribution.referenceNumber || '—'}</td></tr>)}</tbody></table></div></div>
+        <div className="mt-5"><h3 className="mb-3 font-semibold text-gray-900">Contribution History</h3><div className="max-h-72 overflow-auto rounded-lg border border-green-100"><table className="min-w-full text-sm"><thead className="sticky top-0 bg-green-100"><tr><th className="px-3 py-2 text-left font-semibold text-gray-700">Date</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Amount</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Payment Method</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Reference</th></tr></thead><tbody className="divide-y divide-green-100">{shareDetails.contributions.map((contribution) => <tr key={contribution.id}><td className="px-3 py-2 whitespace-nowrap">{formatDate(contribution.contributionDate)}</td><td className="px-3 py-2 font-medium text-green-700">₱{contribution.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td><td className="px-3 py-2">{contribution.paymentMethod || ''}</td><td className="px-3 py-2">{contribution.referenceNumber || ''}</td></tr>)}</tbody></table></div></div>
       </div>
 
       <div className="rounded-lg border border-green-200 bg-white p-6 shadow-sm">

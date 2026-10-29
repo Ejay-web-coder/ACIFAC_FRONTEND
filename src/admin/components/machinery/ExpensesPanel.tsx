@@ -11,6 +11,7 @@ import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { Modal, inputClass, labelClass, peso, primaryButton, secondaryButton, yearOptions } from './shared';
+import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 const selectClass = 'h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm';
 
@@ -104,7 +105,7 @@ export function ExpensesPanel({ machinery }: { machinery: Machinery[] }) {
   useLiveRefresh(['machinery_expenses'], () => { void load(); });
 
   const remove = async (expense: MachineryExpense) => {
-    if (!window.confirm(`Delete the ${peso(expense.amount)} ${EXPENSE_LABELS[expense.category].toLowerCase()} expense of ${formatDate(expense.expenseDate)}?`)) return;
+    if (!(await confirmAction(`Delete the ${peso(expense.amount)} ${EXPENSE_LABELS[expense.category].toLowerCase()} expense of ${formatDate(expense.expenseDate)}?`, { confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteExpense(expense.id);
       toast.success('Expense deleted');
@@ -161,7 +162,7 @@ export function ExpensesPanel({ machinery }: { machinery: Machinery[] }) {
                 <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDate(expense.expenseDate, true)}<span className="block text-xs text-gray-500">{expense.croppingPeriod} cropping {expense.year}</span></td>
                 <td className="px-4 py-3 text-gray-700">{expense.machineryName}</td>
                 <td className="px-4 py-3 text-gray-700">{EXPENSE_LABELS[expense.category]}</td>
-                <td className="px-4 py-3 text-gray-600">{expense.description || '—'}</td>
+                <td className="px-4 py-3 text-gray-600">{expense.description || ''}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{peso(expense.amount)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right">
                   <button type="button" onClick={() => setEditing(expense)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800" aria-label="Edit expense"><Pencil className="h-4 w-4" /></button>

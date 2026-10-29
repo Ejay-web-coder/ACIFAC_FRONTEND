@@ -23,7 +23,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
     return (
       <div className="space-y-4 md:space-y-6" role="status" aria-label="Loading your member data">
         <Skeleton className="h-28 w-full rounded-2xl" />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((key) => <Skeleton key={key} className="h-28 rounded-2xl" />)}</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">{[0, 1, 2].map((key) => <Skeleton key={key} className="h-28 rounded-2xl" />)}</div>
         <Skeleton className="h-48 w-full rounded-2xl" />
       </div>
     );
@@ -59,11 +59,10 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
         </div>
       </div>
 
-      {/* Key figures: 2 columns on phones, 4 on desktops */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      {/* Key figures: 1 column on phones, 3 on desktops */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:gap-4">
         <StatCard label="Total Loans" value={`₱${loanBalance.toLocaleString()}`} icon={PhilippinePeso} tone="dark" />
         <StatCard label="Share Capital" value={`₱${member.share_capital.toLocaleString()}`} icon={TrendingUp} />
-        <StatCard label="Active Loans" value={activeLoans.length} icon={Receipt} tone="soft" />
         <StatCard label="Next Payment" value={nextDue} icon={Calendar} tone={isOverdue ? 'warning' : 'green'} detail={nextLoan ? `Due: ${formatDate(nextLoan.nextPaymentDate)}` : undefined} />
       </div>
 

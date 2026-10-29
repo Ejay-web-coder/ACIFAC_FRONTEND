@@ -106,10 +106,10 @@ export function IdDocumentPanel({ requirement, id, formName, requiredSignatures,
   const liveCard = cardCapture && id.source === 'camera';
   const signatures = reading.signatureCount;
   const rows: Array<[string, ReactNode]> = [
-    ['ID type', reading.idType || '—'],
-    ['ID No.', reading.idNumber || '—'],
-    ['Name on the ID', reading.name || '—'],
-    ['Birthday on the ID', reading.dateOfBirth || '—'],
+    ['ID type', reading.idType || ''],
+    ['ID No.', reading.idNumber || ''],
+    ['Name on the ID', reading.name || ''],
+    ['Birthday on the ID', reading.dateOfBirth || ''],
     ...(reading.address ? [['Address on the ID', reading.address] as [string, ReactNode]] : []),
     ['Sides shown', sidesShown(reading.frontVisible, reading.backVisible)],
     liveCard

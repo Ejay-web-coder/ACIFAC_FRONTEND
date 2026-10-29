@@ -645,13 +645,13 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
                 {['Approved', 'Disapproved', 'For Evaluation'].map((status) => <label key={status} className="inline-flex items-center gap-2 text-sm uppercase text-slate-800"><input type="checkbox" className={BOX} checked={approving && status === 'Approved'} disabled readOnly />{status}</label>)}
               </div>
               <FormTable cols="grid-cols-1 sm:grid-cols-3" className="mt-2">
-                <Cell label="Approved Cash Amount (Php)"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? money(cashCents / 100) : '—'}</p></Cell>
-                <Cell label="Approved In-Kind Amount (Php)"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? money(inKindCents / 100) : '—'}</p></Cell>
-                <Cell label="Approved Total Amount (Php)"><p className="mt-1 py-1.5 text-sm font-bold text-slate-900">{approving ? money(totalCents / 100) : '—'}</p></Cell>
+                <Cell label="Approved Cash Amount (Php)"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? money(cashCents / 100) : ''}</p></Cell>
+                <Cell label="Approved In-Kind Amount (Php)"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? money(inKindCents / 100) : ''}</p></Cell>
+                <Cell label="Approved Total Amount (Php)"><p className="mt-1 py-1.5 text-sm font-bold text-slate-900">{approving ? money(totalCents / 100) : ''}</p></Cell>
               </FormTable>
               <FormTable cols="grid-cols-1 sm:grid-cols-[2fr_1fr]" className="mt-2">
-                <Cell label="Evaluated / Approved by"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approvedBy || '—'}</p></Cell>
-                <Cell label="Date"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? formatDate(today) : '—'}</p></Cell>
+                <Cell label="Evaluated / Approved by"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approvedBy || ''}</p></Cell>
+                <Cell label="Date"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? formatDate(today) : ''}</p></Cell>
               </FormTable>
               <p className="mt-1 text-xs text-slate-500">{approving ? 'Saving this form approves and releases the loan with these amounts.' : 'Filled in by the cooperative when the application is reviewed.'}</p>
             </div>

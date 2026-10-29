@@ -373,14 +373,15 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <div key={loan.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <h3>{memberLink(loan.memberDatabaseId, loan.memberName, 'break-words font-bold text-gray-900')}</h3>
-                    <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${loan.status === 'overdue' ? 'text-red-700' : loan.status === 'paid' ? 'text-gray-500' : 'text-gray-700'}`}>
-                      {loan.status === 'overdue' ? <AlertTriangle className="h-4 w-4 shrink-0" /> : loan.status === 'paid' ? <CheckCircle className="h-4 w-4 shrink-0" /> : <Clock className="h-4 w-4 shrink-0 text-green-700" />}
+                    {/* Paid and overdue loans say so; no next-payment reminder for the others. */}
+                    {(loan.status === 'paid' || !loan.nextPaymentDate || loan.status === 'overdue') && (
+                    <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${loan.status === 'overdue' ? 'text-red-700' : 'text-gray-500'}`}>
+                      {loan.status === 'overdue' ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle className="h-4 w-4 shrink-0" />}
                       {loan.status === 'paid' || !loan.nextPaymentDate
                         ? 'Fully paid'
-                        : loan.status === 'overdue'
-                          ? `Overdue: ${peso(loan.overdueAmount)} since ${formatDate(loan.nextPaymentDate)}`
-                          : `Next payment: ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} on ${formatDate(loan.nextPaymentDate)}`}
+                        : `Overdue: ${peso(loan.overdueAmount)} since ${formatDate(loan.nextPaymentDate)}`}
                     </p>
+                    )}
                   </div>
                   <button type="button" onClick={() => setViewingLoanId(loan.databaseId)}
                     className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
@@ -671,13 +672,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     <p className="text-sm font-medium text-gray-900">{peso(loan.monthlyPayment)}</p>
                   </div>
                 </div>
-                {loan.status !== 'paid' && loan.nextPaymentDate && (
-                  <div className={`mt-3 flex items-start gap-2 rounded-xl p-3 ${loan.status === 'overdue' ? 'bg-red-50 ring-1 ring-red-100' : 'bg-green-50 ring-1 ring-green-100'}`}>
-                    {loan.status === 'overdue' ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : <Clock className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />}
-                    <p className={`text-sm ${loan.status === 'overdue' ? 'text-red-800' : 'text-green-800'}`}>
-                      {loan.status === 'overdue'
-                        ? `Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`
-                        : `Next payment of ${peso(loan.nextAmountDue ?? loan.monthlyPayment)} due on ${formatDate(loan.nextPaymentDate)}`}
+                {loan.status === 'overdue' && loan.nextPaymentDate && (
+                  <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 ring-1 ring-red-100">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                    <p className="text-sm text-red-800">
+                      {`Overdue: ${peso(loan.overdueAmount)} across ${loan.overdueInstallments} installment${loan.overdueInstallments === 1 ? '' : 's'}. Oldest unpaid installment was due on ${formatDate(loan.nextPaymentDate)}.`}
                     </p>
                   </div>
                 )}

@@ -1,11 +1,13 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
-import { CheckCircle2, ImagePlus, RefreshCw, UserSquare } from 'lucide-react';
+import { Camera, CheckCircle2, ImagePlus, RefreshCw, UserSquare } from 'lucide-react';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { photoPath, type OcrScan } from '../services/ocrApi';
+import { DocumentScannerModal } from './DocumentScannerModal';
 
 // The applicant's 2x2 picture for a scanned membership form. When AI can
 // recognize the face in the form's photo box nothing more is needed; otherwise
-// the admin uploads a 2x2 picture, which becomes the member's photo.
+// the admin uploads a 2x2 picture or takes it with the live camera (a square
+// box: only the picture inside it is kept), which becomes the member's photo.
 
 interface FormPhotoPanelProps {
   scan: OcrScan;
@@ -32,8 +34,20 @@ function UploadPhotoButton({ label, disabled, onUpload, compact = false }: { lab
   );
 }
 
+// Opens the live camera with a square box the size of a 2x2 picture.
+function CameraPhotoButton({ disabled, onOpen, compact = false }: { disabled: boolean; onOpen: () => void; compact?: boolean }) {
+  return (
+    <button type="button" onClick={onOpen} disabled={disabled}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'border border-green-600 bg-white px-4 py-2 text-green-700 hover:bg-green-50'}`}>
+      <Camera className="h-4 w-4" /> Take with camera
+    </button>
+  );
+}
+
 export function FormPhotoPanel({ scan, editable, submitting, disabled, onUpload }: FormPhotoPanelProps) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
+  const cameraModal = camera && <DocumentScannerModal variant="photo" person="applicant" onClose={() => setCamera(false)} onScanned={(file) => { setCamera(false); onUpload(file); }} />;
   const uploaded = scan.photo;
   const recognized = scan.authenticity?.photoRecognized;
   const busy = disabled || submitting;
@@ -65,9 +79,10 @@ export function FormPhotoPanel({ scan, editable, submitting, disabled, onUpload 
               : <p className={clear ? 'font-medium text-green-700' : 'font-medium text-red-700'}>{clear ? 'The face is clear.' : 'The face is not clear. Upload a clear 2x2 picture.'}</p>}
             {(reading.issues?.length ?? 0) > 0 && <ul className="list-disc pl-5 text-amber-800">{reading.issues!.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
             <p className="text-gray-500">It becomes the member's photo when the form is saved.</p>
-            {editable && <div className="flex flex-wrap items-center gap-2 pt-1"><UploadPhotoButton label="Upload another" disabled={busy} onUpload={onUpload} compact />{submitting && <span className="inline-flex items-center gap-1 text-blue-700"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Checking the picture...</span>}</div>}
+            {editable && <div className="flex flex-wrap items-center gap-2 pt-1"><UploadPhotoButton label="Upload another" disabled={busy} onUpload={onUpload} compact /><CameraPhotoButton disabled={busy} onOpen={() => setCamera(true)} compact />{submitting && <span className="inline-flex items-center gap-1 text-blue-700"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Checking the picture...</span>}</div>}
           </div>
         </div>
+        {cameraModal}
       </section>
     );
   }
@@ -85,13 +100,15 @@ export function FormPhotoPanel({ scan, editable, submitting, disabled, onUpload 
     <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4" aria-label="Applicant's 2x2 picture">
       <div className="flex items-center gap-2"><UserSquare className="h-5 w-5 text-amber-700" /><h3 className="font-semibold text-gray-900">Applicant's 2x2 picture {recognized === false && <span className="text-red-600">*</span>}</h3></div>
       <p className="mt-1 text-sm text-amber-900">{recognized === false
-        ? 'Gemini cannot recognize the 2x2 picture on the form: the photo box is empty or the face cannot be made out. Upload the applicant\'s 2x2 picture.'
-        : 'AI could not tell whether the form has a clear 2x2 picture. Upload the applicant\'s 2x2 picture to be sure.'}</p>
+        ? 'Gemini cannot recognize the 2x2 picture on the form: the photo box is empty or the face cannot be made out. Upload the applicant\'s 2x2 picture or take it with the camera.'
+        : 'AI could not tell whether the form has a clear 2x2 picture. Upload the applicant\'s 2x2 picture or take it with the camera to be sure.'}</p>
       <p className="mt-1 text-xs text-amber-900">A recent picture with the face clear and a plain background. JPG, PNG or WEBP up to 5 MB.</p>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <UploadPhotoButton label="Upload 2x2 picture" disabled={busy} onUpload={onUpload} />
+        <CameraPhotoButton disabled={busy} onOpen={() => setCamera(true)} />
         {submitting && <span className="animate-pulse text-sm text-blue-700">AI is checking the picture...</span>}
       </div>
+      {cameraModal}
     </section>
   );
 }

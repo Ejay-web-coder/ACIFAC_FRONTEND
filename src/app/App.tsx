@@ -8,6 +8,7 @@ import { Layout } from './components/Layout';
 import { Toaster } from './components/ui/Toaster';
 import { Login } from './components/Login';
 import { SessionTimeout } from './components/SessionTimeout';
+import { ConfirmHost } from './components/common/ConfirmDialog';
 import { fetchCurrentUser } from './services/authApi';
 
 const AdminDashboard = lazy(() => import('../admin/pages/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
@@ -29,11 +30,18 @@ const ActivityLog = lazy(() => import('../member/pages/ActivityLog').then((modul
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
+const VendorKadiwa = lazy(() => import('../vendor/pages/VendorKadiwa').then((module) => ({ default: module.VendorKadiwa })));
 
-export type UserRole = 'admin' | 'member';
+/** vendor: a Kadiwa store vendor, who only sends the day's sales and expenses for review. */
+export type UserRole = 'admin' | 'member' | 'vendor';
+
+/** Where each role lands after signing in. */
+export const homePath = (role: UserRole) => (role === 'admin' ? '/admin-dashboard' : role === 'vendor' ? '/vendor' : '/member-dashboard');
+/** The app's role for the server's role on the account. */
+export const roleFromServer = (role: string | undefined): UserRole | null => (role === 'ADMIN' ? 'admin' : role === 'MEMBER' ? 'member' : role === 'VENDOR' ? 'vendor' : null);
 
 function RoleRoute({ userRole, allowedRole, children }: { userRole: UserRole; allowedRole: UserRole; children: ReactNode }) {
-  return userRole === allowedRole ? children : <Navigate to={allowedRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />;
+  return userRole === allowedRole ? children : <Navigate to={homePath(userRole)} replace />;
 }
 
 // While the server requires a password change, only Settings is reachable
@@ -60,9 +68,10 @@ export default function App() {
   useEffect(() => {
     fetchCurrentUser()
       .then(({ user }) => {
-        if (user?.role) {
-          setUserRole(user.role === 'ADMIN' ? 'admin' : 'member');
-          setMustChangePassword(Boolean(user.must_change_password));
+        const role = roleFromServer(user?.role);
+        if (role) {
+          setUserRole(role);
+          setMustChangePassword(Boolean(user?.must_change_password));
           setIsAuthenticated(true);
         }
       })
@@ -106,14 +115,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster />
-      {isAuthenticated && <SessionTimeout />}
+      <ConfirmHost />
+      {/* A Kadiwa vendor stays signed in until they log out: no inactivity countdown. */}
+      {isAuthenticated && userRole !== 'vendor' && <SessionTimeout />}
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-gray-500">Loading...</div>}>
         <Routes>
         <Route
           path="/"
           element={
             isAuthenticated ? (
-              <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
+              <Navigate to={homePath(userRole)} replace />
             ) : (
               <Login onLogin={handleLogin} notice={loginNotice} />
             )
@@ -124,13 +135,15 @@ export default function App() {
           path="/login"
           element={
             isAuthenticated ? (
-              <Navigate to={userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard'} replace />
+              <Navigate to={homePath(userRole)} replace />
             ) : (
               <Login onLogin={handleLogin} notice={loginNotice} />
             )
           }
         />
-        <Route element={isAuthenticated ? <PasswordChangeGate required={mustChangePassword}><Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /></PasswordChangeGate> : <Navigate to="/login" replace />}>
+        {/* A Kadiwa vendor has one page, the day's sales form, without the menus. */}
+        <Route path="/vendor" element={!isAuthenticated ? <Navigate to="/login" replace /> : <RoleRoute userRole={userRole} allowedRole="vendor"><VendorKadiwa /></RoleRoute>} />
+        <Route element={isAuthenticated && userRole === 'vendor' ? <Navigate to="/vendor" replace /> : isAuthenticated ? <PasswordChangeGate required={mustChangePassword}><Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /></PasswordChangeGate> : <Navigate to="/login" replace />}>
           <Route path="/admin-dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/accounts" element={<RoleRoute userRole={userRole} allowedRole="admin"><AccountManagement /></RoleRoute>} />
@@ -167,7 +180,7 @@ export default function App() {
           <Route path="/member/settings" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberSettings mustChangePassword={mustChangePassword} /></RoleRoute>} />
           <Route path="/settings" element={userRole === 'admin' ? <Settings userRole={userRole} mustChangePassword={mustChangePassword} /> : <MemberSettings mustChangePassword={mustChangePassword} />} />
         </Route>
-        <Route path="*" element={<Navigate to={isAuthenticated ? (userRole === 'admin' ? '/admin-dashboard' : '/member-dashboard') : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={isAuthenticated ? homePath(userRole) : '/login'} replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

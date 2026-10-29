@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { History, KeyRound, Mail, Phone, Plus, RefreshCw, Search, ShieldCheck, UserCog, UserRound } from 'lucide-react';
+import { History, KeyRound, Mail, Pencil, Phone, Plus, RefreshCw, Search, ShieldCheck, Store, UserCog, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import {
@@ -15,11 +15,15 @@ import { formatDateTime } from '../../utils/dateTime';
 import { Pagination } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { AdminAccountForm } from '../components/AdminAccountForm';
+import { VendorAccountEditor, VendorAccountForm } from '../components/VendorAccountForms';
 
 /** onViewActivity: opens the audit log on one administrator's actions (given where the audit log is at hand). */
 export function AccountManagement({ onViewActivity }: { onViewActivity?: (account: Account) => void } = {}) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  // Kadiwa store vendors: the form to make one, and the vendor whose name or password is being changed.
+  const [showCreateVendor, setShowCreateVendor] = useState(false);
+  const [editingVendor, setEditingVendor] = useState<Account | null>(null);
   const [availableMembers, setAvailableMembers] = useState<AvailableMember[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -105,20 +109,26 @@ export function AccountManagement({ onViewActivity }: { onViewActivity?: (accoun
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Account Management</h1>
-          <p className="mt-1 text-sm text-gray-600">Administrator and member login accounts. Administrators share one role; each acts under their own name and position, recorded in the audit log.</p>
+          <p className="mt-1 text-sm text-gray-600">Administrator, member and Kadiwa vendor login accounts. Administrators share one role; each acts under their own name and position, recorded in the audit log.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => void loadData()} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
-          <button onClick={() => { setShowCreateAdmin(true); setShowCreate(false); }} className="inline-flex items-center gap-2 rounded-xl border border-green-600 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50">
+          <button onClick={() => { setShowCreateVendor(true); setShowCreateAdmin(false); setShowCreate(false); }} className="inline-flex items-center gap-2 rounded-xl border border-amber-500 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50">
+            <Store className="h-4 w-4" /> Create Vendor Account
+          </button>
+          <button onClick={() => { setShowCreateAdmin(true); setShowCreate(false); setShowCreateVendor(false); }} className="inline-flex items-center gap-2 rounded-xl border border-green-600 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50">
             <UserCog className="h-4 w-4" /> Create Admin Account
           </button>
-          <button onClick={() => { setShowCreate(true); setShowCreateAdmin(false); }} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
+          <button onClick={() => { setShowCreate(true); setShowCreateAdmin(false); setShowCreateVendor(false); }} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700">
             <Plus className="h-4 w-4" /> Create Member Account
           </button>
         </div>
       </div>
+
+      {showCreateVendor && <VendorAccountForm onCreated={() => { setShowCreateVendor(false); void loadData(); }} onCancel={() => setShowCreateVendor(false)} />}
+      {editingVendor && <VendorAccountEditor account={editingVendor} onClose={() => setEditingVendor(null)} onSaved={() => { setEditingVendor(null); void loadData(); }} />}
 
       {showCreateAdmin && <AdminAccountForm onCreated={() => { setShowCreateAdmin(false); void loadData(); }} onCancel={() => setShowCreateAdmin(false)} />}
 
@@ -179,16 +189,20 @@ export function AccountManagement({ onViewActivity }: { onViewActivity?: (accoun
                       : <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">No position yet</span>}
                     <span className="block text-xs text-gray-500">{account.created_by_name ? `Made by ${account.created_by_name}` : 'First administrator'}{account.last_activity_at ? ` · Last activity ${formatDateTime(account.last_activity_at)}` : ''}</span>
                   </div></div>
+                ) : account.role === 'VENDOR' ? (
+                  <div className="flex items-center gap-2"><Store className="h-4 w-4 shrink-0 text-amber-700" /><span className="font-medium text-gray-900">{account.full_name || account.username}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">Kadiwa vendor</span></div>
                 ) : <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number}</span></div>}</td>
                 {/* What the account signs in with: members their email or mobile number; administrators keep their username. */}
                 <td className="px-4 py-3 text-gray-700">
                   <span className="block">{account.email || <span className="text-gray-400">No email</span>}</span>
-                  <span className="block text-xs text-gray-500">{account.phone || 'No mobile number'}{account.role === 'ADMIN' ? ` · Username: ${account.username}` : ''}</span>
+                  <span className="block text-xs text-gray-500">{account.phone || 'No mobile number'}{account.role !== 'MEMBER' ? ` · Username: ${account.username}` : ''}</span>
                 </td>
                 <td className="px-4 py-3"><span className="inline-flex items-center gap-1"><ShieldCheck className="h-4 w-4 text-blue-600" />{account.role}</span></td>
                 <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${account.account_status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{account.account_status}</span>{account.must_change_password && <span className="ml-2 text-xs text-orange-600">Password change required</span>}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDateTime(account.account_created_at)}</td>
-                <td className="px-4 py-3"><div className="flex gap-2"><button onClick={() => void resetPassword(account)} title="Reset password" className="rounded border border-gray-300 p-2 text-gray-600 hover:bg-gray-50"><KeyRound className="h-4 w-4" /></button>{account.role === 'ADMIN' && onViewActivity && <button onClick={() => onViewActivity(account)} title="Everything this administrator did, from the audit log" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><History className="h-3.5 w-3.5" />Activity</button>}{<button onClick={() => void updateStatus(account)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">{account.account_status === 'ACTIVE' ? 'Disable' : 'Enable'}</button>}</div></td>
+                <td className="px-4 py-3"><div className="flex gap-2">{account.role === 'VENDOR'
+                  ? <button onClick={() => setEditingVendor(account)} title="Change the vendor's name or password" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Pencil className="h-3.5 w-3.5" />Name / password</button>
+                  : <button onClick={() => void resetPassword(account)} title="Reset password" className="rounded border border-gray-300 p-2 text-gray-600 hover:bg-gray-50"><KeyRound className="h-4 w-4" /></button>}{account.role === 'ADMIN' && onViewActivity && <button onClick={() => onViewActivity(account)} title="Everything this administrator did, from the audit log" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><History className="h-3.5 w-3.5" />Activity</button>}{<button onClick={() => void updateStatus(account)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">{account.account_status === 'ACTIVE' ? 'Disable' : 'Enable'}</button>}</div></td>
               </tr>
             ))}
             {!isLoading && accounts.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No login accounts found.</td></tr>}

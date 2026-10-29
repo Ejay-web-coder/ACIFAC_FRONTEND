@@ -579,7 +579,7 @@ export function MemberForm({
   };
 
   // Field helpers: an input while editing, the saved value as text in View.
-  const view = (value: string) => <p className={VIEW_TEXT}>{value || '—'}</p>;
+  const view = (value: string) => <p className={VIEW_TEXT}>{value || ''}</p>;
   const errorProps = (field: string) => ({ 'data-error': errors[field] ? 'true' : undefined });
 
   const input = (field: keyof MemberDraftData, props: { type?: string; placeholder?: string; min?: string; step?: string; max?: string; readOnly?: boolean; title?: string } = {}) => {
@@ -675,7 +675,7 @@ export function MemberForm({
           {isAdd ? (
             <input id={`${formId || 'member'}-number`} value={form.memberNumber} onChange={(event) => updateField('memberNumber', event.target.value)} className={`${INPUT} mt-0 sm:max-w-xs ${errors.memberNumber ? INPUT_ERROR : ''}`} placeholder="Leave blank to auto-generate" {...errorProps('memberNumber')} />
           ) : (
-            <span id={`${formId || 'member'}-number`} className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm font-bold text-slate-900">{form.memberNumber || '—'}</span>
+            <span id={`${formId || 'member'}-number`} className="rounded-md border border-slate-300 bg-slate-50 px-3 py-1.5 text-sm font-bold text-slate-900">{form.memberNumber || ''}</span>
           )}
           {errors.memberNumber && <span className="text-xs text-red-600">{errors.memberNumber}</span>}
         </div>
@@ -754,8 +754,8 @@ export function MemberForm({
           {!readOnly && <HeaderCell><span className="sr-only">Remove</span></HeaderCell>}
           {shownChildren.map((child, index) => readOnly ? (
             <div key={child.id} className="contents">
-              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{child.name || '—'}</div>
-              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{child.age || '—'}</div>
+              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{child.name || ''}</div>
+              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{child.age || ''}</div>
             </div>
           ) : (
             <div key={child.id} className="contents">
@@ -774,8 +774,8 @@ export function MemberForm({
           {!readOnly && <HeaderCell><span className="sr-only">Remove</span></HeaderCell>}
           {shownIncome.map((row, index) => readOnly ? (
             <div key={row.id} className="contents">
-              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{row.source || '—'}</div>
-              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{peso(row.amount) || '—'}</div>
+              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{row.source || ''}</div>
+              <div className="bg-white px-2 py-1.5 text-sm text-slate-900">{peso(row.amount) || ''}</div>
             </div>
           ) : (
             <div key={row.id} className="contents">

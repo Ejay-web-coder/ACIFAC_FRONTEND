@@ -14,6 +14,7 @@ import { MachineSettingsModal } from '../components/machinery/MachineSettingsMod
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
 import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
+import { confirmAction } from '../../app/components/common/ConfirmDialog';
 
 interface MachineryOperationsProps {
   userRole: UserRole;
@@ -137,7 +138,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   };
 
   const completeBooking = async (op: MachineryOperation) => {
-    if (!window.confirm(`Mark the ${op.machineryName} booking of ${op.memberName} as completed?`)) return;
+    if (!(await confirmAction(`Mark the ${op.machineryName} booking of ${op.memberName} as completed?`, { confirmLabel: 'Mark completed' }))) return;
     try {
       await completeMachineryOperation(op.id);
       void loadData();

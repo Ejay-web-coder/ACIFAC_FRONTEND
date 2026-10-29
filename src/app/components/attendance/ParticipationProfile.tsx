@@ -131,8 +131,8 @@ function ProfileBody({ profile, own, pages }: { profile: Profile; own: boolean; 
                       <td className="px-4 py-2.5"><p className="font-medium text-gray-900">{record.title}</p><p className="text-xs text-gray-500">{timeRange(record.startTime, record.endTime)} · {record.venue}</p></td>
                       <td className="px-4 py-2.5 text-gray-700">{record.categoryLabel}</td>
                       <td className="px-4 py-2.5"><AttendanceBadge status={record.status} />{!record.final && <p className="mt-1 text-xs font-medium text-amber-700">Not final yet</p>}</td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-gray-700">{record.checkInTime ? formatClock(record.checkInTime) : '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-600">{record.remarks || '—'}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-gray-700">{record.checkInTime ? formatClock(record.checkInTime) : ''}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{record.remarks || ''}</td>
                     </tr>
                   ))}
                 </tbody>

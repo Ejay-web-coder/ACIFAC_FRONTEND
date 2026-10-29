@@ -226,10 +226,10 @@ export function MemberImportModal({ onClose, onImported }: { onClose: () => void
                         {rows.map(({ data, problems }) => (
                           <tr key={data.row_number} className="border-t border-slate-100">
                             <td className="px-3 py-2 text-slate-500">{data.row_number}</td>
-                            <td className="px-3 py-2 font-medium text-slate-900">{[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ') || '—'}</td>
-                            <td className="px-3 py-2">{data.email || '—'}</td>
-                            <td className="px-3 py-2">{data.phone || '—'}</td>
-                            <td className="max-w-[220px] truncate px-3 py-2">{data.address || '—'}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ') || ''}</td>
+                            <td className="px-3 py-2">{data.email || ''}</td>
+                            <td className="px-3 py-2">{data.phone || ''}</td>
+                            <td className="max-w-[220px] truncate px-3 py-2">{data.address || ''}</td>
                             <td className="px-3 py-2">{problems.length ? <span className="text-red-600">{problems.join(', ')}</span> : <span className="text-green-700">Ready</span>}</td>
                           </tr>
                         ))}
@@ -253,7 +253,7 @@ export function MemberImportModal({ onClose, onImported }: { onClose: () => void
                   <tbody>
                     {results.map((result, index) => (
                       <tr key={`${result.row}-${index}`} className="border-t border-slate-100">
-                        <td className="px-3 py-2 text-slate-500">{result.row || '—'}</td>
+                        <td className="px-3 py-2 text-slate-500">{result.row || ''}</td>
                         <td className="px-3 py-2">{result.success ? <span className="font-medium text-green-700">Imported{result.name ? ` — ${result.name}` : ''}</span> : <span className="font-medium text-red-600">Not imported</span>}</td>
                         <td className="px-3 py-2">{result.success ? <span className="font-semibold text-slate-900">{result.memberNumber}</span> : <span className="text-red-600">{result.errors?.join(' ')}</span>}</td>
                       </tr>

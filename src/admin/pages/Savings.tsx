@@ -261,9 +261,9 @@ function SavingsMembers({ refreshKey, onOpen }: { refreshKey: number; onOpen: (m
                         <td className="px-4 py-3 text-sm text-gray-600">{member.memberNumber}</td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{member.memberName}</td>
                         <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-700">{peso(member.deposits)}</td>
-                        <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-700">{member.withdrawals ? peso(member.withdrawals) : '—'}</td>
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-gray-700">{member.withdrawals ? peso(member.withdrawals) : ''}</td>
                         <td className="px-4 py-3 text-right text-sm font-bold tabular-nums text-green-700">{peso(member.balance)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{member.lastTransactionDate ? formatDate(member.lastTransactionDate) : '—'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{member.lastTransactionDate ? formatDate(member.lastTransactionDate) : ''}</td>
                         <td className="px-4 py-3 text-right">
                           <button type="button" onClick={(event) => { event.stopPropagation(); onOpen(member); }} className="inline-flex items-center gap-1 text-sm font-medium text-green-700 hover:text-green-800" aria-label={`View savings of ${member.memberName}`}><Eye className="h-4 w-4" />View</button>
                         </td>
@@ -333,16 +333,16 @@ function MemberSavingsModal({ member, refreshKey, onChanged, onClose }: { member
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-green-700 p-4 text-white">
               <p className="text-sm text-green-100">Total Savings</p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">{summary ? peso(balance) : '—'}</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums">{summary ? peso(balance) : ''}</p>
               <p className="mt-1 text-xs text-green-100">{summary ? `${summary.transactions} ${summary.transactions === 1 ? 'entry' : 'entries'}` : ''}</p>
             </div>
             <div className="rounded-xl border border-gray-200 p-4">
               <p className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowDownLeft className="h-4 w-4 text-green-600" />Total Deposits</p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{summary ? peso(summary.deposits) : '—'}</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{summary ? peso(summary.deposits) : ''}</p>
             </div>
             <div className="rounded-xl border border-gray-200 p-4">
               <p className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowUpRight className="h-4 w-4 text-amber-600" />Total Withdrawals</p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{summary ? peso(summary.withdrawals) : '—'}</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{summary ? peso(summary.withdrawals) : ''}</p>
             </div>
           </div>
 
