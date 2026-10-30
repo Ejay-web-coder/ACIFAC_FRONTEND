@@ -52,7 +52,7 @@ export function TerminationModal({ memberName, submitting, onCancel, onConfirm }
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
           <div>
-            <h2 id="termination-title" className="text-xl font-bold text-gray-900">Termination of Membership</h2>
+            <h2 id="termination-title" className="text-xl font-bold text-gray-900">Terminate Membership</h2>
             <p className="mt-0.5 text-sm text-gray-600">{memberName}</p>
           </div>
           <button type="button" onClick={onCancel} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close termination window"><X className="h-5 w-5" /></button>

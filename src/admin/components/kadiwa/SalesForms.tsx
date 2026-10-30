@@ -27,8 +27,8 @@ const INPUT = `${FIELD} w-full px-2.5`;
 
 /** 0.75 -> "0.75", 34.46666 -> "34.4667" */
 export const formatQuantity = (value: number | null) => (value === null ? '' : Number(value.toFixed(4)).toLocaleString('en-PH', { maximumFractionDigits: 4 }));
-const plainAmount = (value: number) => value.toLocaleString('en-PH', { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
-const formatPrice = (line: Pick<KadiwaSalesLine, 'price' | 'priceMax'>) => (line.price === null ? '' : line.priceMax !== null ? `${plainAmount(line.price)} – ${plainAmount(line.priceMax)}` : plainAmount(line.price));
+export const plainAmount = (value: number) => value.toLocaleString('en-PH', { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
+export const formatPrice = (line: Pick<KadiwaSalesLine, 'price' | 'priceMax'>) => (line.price === null ? '' : line.priceMax !== null ? `${plainAmount(line.price)} – ${plainAmount(line.priceMax)}` : plainAmount(line.price));
 /** "2026-09-01" -> "SEPTEMBER 1, 2026", as the form writes its date. */
 const formDate = (value: string) => formatDate(value).toUpperCase();
 // "5 goods", "3 store items", "2 goods · 1 store item"; sales saved before goods were itemized count their lines.
@@ -589,7 +589,7 @@ export function periodRange({ mode, date }: SalesPeriod) {
     : { from: `${ym}-16`, to: `${ym}-${pad(last)}`, title: `${monthName(year, month)} 16 TO ${last}, ${year}` };
 }
 
-function shiftPeriod({ mode, date }: SalesPeriod, step: 1 | -1): SalesPeriod {
+export function shiftPeriod({ mode, date }: SalesPeriod, step: 1 | -1): SalesPeriod {
   if (mode === 'day') return { mode, date: addDateOnlyDays(date, step) };
   if (mode === 'all') return { mode, date };
   const [year, month, day] = date.split('-').map(Number);

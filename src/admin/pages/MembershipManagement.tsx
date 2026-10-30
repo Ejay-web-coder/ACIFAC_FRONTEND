@@ -464,7 +464,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                               <Edit className="h-4 w-4" />Update
                             </button>
                             <button type="button" onClick={() => setMemberToTerminate(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 text-sm font-semibold text-red-700 hover:bg-red-50" aria-label={`Termination of ${member.name}'s membership`}>
-                              <UserX className="h-4 w-4" />Termination
+                              <UserX className="h-4 w-4" />Terminate
                             </button>
                           </>
                         )}
@@ -535,7 +535,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                                 <Edit className="h-5 w-5" />
                               </button>
                               <button type="button" onClick={() => setMemberToTerminate(member)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-red-600 hover:bg-red-50" title="Termination of membership" aria-label={`Termination of ${member.name}'s membership`}>
-                                <UserX className="h-4 w-4" />Termination
+                                <UserX className="h-4 w-4" />Terminate
                               </button>
                             </>
                           )}
