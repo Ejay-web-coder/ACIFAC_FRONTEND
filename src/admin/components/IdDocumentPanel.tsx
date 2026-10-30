@@ -48,7 +48,8 @@ function UploadButton({ label, disabled, onUpload, compact = false }: { label: s
   );
 }
 
-function Option({ icon, title, text, children }: { icon: ReactNode; title: string; text: string; children: ReactNode }) {
+// One way to submit (upload, live camera), as a card; also used by the 2x2 picture panel.
+export function Option({ icon, title, text, children }: { icon: ReactNode; title: string; text: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-white p-4">
       <div className="flex items-start gap-3">

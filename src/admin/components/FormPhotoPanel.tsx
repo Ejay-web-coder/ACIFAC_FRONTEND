@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { Camera, CheckCircle2, ImagePlus, RefreshCw, UserSquare } from 'lucide-react';
+import { Option } from './IdDocumentPanel';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { photoPath, type OcrScan } from '../services/ocrApi';
 import { DocumentScannerModal } from './DocumentScannerModal';
@@ -27,7 +28,7 @@ function UploadPhotoButton({ label, disabled, onUpload, compact = false }: { lab
     if (file) onUpload(file);
   };
   return (
-    <label className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'bg-green-600 px-4 py-2 text-white hover:bg-green-700'} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+    <label className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'bg-slate-800 px-4 py-2 text-white hover:bg-slate-700'} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
       <ImagePlus className="h-4 w-4" /> {label}
       <input type="file" accept={ACCEPT} className="hidden" disabled={disabled} onChange={onChange} />
     </label>
@@ -38,8 +39,8 @@ function UploadPhotoButton({ label, disabled, onUpload, compact = false }: { lab
 function CameraPhotoButton({ disabled, onOpen, compact = false }: { disabled: boolean; onOpen: () => void; compact?: boolean }) {
   return (
     <button type="button" onClick={onOpen} disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'border border-green-600 bg-white px-4 py-2 text-green-700 hover:bg-green-50'}`}>
-      <Camera className="h-4 w-4" /> Take with camera
+      className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold disabled:opacity-50 ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'bg-green-600 px-4 py-2 text-white hover:bg-green-700'}`}>
+      <Camera className="h-4 w-4" /> Open camera
     </button>
   );
 }
@@ -100,14 +101,18 @@ export function FormPhotoPanel({ scan, editable, submitting, disabled, onUpload 
     <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4" aria-label="Applicant's 2x2 picture">
       <div className="flex items-center gap-2"><UserSquare className="h-5 w-5 text-amber-700" /><h3 className="font-semibold text-gray-900">Applicant's 2x2 picture {recognized === false && <span className="text-red-600">*</span>}</h3></div>
       <p className="mt-1 text-sm text-amber-900">{recognized === false
-        ? 'Gemini cannot recognize the 2x2 picture on the form: the photo box is empty or the face cannot be made out. Upload the applicant\'s 2x2 picture or take it with the camera.'
-        : 'AI could not tell whether the form has a clear 2x2 picture. Upload the applicant\'s 2x2 picture or take it with the camera to be sure.'}</p>
-      <p className="mt-1 text-xs text-amber-900">A recent picture with the face clear and a plain background. JPG, PNG or WEBP up to 5 MB.</p>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <UploadPhotoButton label="Upload 2x2 picture" disabled={busy} onUpload={onUpload} />
-        <CameraPhotoButton disabled={busy} onOpen={() => setCamera(true)} />
-        {submitting && <span className="animate-pulse text-sm text-blue-700">AI is checking the picture...</span>}
+        ? 'Gemini cannot recognize the 2x2 picture on the form: the photo box is empty or the face cannot be made out. Submit one of these:'
+        : 'AI could not tell whether the form has a clear 2x2 picture. To be sure, submit one of these:'}</p>
+      {/* The same two cards as the valid ID: upload, or the live camera. */}
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Option icon={<ImagePlus className="h-5 w-5" />} title="Upload picture" text="A recent 2x2 picture with the face clear and a plain background. JPG, PNG or WEBP up to 5 MB.">
+          <UploadPhotoButton label="Upload 2x2 picture" disabled={busy} onUpload={onUpload} />
+        </Option>
+        <Option icon={<Camera className="h-5 w-5" />} title="Live camera" text="The 2x2 picture (or the applicant's face), captured now with the camera inside a square box.">
+          <CameraPhotoButton disabled={busy} onOpen={() => setCamera(true)} />
+        </Option>
       </div>
+      {submitting && <p className="mt-3 animate-pulse text-sm text-blue-700">AI is checking the picture...</p>}
       {cameraModal}
     </section>
   );
