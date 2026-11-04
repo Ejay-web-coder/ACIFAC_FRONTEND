@@ -639,8 +639,10 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
             ) : <p className="mt-2 text-sm text-amber-800">The cooperative will look at the flagged ID details when it reviews the application.</p>)}
             {errors.idAck && <p className="mt-1 text-xs text-red-600">{errors.idAck}</p>}
 
+            {/* For Office Use Only: filled in by the office, so only an administrator's New Loan shows it; members never see it. */}
+            {approving && <>
             <SectionBar>VI. For Office Use Only</SectionBar>
-            <div className={approving ? '' : 'opacity-70'}>
+            <div>
               <div className="flex flex-wrap gap-x-8 gap-y-1">
                 {['Approved', 'Disapproved', 'For Evaluation'].map((status) => <label key={status} className="inline-flex items-center gap-2 text-sm uppercase text-slate-800"><input type="checkbox" className={BOX} checked={approving && status === 'Approved'} disabled readOnly />{status}</label>)}
               </div>
@@ -653,8 +655,9 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
                 <Cell label="Evaluated / Approved by"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approvedBy || ''}</p></Cell>
                 <Cell label="Date"><p className="mt-1 py-1.5 text-sm font-medium text-slate-900">{approving ? formatDate(today) : ''}</p></Cell>
               </FormTable>
-              <p className="mt-1 text-xs text-slate-500">{approving ? 'Saving this form approves and releases the loan with these amounts.' : 'Filled in by the cooperative when the application is reviewed.'}</p>
+              <p className="mt-1 text-xs text-slate-500">{approving ? 'Saving this form approves and releases the loan with these amounts.' : ''}</p>
             </div>
+            </>}
 
             <div className="mt-6 border-t border-slate-300 pt-4" data-error={errors.certified ? 'true' : undefined}>
               <p className="text-sm font-bold leading-relaxed text-slate-900">I/ we hereby certify that all information stated is true, accurate and complete to the best of my/our knowledge. I/ We understand that submission of false information is grounds for disapproval and legal action. I/ We hereby authorize ACIFAC to verify and conduct credit investigation on my/our personal data in accordance with the Data Privacy Act of 2012 (RA. 10173).</p>

@@ -333,39 +333,23 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
           <h2 className="text-lg font-bold text-gray-900 mb-4">Payment History</h2>
           <PagedList items={payments} label="payments" pagerClassName="-mx-6 -mb-6 mt-4">{(pageItems) => (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Principal</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interest</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance After</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {pageItems.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{payment.id}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                      ₱{payment.amount.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      ₱{payment.principalPaid.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      ₱{payment.interestPaid.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      ₱{payment.remainingBalance.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {pageItems.map((payment) => (
+              <div key={payment.id} className="rounded-lg border border-gray-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-gray-900">₱{payment.amount.toLocaleString()}</p>
+                    <p className="text-sm text-gray-600">{formatDate(payment.paymentDate)}</p>
+                  </div>
+                  <span className="truncate text-xs text-gray-500">#{payment.id}</span>
+                </div>
+                <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-gray-100 pt-3 text-sm">
+                  <div><dt className="text-xs text-gray-500">Principal</dt><dd className="text-gray-900">₱{payment.principalPaid.toLocaleString()}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Interest</dt><dd className="text-gray-900">₱{payment.interestPaid.toLocaleString()}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Balance after</dt><dd className="font-medium text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
+                </dl>
+              </div>
+            ))}
           </div>
           )}</PagedList>
         </div>

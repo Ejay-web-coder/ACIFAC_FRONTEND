@@ -107,7 +107,27 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                     </ul>
                   )
                 ) : history.payments.length === 0 ? <p className="py-8 text-center text-sm text-gray-500">No payments yet.</p> : (
-                  <div className="mt-3 overflow-x-auto">
+                  <>
+                  {/* Phones: one card per payment, so nothing scrolls sideways. */}
+                  <ul className="mt-3 space-y-2 sm:hidden">
+                    {history.payments.map((payment) => (
+                      <li key={payment.id} className="rounded-xl border border-gray-200 p-3 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900">{formatDate(payment.paymentDate)}</p>
+                            <p className="text-xs text-gray-500">{payment.loanNumber}</p>
+                          </div>
+                          <p className="font-semibold tabular-nums text-gray-900">{peso(payment.amount)}</p>
+                        </div>
+                        <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                          <div><dt className="text-gray-500">Principal</dt><dd className="tabular-nums text-gray-900">{peso(payment.principalPaid)}</dd></div>
+                          <div><dt className="text-gray-500">Interest</dt><dd className="tabular-nums text-gray-900">{peso(payment.interestPaid)}</dd></div>
+                          <div className="text-right"><dt className="text-gray-500">Balance after</dt><dd className="tabular-nums text-gray-900">{peso(payment.remainingBalance)}</dd></div>
+                        </dl>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 hidden overflow-x-auto sm:block">
                     <table className="w-full min-w-[560px] text-sm">
                       <thead className="text-left text-xs text-gray-500">
                         <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 font-medium">Loan</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 text-right font-medium">Balance after</th></tr>
@@ -126,6 +146,7 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </>
             )}

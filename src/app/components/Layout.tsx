@@ -1,4 +1,5 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
+import { PageHeadingContext, type PageHeading } from './pageHeading';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { lazy, Suspense } from 'react';
 import { toast } from 'sonner';
@@ -25,7 +26,6 @@ import {
   ChevronDown,
   Search,
   BellOff,
-  History,
   CalendarCheck,
   CircleCheck,
   Trash2,
@@ -98,9 +98,8 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/member-dashboard', icon: LayoutDashboard, roles: ['member'], group: 'Overview', aliases: ['/member/dashboard'], short: 'Home' },
   { name: 'My Profile', href: '/member-profile', icon: User, roles: ['member'], group: 'My Account', aliases: ['/member/profile'], short: 'Profile' },
   { name: 'Loan Status', href: '/loan-status', icon: PhilippinePeso, roles: ['member'], group: 'My Account', aliases: ['/member/loans'], short: 'Loans' },
-  { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Activity' },
+  { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Transaction' },
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
-  { name: 'Activity Log', href: '/activity-log', icon: History, roles: ['member'], group: 'My Account', aliases: ['/member/activity'], short: 'Log' },
   { name: 'Members', href: '/membership', icon: Users, roles: ['admin'], group: 'Members', aliases: ['/admin/members'], short: 'Members' },
   { name: 'Attendance', href: '/attendance', icon: CalendarCheck, roles: ['admin'], group: 'Members', aliases: ['/admin/attendance'], short: 'Attendance' },
   { name: 'Loans & Payments', href: '/loans', icon: PhilippinePeso, roles: ['admin'], group: 'Finance', aliases: ['/admin/loans'], short: 'Loans' },
@@ -116,7 +115,8 @@ const navigation: NavItem[] = [
 // The four destinations that live in the phone bottom bar; everything else is under "More".
 const bottomNavHrefs: Record<UserRole, string[]> = {
   admin: ['/dashboard', '/membership', '/loans', '/kadiwa'],
-  member: ['/member-dashboard', '/loan-status', '/transaction', '/member-profile'],
+  // Rental booking is the members' most used page; My Profile is under More.
+  member: ['/member-dashboard', '/loan-status', '/transaction', '/rental-booking'],
   // A vendor has no menus: their one page is outside this layout.
   vendor: [],
 };
@@ -244,6 +244,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
 
   const currentItem = navigation.find((item) => item.roles.includes(userRole) && isActive(item, location.pathname));
   const current = currentItem?.name || 'Dashboard';
+  // A page may put its own heading in the top bar (the member dashboard's welcome).
+  const [pageHeading, setPageHeading] = useState<PageHeading | null>(null);
   const bottomNav = bottomNavHrefs[userRole].map((href) => filteredNavigation.find((item) => item.href === href)).filter((item): item is NavItem => Boolean(item));
   const moreIsActive = !bottomNav.some((item) => isActive(item, location.pathname));
   const groupedNavigation = groupOrder
@@ -450,8 +452,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               {isMobile && <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 rounded-full border border-green-100 object-cover" />}
               <div className="min-w-0">
-                <h1 className="truncate text-base font-bold leading-tight text-gray-900 min-[400px]:text-lg md:text-xl">{current}</h1>
-                <p className="hidden truncate text-xs text-gray-500 sm:block">{userRole === 'admin' ? 'ACIFAC administration' : userRole === 'vendor' ? 'ACIFAC Kadiwa store' : 'ACIFAC member portal'}</p>
+                <h1 className="truncate text-base font-bold leading-tight text-gray-900 min-[400px]:text-lg md:text-xl">{pageHeading?.title ?? current}</h1>
+                <p className="hidden truncate text-xs text-gray-500 sm:block">{pageHeading?.subtitle ?? (userRole === 'admin' ? 'ACIFAC administration' : userRole === 'vendor' ? 'ACIFAC Kadiwa store' : 'ACIFAC member portal')}</p>
               </div>
             </div>
 
@@ -612,7 +614,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
         {/* Main content */}
         <main className="acf-bottom-safe flex-1 bg-gray-50/60 md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 lg:px-8">
-            <Outlet />
+            <PageHeadingContext.Provider value={setPageHeading}><Outlet /></PageHeadingContext.Provider>
           </div>
         </main>
       </div>

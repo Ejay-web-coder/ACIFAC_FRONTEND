@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { PagedList } from '../../app/components/common/PagedList';
-import { sumMoney } from '../../utils/money';
 import { COOPERATIVE_NAME, drawPdfLogo, loadPdfLogo } from '../../lib/pdfLogo';
 import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
 
@@ -32,6 +31,11 @@ interface Transaction {
   reference: string;
 }
 
+// The filter chips on phones (the same choices as the Filter Type list).
+const FILTERS: Array<['all' | TransactionType, string]> = [
+  ['all', 'All'], ['payment', 'Loan payments'], ['debt', 'Loans'], ['rental', 'Rentals'], ['savings', 'Savings'], ['withdrawal', 'Withdrawals'],
+];
+
 // How each kind of entry looks. `sign` is what it means for the member.
 const TYPE_STYLE: Record<TransactionType, { label: string; icon: typeof ArrowUpRight; chip: string; text: string; amount: string; sign: string }> = {
   savings: { label: 'Savings', icon: PiggyBank, chip: 'bg-green-100', text: 'text-green-800', amount: 'text-green-600', sign: '+' },
@@ -39,15 +43,6 @@ const TYPE_STYLE: Record<TransactionType, { label: string; icon: typeof ArrowUpR
   payment: { label: 'Loan Payment', icon: ArrowUpRight, chip: 'bg-red-100', text: 'text-red-800', amount: 'text-red-600', sign: '-' },
   debt: { label: 'Loan', icon: ArrowDownLeft, chip: 'bg-orange-100', text: 'text-orange-800', amount: 'text-orange-600', sign: '+' },
   rental: { label: 'Rental', icon: Tractor, chip: 'bg-blue-100', text: 'text-blue-800', amount: 'text-blue-600', sign: '' },
-};
-
-const STATUS_STYLE: Record<TransactionStatus, string> = {
-  completed: 'bg-green-100 text-green-800',
-  approved: 'bg-green-100 text-green-800',
-  scheduled: 'bg-blue-100 text-blue-800',
-  ongoing: 'bg-blue-100 text-blue-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  declined: 'bg-red-100 text-red-800',
 };
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -254,13 +249,6 @@ export function Transaction({ userRole }: TransactionProps) {
     }
   });
 
-  const totalPayment = sumMoney(transactions.filter(txn => txn.type === 'payment').map(txn => txn.amount));
-  const totalDebt = sumMoney(transactions.filter(txn => txn.type === 'debt').map(txn => txn.amount));
-  const netBalance = totalDebt - totalPayment;
-  const totalSavings = Number(memberData.savings.total);
-  // Fees of bookings the cooperative accepted (pending and declined ones are not owed).
-  const totalRentalFees = sumMoney(transactions.filter(txn => txn.type === 'rental' && txn.status !== 'pending' && txn.status !== 'declined').map(txn => txn.amount));
-
   const handleViewReceipt = (txn: Transaction) => {
     setSelectedTransaction(txn);
     setShowReceiptModal(true);
@@ -274,28 +262,27 @@ export function Transaction({ userRole }: TransactionProps) {
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-green-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Savings</p>
-          <p className="break-words text-xl font-bold tabular-nums text-green-600 sm:text-2xl">{peso(totalSavings)}</p>
+      {/* Phones: the kinds as chips, and the sort, in one strip. */}
+      <div className="space-y-2 md:hidden">
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Show">
+          {FILTERS.map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setFilterType(value)} aria-pressed={filterType === value}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${filterType === value ? 'bg-green-600 text-white ring-green-600' : 'bg-white text-gray-700 ring-gray-300 hover:bg-green-50'}`}>{label}</button>
+          ))}
         </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-red-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Total Loan Payments</p>
-          <p className="break-words text-xl font-bold tabular-nums text-red-600 sm:text-2xl">{peso(totalPayment)}</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-orange-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Net Loan Balance</p>
-          <p className="break-words text-xl font-bold tabular-nums text-orange-600 sm:text-2xl">{peso(netBalance)}</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3.5 sm:p-6 border-l-4 border-l-blue-500">
-          <p className="mb-1 text-xs font-medium leading-snug text-gray-600 sm:mb-2 sm:text-sm">Machinery Rental Fees</p>
-          <p className="break-words text-xl font-bold tabular-nums text-blue-600 sm:text-2xl">{peso(totalRentalFees)}</p>
+        <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
+          <span>{sortedTransactions.length} {sortedTransactions.length === 1 ? 'transaction' : 'transactions'}</span>
+          <label className="flex items-center gap-1.5">Sort
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-700">
+              <option value="date">Newest</option>
+              <option value="amount">Highest amount</option>
+            </select>
+          </label>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3 sm:p-4">
+      <div className="hidden bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3 sm:p-4 md:block">
         <div>
           <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-4">
             <div className="min-w-0">
@@ -331,7 +318,27 @@ export function Transaction({ userRole }: TransactionProps) {
       {/* Transactions Table */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] overflow-hidden">
         <PagedList items={sortedTransactions} resetKey={`${filterType}|${sortBy}`} label="transactions">{(pageItems) => (
-        <div className="overflow-x-auto">
+        <>
+        {/* Phones: one row per transaction; tap it for the receipt. */}
+        <ul className="divide-y divide-gray-100 md:hidden">
+          {pageItems.map((txn) => {
+            const style = TYPE_STYLE[txn.type];
+            const Icon = style.icon;
+            return (
+              <li key={txn.id}>
+                <button type="button" onClick={() => handleViewReceipt(txn)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-50 active:bg-gray-100">
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${style.chip}`}><Icon className={`h-5 w-5 ${style.amount}`} aria-hidden="true" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-gray-900">{txn.description}</span>
+                    <span className="block truncate text-xs text-gray-500">{formatDate(txn.date)} · {style.label}</span>
+                  </span>
+                  <span className={`shrink-0 text-right text-sm font-bold tabular-nums ${style.amount}`}>{style.sign}{peso(txn.amount)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
@@ -340,7 +347,6 @@ export function Transaction({ userRole }: TransactionProps) {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Date & Time</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Category</th>
                 <th className="px-6 py-4 text-right text-sm font-semibold text-gray-900">Amount</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Receipt</th>
               </tr>
             </thead>
@@ -383,11 +389,6 @@ export function Transaction({ userRole }: TransactionProps) {
                     </p>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${STATUS_STYLE[txn.status]}`}>
-                      {capitalize(txn.status)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleViewReceipt(txn)}
@@ -412,6 +413,7 @@ export function Transaction({ userRole }: TransactionProps) {
             </tbody>
           </table>
         </div>
+        </>
         )}</PagedList>
         {sortedTransactions.length === 0 && (
           <div className="p-8 text-center">
@@ -520,7 +522,7 @@ export function Transaction({ userRole }: TransactionProps) {
       )}
 
       {/* Additional Info */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6">
+      <div className="hidden bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6 md:block">
         <div className="flex items-start gap-4">
           <FileText className="w-5 h-5 text-blue-600 mt-1" />
           <div>

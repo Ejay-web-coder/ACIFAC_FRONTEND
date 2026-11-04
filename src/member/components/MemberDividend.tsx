@@ -99,6 +99,19 @@ export function ComputationToggle({ id, label, children }: { id: string; label: 
   );
 }
 
+// Step 4's summary: item, formula, amount.
+const summaryRows = (dividend: MemberDividend) => [
+  ['Net Income', 'Kadiwa + Machinery + Loan interest', peso(dividend.netIncome)],
+  ['Statutory Funds', `Net Income × ${dividend.rates.statutory}%`, peso(dividend.statutoryTotal)],
+  ['Net Surplus', 'Net Income − Statutory Funds', peso(dividend.netSurplus)],
+  ['Dividend Pool', `Net Surplus × ${dividend.rates.dividendPool}%`, peso(dividend.dividendPool)],
+  ['Patronage Refund Pool', `Net Surplus × ${dividend.rates.patronageRefundPool}%`, peso(dividend.patronageRefundPool)],
+  ['Your Share Capital', 'Paid-up share capital', peso(dividend.memberShareCapital)],
+  ['Total Paid-up Share Capital', 'All members', peso(dividend.totalShareCapital)],
+  ['Share Ratio', 'Your Share Capital ÷ Total', `${ratioText(dividend.shareRatio)} (${percent(dividend.shareRatio)})`],
+  ['Your Dividend', 'Dividend Pool × Share Ratio', peso(dividend.dividend)],
+] as const;
+
 /** How the member's dividend is computed, step by step, with their numbers (shown on request). */
 export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
   return (
@@ -142,23 +155,22 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
         </Step>
 
         <Step number={4} title="Summary">
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          {/* Phones: each item on its own row, the formula under its name. */}
+          <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm sm:hidden">
+            {summaryRows(dividend).map(([item, formula, amount]) => (
+              <div key={item} className={`flex items-start justify-between gap-3 px-3 py-2 ${item === 'Your Dividend' ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}`}>
+                <dt className="min-w-0"><span className="font-medium">{item}</span><span className="block font-mono text-xs font-normal text-gray-500">{formula}</span></dt>
+                <dd className="shrink-0 text-right tabular-nums">{amount}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="hidden overflow-x-auto rounded-lg border border-gray-200 sm:block">
             <table className="w-full min-w-[30rem] text-sm">
               <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Formula</th><th className="px-3 py-2 text-right">Amount</th></tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {([
-                  ['Net Income', 'Kadiwa + Machinery + Loan interest', peso(dividend.netIncome)],
-                  ['Statutory Funds', `Net Income × ${dividend.rates.statutory}%`, peso(dividend.statutoryTotal)],
-                  ['Net Surplus', 'Net Income − Statutory Funds', peso(dividend.netSurplus)],
-                  ['Dividend Pool', `Net Surplus × ${dividend.rates.dividendPool}%`, peso(dividend.dividendPool)],
-                  ['Patronage Refund Pool', `Net Surplus × ${dividend.rates.patronageRefundPool}%`, peso(dividend.patronageRefundPool)],
-                  ['Your Share Capital', 'Paid-up share capital', peso(dividend.memberShareCapital)],
-                  ['Total Paid-up Share Capital', 'All members', peso(dividend.totalShareCapital)],
-                  ['Share Ratio', 'Your Share Capital ÷ Total', `${ratioText(dividend.shareRatio)} (${percent(dividend.shareRatio)})`],
-                  ['Your Dividend', 'Dividend Pool × Share Ratio', peso(dividend.dividend)],
-                ] as const).map(([item, formula, amount]) => (
+                {summaryRows(dividend).map(([item, formula, amount]) => (
                   <tr key={item} className={item === 'Your Dividend' ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}>
                     <td className="px-3 py-2 font-medium">{item}</td>
                     <td className="px-3 py-2 font-mono text-[13px]">{formula}</td>

@@ -120,12 +120,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const totalCollected = summary?.totalCollected ?? 0;
 
   const canEdit = userRole === 'admin';
-  // Shown as "Evaluated / Approved by" on the New Loan form.
+  // Shown as "Evaluated / Approved by" on the New Loan form and on a member's application.
   const [approverName, setApproverName] = useState('');
   useEffect(() => {
-    if (!showAddLoanModal || approverName) return;
+    if (!(showAddLoanModal || viewingRequestId !== null) || approverName) return;
     fetchCurrentUser().then(({ user }) => setApproverName(user?.display_name || user?.full_name || user?.username || 'Administrator')).catch(() => setApproverName('Administrator'));
-  }, [showAddLoanModal, approverName]);
+  }, [showAddLoanModal, viewingRequestId, approverName]);
 
   const loadData = useCallback(async () => {
     try {
@@ -155,13 +155,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
   useLiveRefresh(['loans', 'loan_payments', 'loan_requests'], () => { void loadData(); });
 
-  const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined') => {
-    let reason: string | undefined;
-    if (status === 'declined') {
-      const answer = window.prompt(`Reason for declining ${request.memberName}'s request (optional):`, '');
-      if (answer === null) return;
-      reason = answer.trim() || undefined;
-    }
+  // reason: why it was declined, typed in the Decline window of the application.
+  const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined', reason?: string) => {
     try {
       await reviewAdminLoanRequest(Number(request.id), status, reason);
       setViewingRequestId(null);
@@ -613,7 +608,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         <LoanRequestFormModal request={viewingRequest}
           idSummary={hasIds(viewingRequest.idDocuments) ? <LoanIdSummary requestId={viewingRequest.id} documents={viewingRequest.idDocuments!} /> : undefined}
           onViewSignature={() => openLoanSignature('loan-requests', viewingRequest.id)}
-          onDecide={(status) => { void updateLoanRequestStatus(viewingRequest, status); }}
+          reviewerName={approverName}
+          onDecide={(status, reason) => updateLoanRequestStatus(viewingRequest, status, reason)}
           onClose={() => setViewingRequestId(null)} />
       )}
       {viewingLoan && (() => {

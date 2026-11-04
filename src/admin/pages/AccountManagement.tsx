@@ -104,6 +104,34 @@ export function AccountManagement({ onViewActivity }: { onViewActivity?: (accoun
 
   const accountPages = usePagination(accounts);
 
+  // Shared by the table and the phone cards.
+  const accountName = (account: Account) => account.role === 'ADMIN' ? (
+    <div className="flex items-start gap-2"><UserCog className="mt-0.5 h-4 w-4 shrink-0 text-green-700" /><div>
+      <span className="font-medium text-gray-900">{account.full_name || account.username}</span>
+      {account.position ? <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-800 ring-1 ring-green-200">{account.position}</span>
+        : <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">No position yet</span>}
+      <span className="block text-xs text-gray-500">{account.created_by_name ? `Made by ${account.created_by_name}` : 'First administrator'}{account.last_activity_at ? ` · Last activity ${formatDateTime(account.last_activity_at)}` : ''}</span>
+    </div></div>
+  ) : account.role === 'VENDOR' ? (
+    <div className="flex flex-wrap items-center gap-2"><Store className="h-4 w-4 shrink-0 text-amber-700" /><span className="font-medium text-gray-900">{account.full_name || account.username}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">Kadiwa vendor</span></div>
+  ) : <div className="flex flex-wrap items-center gap-x-2"><UserRound className="h-4 w-4 shrink-0 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number}</span></div>;
+  // What the account signs in with: members their email or mobile number; administrators keep their username.
+  const signsInWith = (account: Account) => (
+    <>
+      <span className="block [overflow-wrap:anywhere]">{account.email || <span className="text-gray-400">No email</span>}</span>
+      <span className="block text-xs text-gray-500">{account.phone || 'No mobile number'}{account.role !== 'MEMBER' ? ` · Username: ${account.username}` : ''}</span>
+    </>
+  );
+  const accountRole = (account: Account) => <span className="inline-flex items-center gap-1"><ShieldCheck className="h-4 w-4 text-blue-600" />{account.role}</span>;
+  const accountStatus = (account: Account) => (
+    <><span className={`rounded-full px-2 py-1 text-xs font-medium ${account.account_status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{account.account_status}</span>{account.must_change_password && <span className="ml-2 text-xs text-orange-600">Password change required</span>}</>
+  );
+  const accountActions = (account: Account) => (
+    <div className="flex flex-wrap gap-2">{account.role === 'VENDOR'
+      ? <button onClick={() => setEditingVendor(account)} title="Change the vendor's name or password" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Pencil className="h-3.5 w-3.5" />Name / password</button>
+      : <button onClick={() => void resetPassword(account)} title="Reset password" className="rounded border border-gray-300 p-2 text-gray-600 hover:bg-gray-50"><KeyRound className="h-4 w-4" /></button>}{account.role === 'ADMIN' && onViewActivity && <button onClick={() => onViewActivity(account)} title="Everything this administrator did, from the audit log" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><History className="h-3.5 w-3.5" />Activity</button>}{<button onClick={() => void updateStatus(account)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">{account.account_status === 'ACTIVE' ? 'Disable' : 'Enable'}</button>}</div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -176,33 +204,34 @@ export function AccountManagement({ onViewActivity }: { onViewActivity?: (accoun
       )}
 
       <div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
-        <div className="overflow-x-auto">
+        {/* Phones and tablets: one card per account, so nothing scrolls sideways. */}
+        <ul className="divide-y divide-gray-100 lg:hidden">
+          {isLoading ? <li className="px-4 py-8 text-center text-sm text-gray-500">Loading accounts...</li> : accountPages.pageItems.map((account) => (
+            <li key={account.user_id} className="space-y-2 px-4 py-3 text-sm">
+              {accountName(account)}
+              <div className="text-gray-700">{signsInWith(account)}</div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                {accountRole(account)}
+                <span>{accountStatus(account)}</span>
+                <span className="text-gray-500">Created {formatDateTime(account.account_created_at)}</span>
+              </div>
+              {accountActions(account)}
+            </li>
+          ))}
+          {!isLoading && accounts.length === 0 && <li className="px-4 py-8 text-center text-sm text-gray-500">No login accounts found.</li>}
+        </ul>
+        <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50"><tr>{['Name', 'Email / Mobile number', 'Role', 'Status', 'Created', 'Actions'].map((heading) => <th key={heading} className="px-4 py-3 text-left font-semibold text-gray-600">{heading}</th>)}</tr></thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading accounts...</td></tr> : accountPages.pageItems.map((account) => (
               <tr key={account.user_id}>
-                <td className="px-4 py-3">{account.role === 'ADMIN' ? (
-                  <div className="flex items-start gap-2"><UserCog className="mt-0.5 h-4 w-4 shrink-0 text-green-700" /><div>
-                    <span className="font-medium text-gray-900">{account.full_name || account.username}</span>
-                    {account.position ? <span className="ml-2 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-800 ring-1 ring-green-200">{account.position}</span>
-                      : <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">No position yet</span>}
-                    <span className="block text-xs text-gray-500">{account.created_by_name ? `Made by ${account.created_by_name}` : 'First administrator'}{account.last_activity_at ? ` · Last activity ${formatDateTime(account.last_activity_at)}` : ''}</span>
-                  </div></div>
-                ) : account.role === 'VENDOR' ? (
-                  <div className="flex items-center gap-2"><Store className="h-4 w-4 shrink-0 text-amber-700" /><span className="font-medium text-gray-900">{account.full_name || account.username}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">Kadiwa vendor</span></div>
-                ) : <div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number}</span></div>}</td>
-                {/* What the account signs in with: members their email or mobile number; administrators keep their username. */}
-                <td className="px-4 py-3 text-gray-700">
-                  <span className="block">{account.email || <span className="text-gray-400">No email</span>}</span>
-                  <span className="block text-xs text-gray-500">{account.phone || 'No mobile number'}{account.role !== 'MEMBER' ? ` · Username: ${account.username}` : ''}</span>
-                </td>
-                <td className="px-4 py-3"><span className="inline-flex items-center gap-1"><ShieldCheck className="h-4 w-4 text-blue-600" />{account.role}</span></td>
-                <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${account.account_status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{account.account_status}</span>{account.must_change_password && <span className="ml-2 text-xs text-orange-600">Password change required</span>}</td>
+                <td className="px-4 py-3">{accountName(account)}</td>
+                <td className="px-4 py-3 text-gray-700">{signsInWith(account)}</td>
+                <td className="px-4 py-3">{accountRole(account)}</td>
+                <td className="px-4 py-3">{accountStatus(account)}</td>
                 <td className="px-4 py-3 text-gray-600">{formatDateTime(account.account_created_at)}</td>
-                <td className="px-4 py-3"><div className="flex gap-2">{account.role === 'VENDOR'
-                  ? <button onClick={() => setEditingVendor(account)} title="Change the vendor's name or password" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><Pencil className="h-3.5 w-3.5" />Name / password</button>
-                  : <button onClick={() => void resetPassword(account)} title="Reset password" className="rounded border border-gray-300 p-2 text-gray-600 hover:bg-gray-50"><KeyRound className="h-4 w-4" /></button>}{account.role === 'ADMIN' && onViewActivity && <button onClick={() => onViewActivity(account)} title="Everything this administrator did, from the audit log" className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"><History className="h-3.5 w-3.5" />Activity</button>}{<button onClick={() => void updateStatus(account)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50">{account.account_status === 'ACTIVE' ? 'Disable' : 'Enable'}</button>}</div></td>
+                <td className="px-4 py-3">{accountActions(account)}</td>
               </tr>
             ))}
             {!isLoading && accounts.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No login accounts found.</td></tr>}

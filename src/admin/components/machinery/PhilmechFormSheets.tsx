@@ -345,6 +345,7 @@ export function CashflowSheet({ report, form, cash, cashChanged, savingCash, onC
             return (
               <input
                 aria-label={`${field === 'beginningCash' ? 'Operating cash at the beginning' : 'Other income'} of ${machine?.name ?? cell.machineId}`}
+                data-cash={`${cell.machineId}:${field}`}
                 inputMode="decimal"
                 value={cash[cell.machineId]?.[field] ?? ''}
                 onChange={(event) => onCash(cell.machineId ?? '', field, event.target.value)}
@@ -375,7 +376,9 @@ export function ClientsSheet({ report, form }: { report: PhilmechReport; form: R
   return (
     <div className="space-y-4">
       {report.machines.map((machine) => (
-        <Paper key={machine.machineryId} label={`${CLIENTS_TITLE}: ${machine.name}`}>
+        // The id lets a check before submitting open this machine's list.
+        <div key={machine.machineryId} id={`philmech-clients-${machine.machineryId}`} className="rounded-2xl">
+        <Paper label={`${CLIENTS_TITLE}: ${machine.name}`}>
           <TopBoxes form={form} />
           <Title>{CLIENTS_TITLE}</Title>
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
@@ -385,6 +388,7 @@ export function ClientsSheet({ report, form }: { report: PhilmechReport; form: R
           <GridTable grid={clientGrid(machine)} className="min-w-[900px]" empty="No services recorded for this machine in this cropping." />
           <Signatures form={form} />
         </Paper>
+        </div>
       ))}
     </div>
   );

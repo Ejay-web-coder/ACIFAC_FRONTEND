@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { User, Bell, Shield, Save } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { User, Bell, Shield, Save, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
+import { ActivityLog } from './ActivityLog';
+
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'activity';
 
 export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>(mustChangePassword ? 'security' : 'profile');
+  // ?tab=activity opens the activity log (the old Activity Log page sends members here).
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (mustChangePassword ? 'security' : searchParams.get('tab') === 'activity' ? 'activity' : 'profile'));
   const [profileData, setProfileData] = useState({ name: '', phone: '', membershipNumber: '' });
   const [notificationEmail, setNotificationEmail] = useState<string | null>(null);
   // The saved number (not the one being edited) and whether codes can be texted to it.
@@ -97,11 +103,23 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <Shield className="w-5 h-5" />
               Security
             </button>
+            <button
+              onClick={() => setActiveTab('activity')}
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'activity'
+                  ? 'border-green-600 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <History className="w-5 h-5" />
+              Activity Log
+            </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
+          {activeTab === 'activity' && <ActivityLog />}
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-6">

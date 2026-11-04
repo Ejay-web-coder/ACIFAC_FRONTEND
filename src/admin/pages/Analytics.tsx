@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { BarChart, Bar, ComposedChart, Line, LineChart, XAxis, YAxis, CartesianGrid, Tooltip, LabelList, ReferenceLine, Rectangle, ResponsiveContainer, type BarShapeProps, type LabelProps } from 'recharts';
-import { Download, HandCoins, Store, Tractor, TrendingUp } from 'lucide-react';
+import { HandCoins, Store, Tractor, TrendingUp } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { fetchAnalytics, fetchRevenueTrend, type AnalyticsData, type RevenueGranularity, type RevenueTrend, type RevenueTrendRow } from '../../app/services/authApi';
 import { StatCard } from '../../app/components/common/UiKit';
@@ -52,36 +52,6 @@ const machineryNetOf = (summary: AnalyticsData['summary']) => summary.machineryN
 
 function formatCurrency(value: number) {
   return `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`;
-}
-
-function downloadCsv(data: AnalyticsData) {
-  const rows = [
-    ['Metric', 'Value'],
-    ['Period', `${data.period.from} to ${data.period.to}`],
-    ['Active Members', data.summary.activeMembers],
-    ['New Members', data.summary.newMembers],
-    ['Net Income', netIncomeOf(data.summary)],
-    ['Operating Revenue', data.summary.totalOperatingRevenue],
-    ['Loan Payments', data.summary.loanPayments],
-    ['Interest Collected', data.summary.interestCollected],
-    ['Share Capital Contributions', data.summary.shareCapital],
-    ['Machinery Net Income', machineryNetOf(data.summary)],
-    ['Machinery Rental Fees', data.summary.machineryRevenue],
-    ['Kadiwa Net Sales', data.summary.kadiwaNetSales],
-    ['Outstanding Loan Balance', data.summary.outstandingBalance],
-    ['Overdue Loans', data.summary.overdueLoans],
-    ['Loan Applications', data.summary.loanApplications],
-    ['Pending Applications', data.summary.pendingLoanApplications],
-    ['Requested Loan Amount', data.summary.requestedLoanAmount],
-    ['Maximum Eligible Amount', data.summary.maximumEligibleAmount],
-    ['Projected Repayment', data.summary.projectedRepayment],
-  ];
-  const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  link.download = `acifac-analytics-${data.period.from}-to-${data.period.to}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
 }
 
 export function Analytics({ userRole: _userRole }: AnalyticsProps) {
@@ -169,7 +139,6 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
           {dateRange === 'month' && <select value={selectedMonth} onChange={(event) => setSelectedMonth(Number(event.target.value))} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm">{monthNames.map((month, index) => <option key={month} value={index}>{month}</option>)}</select>}
           {dateRange === 'quarter' && <select value={Math.floor(selectedMonth / 3) * 3} onChange={(event) => setSelectedMonth(Number(event.target.value))} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm">{[0, 3, 6, 9].map((index) => <option key={index} value={index}>Q{index / 3 + 1}</option>)}</select>}
           <select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))} className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm">{[selectedYear - 2, selectedYear - 1, selectedYear, selectedYear + 1].map((year) => <option key={year} value={year}>{year}</option>)}</select>
-          <button onClick={() => data && downloadCsv(data)} disabled={!data || loading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"><Download className="h-4 w-4" /> Export CSV</button>
         </div>
       </div>
 

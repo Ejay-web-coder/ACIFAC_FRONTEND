@@ -7,6 +7,7 @@ import { dateOnlyToday } from '../../../utils/dateTime';
 import { peso } from './InventoryForms';
 import { formatPrice, formatQuantity, periodRange, plainAmount, shiftPeriod, type SalesPeriod } from './SalesForms';
 import { FCA_NAME, KADIWA_STORE_ADDRESS } from './kadiwaReportPdf';
+import { ReportActionBar, ReportFigure, ReportStep } from '../ReportSteps';
 
 // The Kadiwa ng Pangulo sales report the cooperative submits to the DA: every
 // good sold in 15 days (1 to 15, 16 to the end of the month) or a month, with
@@ -51,30 +52,30 @@ export function KadiwaSalesReportPanel() {
       className={`rounded-md px-3 py-1.5 text-sm font-semibold ${period.mode === mode ? 'bg-white text-green-800 shadow-sm' : 'text-gray-600'}`}>{label}</button>
   );
 
+  const hasLines = Boolean(report && report.lines.length);
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] md:p-6" aria-labelledby="kadiwa-report-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="kadiwa-report-title" className="text-lg font-bold text-gray-900">Kadiwa ng Pangulo Sales Report</h2>
-          <p className="text-sm text-gray-600">Every good sold in the period, from the confirmed sales, as the DA sheet lists them.</p>
+    <div className="space-y-4">
+      <ReportStep number={1} title="Choose the period" hint="The DA sheet covers 15 days (1 to 15, or 16 to the end of the month), or a whole month.">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 rounded-lg bg-gray-100 p-0.5" role="group" aria-label="Period">{modeButton('half', '15 days')}{modeButton('month', 'Month')}</div>
+          <div className="flex flex-1 items-center gap-1 sm:flex-none">
+            <button type="button" onClick={() => setPeriod((current) => shiftPeriod(current, -1))} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></button>
+            <span className="flex-1 text-center text-sm font-bold tracking-wide text-gray-900 sm:min-w-[13rem]">{range.title}</span>
+            <button type="button" onClick={() => setPeriod((current) => shiftPeriod(current, 1))} disabled={isFuture || range.to >= dateOnlyToday()} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40" aria-label="Next period"><ChevronRight className="h-4 w-4" /></button>
+          </div>
         </div>
-        <button type="button" onClick={() => void exportPdf()} disabled={!report || loading || exporting || !report.lines.length}
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">
-          {exporting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Export PDF
-        </button>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="grid grid-cols-2 rounded-lg bg-gray-100 p-0.5" role="group" aria-label="Period">{modeButton('half', '15 days')}{modeButton('month', 'Month')}</div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPeriod((current) => shiftPeriod(current, -1))} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></button>
-          <span className="min-w-[13rem] text-center text-sm font-bold tracking-wide text-gray-900">{range.title}</span>
-          <button type="button" onClick={() => setPeriod((current) => shiftPeriod(current, 1))} disabled={isFuture || range.to >= dateOnlyToday()} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40" aria-label="Next period"><ChevronRight className="h-4 w-4" /></button>
+        {/* The period at a glance; net income is for the office, not on the DA sheet. */}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+          <ReportFigure strong label="Total Amount of Goods Sold" value={loading ? '…' : peso(report?.totals.gross ?? 0)} detail="goes on the DA sheet" />
+          <ReportFigure label="Goods listed" value={loading ? '…' : String(report?.lines.length ?? 0)} detail={`${formatQuantity(quantityTotal)} in quantity`} />
+          <ReportFigure label="Sales" value={loading ? '…' : String(report?.totals.sales ?? 0)} detail={report ? `on ${report.totals.days} ${report.totals.days === 1 ? 'day' : 'days'}` : ''} />
+          <ReportFigure label="Net income" value={loading ? '…' : peso(report?.totals.net ?? 0)} detail={report ? `expenses ${peso(report.totals.expenses)} · not on the sheet` : ''} />
         </div>
-      </div>
+      </ReportStep>
 
+      <ReportStep number={2} title="Check the DA sheet" hint="Every good sold in the period, from the confirmed sales only, laid out as it is printed.">
       {/* The sheet as it is printed. */}
-      <div className="mt-4 rounded-xl border border-gray-200 p-3 sm:p-5">
+      <div className="rounded-xl border border-gray-200 p-3 sm:p-5">
         <div className="text-center font-serif text-gray-900">
           <p className="text-lg font-bold">KADIWA NG PANGULO</p>
           <p>Address: <span className="underline">{KADIWA_STORE_ADDRESS}</span></p>
@@ -113,9 +114,19 @@ export function KadiwaSalesReportPanel() {
           </table>
         </div>
       </div>
-      {report && report.lines.length > 0 && (
-        <p className="mt-3 text-xs text-gray-500">{report.totals.sales} {report.totals.sales === 1 ? 'sale' : 'sales'} on {report.totals.days} {report.totals.days === 1 ? 'day' : 'days'} · expenses {peso(report.totals.expenses)} · net income {peso(report.totals.net)} (not on the DA sheet).</p>
-      )}
-    </section>
+      </ReportStep>
+
+      <ReportActionBar status={(
+        <span className="flex items-center gap-2 text-gray-600">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${hasLines ? 'bg-green-500' : 'bg-gray-300'}`} aria-hidden="true" />
+          {loading ? 'Loading the sales…' : hasLines ? `Ready to export: ${range.title}.` : 'No confirmed sales in this period, so there is nothing to export.'}
+        </span>
+      )}>
+        <button type="button" onClick={() => void exportPdf()} disabled={!report || loading || exporting || !hasLines}
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">
+          {exporting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Export PDF
+        </button>
+      </ReportActionBar>
+    </div>
   );
 }

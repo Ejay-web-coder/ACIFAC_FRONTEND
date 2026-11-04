@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Download, FileSpreadsheet, Info, Printer, RefreshCw, Save, Settings2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, FileSpreadsheet, Info, Printer, RefreshCw, Save, Settings2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { SectionCard } from '../../../app/components/common/UiKit';
 import type { Machinery } from '../../../app/services/authApi';
@@ -13,11 +13,12 @@ import { downloadFormExcel, downloadFormPdf, printForm, type CashInputRow } from
 import { CashflowSheet, ClientsSheet, UtilizationSheet, type CashValues, type ReportFilters } from './PhilmechFormSheets';
 import { MONTHS, inputClass, labelClass, primaryButton, secondaryButton, yearOptions } from './shared';
 import { confirmAction } from '../../../app/components/common/ConfirmDialog';
+import { ReportActionBar, ReportStep } from '../ReportSteps';
 
 const SHEETS = [
-  { id: 'utilization', label: '1. Utilization Report & Feedback' },
-  { id: 'cashflow', label: '2. Cashflow Statement' },
-  { id: 'clients', label: '3. List of Farmers Clients' },
+  { id: 'utilization', label: 'Utilization Report & Feedback', short: 'Utilization' },
+  { id: 'cashflow', label: 'Cashflow Statement', short: 'Cashflow' },
+  { id: 'clients', label: 'List of Farmers Clients', short: 'Clients' },
 ] as const;
 type SheetId = typeof SHEETS[number]['id'];
 
@@ -26,6 +27,21 @@ const WARNING_STYLE = {
   warning: { icon: AlertTriangle, className: 'border-amber-200 bg-amber-50 text-amber-900' },
   info: { icon: Info, className: 'border-gray-200 bg-gray-50 text-gray-700' },
 };
+
+// Where each check before submitting is fixed: the page of the form (none = the cropping and months
+// above), the element to scroll to, and what the button says.
+const WARNING_TARGET: Record<string, { sheet?: SheetId; target: (machineryId: string) => string; action: string }> = {
+  NO_BEGINNING_CASH: { sheet: 'cashflow', target: (id) => `[data-cash="${id}:beginningCash"]`, action: 'Enter the beginning cash' },
+  EXPENSE_MISMATCH: { sheet: 'cashflow', target: () => '#philmech-cashflow', action: 'Open the cash flow' },
+  SERVICE_OUTSIDE_MONTHS: { target: () => '#philmech-months', action: 'Change the months' },
+  EXPENSE_OUTSIDE_MONTHS: { target: () => '#philmech-months', action: 'Change the months' },
+  AREA_MISMATCH: { sheet: 'clients', target: (id) => `#philmech-clients-${id}`, action: 'Open the client list' },
+  SERVICE_WITHOUT_AREA: { sheet: 'clients', target: (id) => `#philmech-clients-${id}`, action: 'Open the client list' },
+  UNPAID_NO_PAYMENT: { sheet: 'clients', target: (id) => `#philmech-clients-${id}`, action: 'Open the client list' },
+  FEE_CHANGED: { sheet: 'clients', target: (id) => `#philmech-clients-${id}`, action: 'Open the client list' },
+};
+const FALLBACK_TARGET = { sheet: 'utilization' as SheetId, target: () => '#philmech-sheet', action: 'Open the report' };
+const FLASH = ['ring-4', 'ring-amber-400', 'ring-offset-2'];
 
 // Compared to tell whether the form on screen differs from the saved one.
 const snapshot = (form: ReportForm) => JSON.stringify({ ...form, saved: undefined });
@@ -54,6 +70,7 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
   const [cash, setCash] = useState<CashValues>({});
   const [cashBase, setCashBase] = useState<CashValues>({});
   const [savingCash, setSavingCash] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const formRequest = useRef(0);
@@ -208,34 +225,42 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
     const parent = machinery.find((row) => row.id === machine.parentMachineryId);
     return parent ? `${machine.name} (on ${parent.name})` : machine.name;
   };
-  const warnings = report?.machines.flatMap((machine) => machine.warnings.map((warning) => ({ ...warning, machine: machine.name }))) ?? [];
+  const warnings = report?.machines.flatMap((machine) => machine.warnings.map((warning) => ({ ...warning, machine: machine.name, machineryId: machine.machineryId }))) ?? [];
+
+  // A check opens the page of the form where it is fixed, scrolls to the spot and flashes it.
+  const goToWarning = (warning: typeof warnings[number]) => {
+    const where = WARNING_TARGET[warning.code] ?? FALLBACK_TARGET;
+    if (where.sheet) setSheet(where.sheet);
+    // Wait for the page of the form to render before looking for the spot.
+    window.setTimeout(() => {
+      const element = document.querySelector<HTMLElement>(where.target(warning.machineryId)) ?? document.getElementById('philmech-sheet');
+      if (!element) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) element.focus({ preventScroll: true });
+      element.classList.add(...FLASH);
+      window.setTimeout(() => element.classList.remove(...FLASH), 1800);
+    }, 60);
+  };
   const toReview = warnings.filter((warning) => warning.level !== 'info').length;
   const ready = Boolean(report && draft && formReady);
   const editableMachines = onEditMachine && report
     ? report.machines.map((row) => machinery.find((machine) => machine.id === row.machineryId)).filter((machine): machine is Machinery => Boolean(machine))
     : [];
 
+  const machineCount = report?.machines.length ?? 0;
   return (
     <div className="space-y-4">
-      <SectionCard
-        title="PhilMech Report"
-        description="Farm Machinery Utilization Report and Feedback Form, Cashflow Statement and List of Farmers Clients, laid out like the PhilMech form."
-        actions={<>
-          <button type="button" onClick={() => void save()} disabled={!draft || saving || (!dirty && form?.saved)} className={primaryButton}>
-            <Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save form'}
+      <ReportStep
+        number={1}
+        title="Choose the cropping"
+        hint="The figures come from the services, payments and expenses recorded for these months."
+        aside={(
+          <button type="button" onClick={() => void loadReport()} disabled={loading || !formReady} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-60">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh figures
           </button>
-          <button type="button" onClick={() => void exportAs('pdf')} disabled={!ready || Boolean(exporting)} className={primaryButton}>
-            <Download className="h-4 w-4" />{exporting === 'pdf' ? 'Preparing…' : 'Export PDF'}
-          </button>
-          <button type="button" onClick={() => void exportAs('excel')} disabled={!ready || Boolean(exporting)} className={secondaryButton}>
-            <FileSpreadsheet className="h-4 w-4" />{exporting === 'excel' ? 'Preparing…' : 'Excel'}
-          </button>
-          <button type="button" onClick={() => void exportAs('print')} disabled={!ready || Boolean(exporting)} className={secondaryButton}>
-            <Printer className="h-4 w-4" />Print
-          </button>
-        </>}
+        )}
       >
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div id="philmech-months" className="grid grid-cols-2 gap-3 rounded-xl transition md:grid-cols-5">
           <label className={labelClass}>Cropping period
             <select value={filters.croppingPeriod} onChange={(event) => updateFilters({ croppingPeriod: event.target.value as CroppingPeriod })} className={inputClass}>
               {CROPPING_PERIODS.map((period) => <option key={period} value={period}>{period} cropping</option>)}
@@ -263,47 +288,70 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
             </select>
           </label>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span className={dirty ? 'font-medium text-amber-700' : 'text-gray-600'}>
-            {!form ? 'Loading the form…'
-              : dirty ? 'Unsaved changes. The exports use what is on screen.'
-                : form.saved ? `Form saved for the ${filters.croppingPeriod} cropping of ${filters.year}.`
-                  : `No form saved yet for the ${filters.croppingPeriod} cropping of ${filters.year}; the header is taken from the last one.`}
-          </span>
-          <button type="button" onClick={() => void loadReport()} disabled={loading || !formReady} className="inline-flex items-center gap-1 font-semibold text-green-700 hover:text-green-900 disabled:opacity-60">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh figures
-          </button>
-        </div>
-      </SectionCard>
+        {report && (
+          <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            Covers <strong className="text-gray-900">{report.window.label}</strong> · {machineCount} {machineCount === 1 ? 'machine' : 'machines'}
+          </p>
+        )}
+      </ReportStep>
 
-      {warnings.length > 0 && (
-        <details open={toReview > 0} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)]">
-          <summary className="cursor-pointer text-sm font-semibold text-gray-900">
-            Checks before submitting · {toReview ? `${toReview} to review` : 'nothing to fix'}
-          </summary>
-          <ul className="mt-3 space-y-2">
-            {warnings.map((warning) => {
-              const style = WARNING_STYLE[warning.level];
-              const Icon = style.icon;
-              return (
-                <li key={`${warning.machine}-${warning.code}`} className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-sm ${style.className}`}>
-                  <Icon className="mt-0.5 h-4 w-4 shrink-0" /><span><strong>{warning.machine}:</strong> {warning.message}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      )}
+      <ReportStep
+        number={2}
+        title="Check before submitting"
+        hint="Problems in the records that would make the report wrong."
+        aside={report && (toReview
+          ? <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800"><AlertTriangle className="h-3.5 w-3.5" />{toReview} to review</span>
+          : <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800"><CheckCircle2 className="h-3.5 w-3.5" />Ready</span>)}
+      >
+        {!report ? <p className="text-sm text-gray-500">Checking the records…</p>
+          : warnings.length === 0 ? <p className="flex items-center gap-2 text-sm text-green-800"><CheckCircle2 className="h-4 w-4 shrink-0" />No problems found in the records for this cropping.</p>
+            : (
+              <>
+              {/* Folded away until asked for; the badge above says whether anything needs a look. */}
+              <button type="button" onClick={() => setShowChecks((open) => !open)} aria-expanded={showChecks} aria-controls="philmech-checks"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-left text-sm font-semibold text-gray-800 transition hover:bg-gray-100">
+                <span>{showChecks ? 'Hide' : 'Show'} {warnings.length} {warnings.length === 1 ? 'check' : 'checks'}{toReview ? ` · ${toReview} to review` : ''}</span>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${showChecks ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+              {showChecks && (
+              <ul id="philmech-checks" className="mt-2 space-y-2">
+                {warnings.map((warning) => {
+                  const style = WARNING_STYLE[warning.level];
+                  const Icon = style.icon;
+                  const where = WARNING_TARGET[warning.code] ?? FALLBACK_TARGET;
+                  return (
+                    <li key={`${warning.machineryId}-${warning.code}`}>
+                      <button type="button" onClick={() => goToWarning(warning)} title={where.action}
+                        className={`group flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left text-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${style.className}`}>
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0 flex-1"><strong>{warning.machine}:</strong> {warning.message}</span>
+                        <span className="mt-0.5 inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold underline-offset-2 group-hover:underline">
+                          <span className="hidden sm:inline">{where.action}</span><ChevronRight className="h-4 w-4" />
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              )}
+              </>
+            )}
+      </ReportStep>
 
-      <div role="tablist" aria-label="Pages of the PhilMech form" className="-mx-1 flex gap-1 overflow-x-auto px-1">
-        {SHEETS.map((entry) => (
+      <ReportStep number={3} title="Review and fill in the form" hint="The three pages of the PhilMech form. Type the header, feedback and signatories; the figures fill in by themselves." plain>
+      {/* The three pages as one segmented control. */}
+      <div role="tablist" aria-label="Pages of the PhilMech form" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+        {SHEETS.map((entry, index) => (
           <button key={entry.id} type="button" role="tab" aria-selected={sheet === entry.id} onClick={() => setSheet(entry.id)}
-            className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${sheet === entry.id ? 'bg-emerald-700 text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}>
-            {entry.label}
+            className={`flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 text-sm font-semibold transition ${sheet === entry.id ? 'bg-white text-green-800 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+            <span className={`hidden h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs sm:inline-flex ${sheet === entry.id ? 'bg-green-600 text-white' : 'bg-gray-300 text-white'}`}>{index + 1}</span>
+            <span className="truncate sm:hidden">{entry.short}</span><span className="hidden truncate sm:inline">{entry.label}</span>
           </button>
         ))}
       </div>
 
+      {/* The anchors let a check before submitting scroll to the form. */}
+      <div id="philmech-sheet" className="rounded-2xl">
       {!ready || !report || !draft ? (
         <SectionCard><p className="py-8 text-center text-sm text-gray-500">Loading the report…</p></SectionCard>
       ) : sheet === 'utilization' ? (
@@ -326,6 +374,7 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
           ) : null}
         />
       ) : sheet === 'cashflow' ? (
+        <div id="philmech-cashflow" className="rounded-2xl">
         <CashflowSheet
           report={report}
           form={draft}
@@ -335,9 +384,35 @@ export function PhilmechReportPanel({ machinery, onEditMachine }: { machinery: M
           onCash={(machineryId: string, field: CashInputRow, value: string) => setCash((current) => ({ ...current, [machineryId]: { ...current[machineryId], [field]: value } }))}
           onSaveCash={() => void saveCash()}
         />
+        </div>
       ) : (
         <ClientsSheet report={report} form={draft} />
       )}
+      </div>
+      </ReportStep>
+
+      <ReportActionBar status={(
+        <span className={`flex items-center gap-2 ${dirty ? 'font-medium text-amber-700' : 'text-gray-600'}`}>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${dirty ? 'bg-amber-500' : form?.saved ? 'bg-green-500' : 'bg-gray-300'}`} aria-hidden="true" />
+          {!form ? 'Loading the form…'
+            : dirty ? 'Unsaved changes. The exports use what is on screen.'
+              : form.saved ? `Saved for the ${filters.croppingPeriod} cropping of ${filters.year}.`
+                : `Not saved yet for the ${filters.croppingPeriod} cropping of ${filters.year}; the header is from the last one.`}
+        </span>
+      )}>
+        <button type="button" onClick={() => void save()} disabled={!draft || saving || (!dirty && form?.saved)} className={secondaryButton}>
+          <Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save form'}
+        </button>
+        <button type="button" onClick={() => void exportAs('pdf')} disabled={!ready || Boolean(exporting)} className={primaryButton}>
+          <Download className="h-4 w-4" />{exporting === 'pdf' ? 'Preparing…' : 'Export PDF'}
+        </button>
+        <button type="button" onClick={() => void exportAs('excel')} disabled={!ready || Boolean(exporting)} className={secondaryButton}>
+          <FileSpreadsheet className="h-4 w-4" />{exporting === 'excel' ? 'Preparing…' : 'Excel'}
+        </button>
+        <button type="button" onClick={() => void exportAs('print')} disabled={!ready || Boolean(exporting)} className={secondaryButton}>
+          <Printer className="h-4 w-4" />Print
+        </button>
+      </ReportActionBar>
     </div>
   );
 }

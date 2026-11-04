@@ -212,6 +212,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     setShowForm(false);
   };
 
+  // A machine picked on the availability calendar opens New Booking with it and the day filled in.
+  const bookFromCalendar = (machineryId: string, date: string) => {
+    setFormData((current) => ({ ...current, machineryId, startDate: date, endDate: current.endDate && current.endDate >= date ? current.endDate : date }));
+    setShowForm(true);
+  };
+
   // The PhilMech report moved to its own Report page.
   if (searchParams.get('tab') === 'report') return <Navigate to="/reports" replace />;
 
@@ -353,7 +359,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </div>
       )}
 
-      <MachineAvailabilityCalendar />
+      <MachineAvailabilityCalendar onBook={canEdit ? bookFromCalendar : undefined} />
 
       <div className="bg-white rounded-2xl shadow-[var(--shadow-card)] border border-gray-200">
         <div className="flex flex-col gap-3 border-b border-gray-200 p-6 sm:flex-row sm:items-center sm:justify-between">

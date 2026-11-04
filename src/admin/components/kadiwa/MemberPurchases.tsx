@@ -23,7 +23,8 @@ export function memberPurchaseProblem(row: MemberPurchaseRow, rows: MemberPurcha
 export const pointsFor = (amount: number) => Math.round((amount / PESOS_PER_POINT) * 100) / 100;
 const pointsText = (points: number) => `${points.toLocaleString('en-PH', { maximumFractionDigits: 2 })} ${points === 1 ? 'point' : 'points'}`;
 
-function MemberPicker({ value, onPick, invalid }: { value: KadiwaBuyer | null; onPick: (member: KadiwaBuyer | null) => void; invalid: boolean }) {
+// inputClassName: the box's look without its left padding (the vendor's page uses taller boxes).
+export function MemberPicker({ value, onPick, invalid, inputClassName = 'w-full min-w-0 rounded-lg border border-gray-300 bg-white py-2 pr-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-600' }: { value: KadiwaBuyer | null; onPick: (member: KadiwaBuyer | null) => void; invalid: boolean; inputClassName?: string }) {
   const [text, setText] = useState('');
   const [results, setResults] = useState<KadiwaBuyer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,7 +64,7 @@ function MemberPicker({ value, onPick, invalid }: { value: KadiwaBuyer | null; o
       <input value={text} onChange={(event) => setText(event.target.value)} onFocus={() => results.length && setOpen(true)} autoComplete="off" placeholder="Member ID or name"
         aria-label="Find the member by member ID or name" aria-invalid={invalid || undefined}
         onKeyDown={(event) => { if (event.key === 'Enter' && results[0]) { event.preventDefault(); onPick(results[0]); setOpen(false); } }}
-        className={`${INPUT} pl-8 ${invalid ? 'border-red-400' : ''}`} />
+        className={`${inputClassName} pl-8 ${invalid ? 'border-red-400' : ''}`} />
       {loading && <LoaderCircle className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />}
       {open && text.trim().length >= 2 && !loading && (
         <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" role="listbox">
@@ -81,19 +82,18 @@ function MemberPicker({ value, onPick, invalid }: { value: KadiwaBuyer | null; o
   );
 }
 
-// boxed: a box of its own on the Kadiwa vendor's page, titled without "(optional)".
-export function MemberPurchasesInput({ rows, onChange, onAdd, onRemove, showProblems, salesTotal, boxed = false }: {
+export function MemberPurchasesInput({ rows, onChange, onAdd, onRemove, showProblems, salesTotal }: {
   rows: MemberPurchaseRow[]; onChange: (key: number, change: Partial<MemberPurchaseRow>) => void; onAdd: () => void; onRemove: (key: number) => void;
-  showProblems: boolean; salesTotal: number; boxed?: boolean;
+  showProblems: boolean; salesTotal: number;
 }) {
   const typed = rows.filter(memberPurchaseTyped);
   const total = Math.round(typed.reduce((sum, row) => sum + (MONEY.test(row.amount.trim()) ? Number(row.amount) : 0), 0) * 100) / 100;
   const over = total > salesTotal + 0.001;
   return (
-    <div className={`${boxed ? 'rounded-2xl bg-white p-4' : 'mt-3 rounded-xl p-3'} border ${over && showProblems ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
+    <div className={`mt-3 rounded-xl border p-3 ${over && showProblems ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Member purchases{!boxed && <span className="font-normal text-gray-500"> (optional)</span>}</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Member purchases <span className="font-normal text-gray-500">(optional)</span></h3>
           <p className="text-xs text-gray-500">Members who bought today, by member ID or name, and how much. Each PHP {PESOS_PER_POINT} earns 1 patronage point.</p>
         </div>
         <p className="text-sm text-gray-600">{typed.length} {typed.length === 1 ? 'member' : 'members'} · <span className="font-semibold tabular-nums text-gray-900">{peso(total)}</span> · {pointsText(pointsFor(total))}</p>
@@ -104,11 +104,11 @@ export function MemberPurchasesInput({ rows, onChange, onAdd, onRemove, showProb
           const amount = MONEY.test(row.amount.trim()) ? Number(row.amount) : 0;
           return (
             <li key={row.key}>
-              <div className={`grid items-center gap-2 ${boxed ? 'grid-cols-[minmax(0,1fr)_6.5rem_2.25rem]' : 'grid-cols-[minmax(0,1fr)_6.5rem_2.25rem] sm:grid-cols-[minmax(0,1fr)_8rem_6.5rem_2.25rem]'}`}>
+              <div className={`grid items-center gap-2 grid-cols-[minmax(0,1fr)_6.5rem_2.25rem] sm:grid-cols-[minmax(0,1fr)_8rem_6.5rem_2.25rem]`}>
                 <MemberPicker value={row.member} onPick={(member) => onChange(row.key, { member })} invalid={Boolean(problem) && !row.member} />
                 <input inputMode="decimal" value={row.amount} onChange={(event) => onChange(row.key, { amount: event.target.value })} placeholder="0.00" aria-label={`Member purchase ${index + 1}: amount`}
                   className={`${INPUT} text-right ${problem && row.member ? 'border-red-400' : ''}`} />
-                <span className={`hidden text-right text-xs font-medium tabular-nums text-green-700 ${boxed ? '' : 'sm:block'}`}>{amount > 0 ? pointsText(pointsFor(amount)) : ''}</span>
+                <span className={`hidden text-right text-xs font-medium tabular-nums text-green-700 sm:block`}>{amount > 0 ? pointsText(pointsFor(amount)) : ''}</span>
                 {rows.length > 1 || memberPurchaseTyped(row)
                   ? <button type="button" onClick={() => onRemove(row.key)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove member purchase ${index + 1}`}><Trash2 className="h-4 w-4" /></button>
                   : <span />}

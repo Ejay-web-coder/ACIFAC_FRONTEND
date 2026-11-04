@@ -96,8 +96,7 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 			))}
 		</nav>
 
-		{tab === 'book' && <MachineAvailabilityCalendar onBook={bookFromCalendar} />}
-
+		{/* The booking form first; the calendar under it fills the form when a day is picked. */}
 		{tab === 'book' && <form ref={formRef} onSubmit={submit} className="scroll-mt-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 				<label className="text-sm font-medium text-gray-700 sm:col-span-2">Machinery<select required value={form.machineryId} onChange={event => update('machineryId', event.target.value)} className={inputClass}>
@@ -126,6 +125,8 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 				<button type="submit" disabled={isSubmitting} className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{isSubmitting ? 'Sending...' : 'Request Rental'}</button>
 			</div>
 		</form>}
+
+		{tab === 'book' && <MachineAvailabilityCalendar onBook={bookFromCalendar} />}
 
 		{tab === 'requests' && <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
 			{rentals.length === 0

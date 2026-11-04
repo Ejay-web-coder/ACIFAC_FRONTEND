@@ -52,6 +52,18 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
 
   const services = data?.services ?? [];
 
+  const workOf = (service: MachineryService) => service.unit === 'per_100_bags'
+    ? <>{bags(service.totalBags)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)}</span></>
+    : service.unit === 'per_day' ? `${service.days} day(s)` : hectares(service.areaHa);
+  const clientBadge = (service: MachineryService) => <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${service.clientCategory === 'member' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>{service.clientCategory === 'member' ? 'M' : 'NM'}</span>;
+  const actionsOf = (service: MachineryService) => (
+    <>
+      <button type="button" onClick={() => setPaying(service)} className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-100"><Receipt className="h-3.5 w-3.5" />{service.balance > 0 ? 'Receive Payment' : 'Payments'}</button>
+      <button type="button" onClick={() => setEditing(service)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800" aria-label={`Edit service for ${service.clientName}`}><Pencil className="h-4 w-4" /></button>
+      {service.amountPaid === 0 && <button type="button" onClick={() => void remove(service)} className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-700" aria-label={`Delete service for ${service.clientName}`}><Trash2 className="h-4 w-4" /></button>}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <SectionCard
@@ -101,7 +113,37 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
           </dl>
         )}
 
-        <div className="relative overflow-x-auto">
+        {/* Phones: one card per service instead of a wide table. */}
+        <ul className="divide-y divide-gray-100 md:hidden">
+          {services.map((service) => (
+            <li key={service.id} className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">{service.clientName}{clientBadge(service)}</p>
+                  {service.clientAddress && <p className="text-xs text-gray-500">{service.clientAddress}</p>}
+                </div>
+                <PaymentBadge status={service.paymentStatus} />
+              </div>
+              <div className="text-sm text-gray-700">
+                {service.serviceType}
+                <span className="block text-xs text-gray-500">{formatDate(service.serviceDate, true)} · {service.croppingPeriod} cropping {service.year}</span>
+                <span className="block text-xs text-gray-500">{service.machineryName} · {rateLabel(service.unit, service.rateUsed)}</span>
+              </div>
+              <dl className="grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-3 text-sm tabular-nums">
+                <div><dt className="text-xs text-gray-500">Work</dt><dd className="text-gray-900">{workOf(service)}</dd></div>
+                <div><dt className="text-xs text-gray-500">Fee</dt><dd className="font-semibold text-gray-900">{peso(service.feeAmount)}
+                  {service.computedFeeAmount !== null && <span className="block text-xs font-normal text-amber-700" title={service.feeOverrideReason ?? ''}>rate: {peso(service.computedFeeAmount)}</span>}</dd></div>
+                <div><dt className="text-xs text-gray-500">Paid</dt><dd className="text-gray-900">{peso(service.amountPaid)}</dd></div>
+                <div><dt className="text-xs text-gray-500">Balance</dt><dd className="font-semibold text-gray-900">{peso(service.balance)}</dd></div>
+              </dl>
+              <div className="flex items-center justify-end gap-1">{actionsOf(service)}</div>
+            </li>
+          ))}
+          {data && services.length === 0 && <li className="px-4 py-10 text-center text-sm text-gray-500">No services match these filters.</li>}
+          {!data && <li className="px-4 py-10 text-center text-sm text-gray-500">Loading services…</li>}
+        </ul>
+
+        <div className="relative hidden overflow-x-auto md:block">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
               <tr>
@@ -122,12 +164,12 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
                   <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDate(service.serviceDate, true)}<span className="block text-xs text-gray-500">{service.croppingPeriod} cropping {service.year}</span></td>
                   <td className="px-4 py-3">
                     <span className="font-medium text-gray-900">{service.clientName}</span>
-                    <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${service.clientCategory === 'member' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>{service.clientCategory === 'member' ? 'M' : 'NM'}</span>
+                    {clientBadge(service)}
                     {service.clientAddress && <span className="block text-xs text-gray-500">{service.clientAddress}</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-700">{service.serviceType}<span className="block text-xs text-gray-500">{service.machineryName} · {rateLabel(service.unit, service.rateUsed)}</span></td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-700">
-                    {service.unit === 'per_100_bags' ? <>{bags(service.totalBags)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)}</span></> : service.unit === 'per_day' ? `${service.days} day(s)` : hectares(service.areaHa)}
+                    {workOf(service)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums font-semibold text-gray-900">
                     {peso(service.feeAmount)}
@@ -137,11 +179,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-700">{peso(service.balance)}</td>
                   <td className="px-4 py-3"><PaymentBadge status={service.paymentStatus} /></td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <div className="inline-flex gap-1">
-                      <button type="button" onClick={() => setPaying(service)} className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-100"><Receipt className="h-3.5 w-3.5" />{service.balance > 0 ? 'Receive Payment' : 'Payments'}</button>
-                      <button type="button" onClick={() => setEditing(service)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800" aria-label={`Edit service for ${service.clientName}`}><Pencil className="h-4 w-4" /></button>
-                      {service.amountPaid === 0 && <button type="button" onClick={() => void remove(service)} className="rounded-lg p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-700" aria-label={`Delete service for ${service.clientName}`}><Trash2 className="h-4 w-4" /></button>}
-                    </div>
+                    <div className="inline-flex gap-1">{actionsOf(service)}</div>
                   </td>
                 </tr>
               ))}

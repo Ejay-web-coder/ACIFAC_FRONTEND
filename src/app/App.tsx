@@ -26,7 +26,6 @@ const Settings = lazy(() => import('../admin/pages/Settings').then((module) => (
 const MemberSettings = lazy(() => import('../member/pages/MemberSettings').then((module) => ({ default: module.MemberSettings })));
 const Savings = lazy(() => import('../admin/pages/Savings').then((module) => ({ default: module.Savings })));
 const RentalBooking = lazy(() => import('../member/pages/RentalBooking').then((module) => ({ default: module.RentalBooking })));
-const ActivityLog = lazy(() => import('../member/pages/ActivityLog').then((module) => ({ default: module.ActivityLog })));
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
@@ -152,7 +151,7 @@ export default function App() {
           <Route path="/loan-status" element={<RoleRoute userRole={userRole} allowedRole="member"><LoanStatus userRole={userRole} /></RoleRoute>} />
           <Route path="/transaction" element={<RoleRoute userRole={userRole} allowedRole="member"><Transaction userRole={userRole} /></RoleRoute>} />
           <Route path="/rental-booking" element={<RoleRoute userRole={userRole} allowedRole="member"><RentalBooking userRole={userRole} /></RoleRoute>} />
-          <Route path="/activity-log" element={<RoleRoute userRole={userRole} allowedRole="member"><ActivityLog /></RoleRoute>} />
+          <Route path="/activity-log" element={<RoleRoute userRole={userRole} allowedRole="member"><Navigate to="/settings?tab=activity" replace /></RoleRoute>} />
           <Route path="/membership" element={<RoleRoute userRole={userRole} allowedRole="admin"><MembershipManagement userRole={userRole} /></RoleRoute>} />
           <Route path="/attendance" element={<RoleRoute userRole={userRole} allowedRole="admin"><Attendance userRole={userRole} /></RoleRoute>} />
           <Route path="/loans" element={<RoleRoute userRole={userRole} allowedRole="admin"><LoansPayments userRole={userRole} /></RoleRoute>} />

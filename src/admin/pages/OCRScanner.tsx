@@ -173,7 +173,9 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
   const [acknowledged, setAcknowledged] = useState(false);
   // Blank lines added to each line table of the form shown, by table id.
   const [addedLines, setAddedLines] = useState<Record<string, number>>({});
-  const idPanelRef = useRef<HTMLDivElement>(null);
+  // The open scan is split into tabs so the page stays short.
+  const [panel, setPanel] = useState<'fields' | 'checks' | 'ids'>('fields');
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchDocumentScans()
@@ -191,6 +193,8 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     if (scan.id !== activeScan?.id) setConfirmUndo(false);
     if (scan.id !== activeScan?.id) setRequirementsOpen(false);
     if (scan.id !== activeScan?.id) setAddedLines({});
+    // A form still waiting for its IDs opens on them; any other on its data.
+    if (scan.id !== activeScan?.id) setPanel(missingRequirements(scan).length ? 'ids' : 'fields');
     setActiveScan(scan);
     setDirty(false);
     setAcknowledged(false);
@@ -542,7 +546,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     </div>
   ) : null;
 
-  const scanPages = usePagination(scans, { pageSize: 5 });
+  const scanPages = usePagination(scans, { pageSize: 8 });
 
   const summary = {
     total: scans.length,
@@ -551,187 +555,239 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
     flagged: scans.filter(isFlagged).length,
   };
 
-  return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div><p className="text-gray-600 mt-1">Upload or scan a cooperative form. AI identifies it, checks that it is genuine, verifies it against the records, and saves it to the right module.</p></div>
+  // Brings the open scan into view (on phones it sits above the list).
+  const showWorkspace = () => setTimeout(() => {
+    const top = workspaceRef.current?.getBoundingClientRect().top;
+    if (top !== undefined && (top < 0 || top > window.innerHeight * 0.6)) workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <div className="bg-white rounded-2xl p-4 shadow-[var(--shadow-card)] border border-gray-200"><div className="flex items-center gap-3"><div className="p-3 bg-blue-50 rounded-lg"><ScanLine className="w-6 h-6 text-blue-600" /></div><div><p className="text-sm text-gray-600">Total Scans</p><p className="text-2xl font-bold text-gray-900">{summary.total}</p></div></div></div>
-        <div className="bg-white rounded-2xl p-4 shadow-[var(--shadow-card)] border border-gray-200"><div className="flex items-center gap-3"><div className="p-3 bg-green-50 rounded-lg"><Database className="w-6 h-6 text-green-600" /></div><div><p className="text-sm text-gray-600">Saved to Records</p><p className="text-2xl font-bold text-gray-900">{summary.posted}</p></div></div></div>
-        <div className="bg-white rounded-2xl p-4 shadow-[var(--shadow-card)] border border-gray-200"><div className="flex items-center gap-3"><div className="p-3 bg-yellow-50 rounded-lg"><AlertCircle className="w-6 h-6 text-yellow-600" /></div><div><p className="text-sm text-gray-600">Needs Review</p><p className="text-2xl font-bold text-gray-900">{summary.review}</p></div></div></div>
-        <div className="bg-white rounded-2xl p-4 shadow-[var(--shadow-card)] border border-gray-200"><div className="flex items-center gap-3"><div className="p-3 bg-red-50 rounded-lg"><ShieldAlert className="w-6 h-6 text-red-600" /></div><div><p className="text-sm text-gray-600">Flagged</p><p className="text-2xl font-bold text-gray-900">{summary.flagged}</p></div></div>
-          {canEdit && summary.flagged > 0 && <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void rejectFlagged()} disabled={rejectingFlagged} title="Mark every flagged scan as Rejected. Nothing is deleted." className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${confirmRejectFlagged ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-red-200 text-red-700 hover:bg-red-50'}`}><XCircle className="h-3.5 w-3.5" />{rejectingFlagged ? 'Rejecting...' : confirmRejectFlagged ? `Reject ${summary.flagged} ${summary.flagged === 1 ? 'scan' : 'scans'}?` : 'Reject all flagged'}</button>
-            {confirmRejectFlagged && !rejectingFlagged && <button type="button" onClick={() => setConfirmRejectFlagged(false)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">Cancel</button>}
+  const failedChecks = checks.filter((check) => check.status === 'fail').length;
+  const idProblems = activeScan ? requirementProblems(activeScan).length : 0;
+  const shownPanel = panel === 'ids' && !requirementPanels ? 'fields' : panel;
+  const tabBadge = { amber: 'bg-amber-100 text-amber-800', red: 'bg-red-100 text-red-800', green: 'bg-green-100 text-green-800' };
+  const idsLabel = definition?.photoExpected ? 'IDs & picture' : requirements.length > 1 ? 'IDs' : 'ID';
+  const panelTabs: Array<{ id: typeof panel; label: string; badge?: string; tone?: keyof typeof tabBadge }> = [
+    { id: 'fields', label: 'Extracted data', ...(flags.size && !locked ? { badge: `${flags.size} to check`, tone: 'amber' as const } : {}) },
+    { id: 'checks', label: 'Checks', ...(checks.length ? { badge: `${passedChecks}/${checks.length}`, tone: failedChecks ? 'red' as const : hasWarnings ? 'amber' as const : 'green' as const } : {}) },
+    ...(requirementPanels ? [{ id: 'ids' as const, label: idsLabel,
+      badge: stillNeeded ? 'Needed' : idProblems ? 'Problem' : 'Done', tone: stillNeeded ? 'amber' as const : idProblems ? 'red' as const : 'green' as const }] : []),
+  ];
+
+  const statTiles = [
+    { label: 'Total scans', value: summary.total, icon: ScanLine, tint: 'bg-blue-50 text-blue-600' },
+    { label: 'Saved to records', value: summary.posted, icon: Database, tint: 'bg-green-50 text-green-600' },
+    { label: 'Needs review', value: summary.review, icon: AlertCircle, tint: 'bg-yellow-50 text-yellow-600' },
+    { label: 'Flagged', value: summary.flagged, icon: ShieldAlert, tint: 'bg-red-50 text-red-600' },
+  ];
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-4">
+      <p className="text-sm text-gray-600">Upload or scan a cooperative form. AI identifies it, checks that it is genuine, verifies it against the records, and saves it to the right module.</p>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {statTiles.map(({ label, value, icon: Icon, tint }) => (
+          <div key={label} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-[var(--shadow-card)]">
+            <div className={`rounded-lg p-2 ${tint}`}><Icon className="h-5 w-5" /></div>
+            <div className="min-w-0"><p className="truncate text-xs text-gray-600">{label}</p><p className="text-xl font-bold text-gray-900">{value}</p></div>
+          </div>
+        ))}
+      </div>
+      {canEdit && summary.flagged > 0 && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 px-3 py-2 text-sm text-red-800">
+        <ShieldAlert className="h-4 w-4" />{summary.flagged} flagged {summary.flagged === 1 ? 'scan' : 'scans'}
+        <button type="button" onClick={() => void rejectFlagged()} disabled={rejectingFlagged} title="Mark every flagged scan as Rejected. Nothing is deleted." className={`ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${confirmRejectFlagged ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-red-200 bg-white text-red-700 hover:bg-red-50'}`}><XCircle className="h-3.5 w-3.5" />{rejectingFlagged ? 'Rejecting...' : confirmRejectFlagged ? `Reject ${summary.flagged} ${summary.flagged === 1 ? 'scan' : 'scans'}?` : 'Reject all flagged'}</button>
+        {confirmRejectFlagged && !rejectingFlagged && <button type="button" onClick={() => setConfirmRejectFlagged(false)} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">Cancel</button>}
+      </div>}
+
+      {canEdit && <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label htmlFor="file-upload" onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setDragActive(false); const file = event.dataTransfer.files[0]; if (file) void processFile(file, 'upload'); }}
+            className={`flex flex-1 cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed px-4 py-3 transition-colors ${dragActive ? 'border-blue-600 bg-blue-50' : 'border-gray-300 hover:border-gray-400'} ${processingStage ? 'pointer-events-none opacity-60' : ''}`}>
+            <input type="file" id="file-upload" className="hidden" onChange={handleChange} accept="image/jpeg,image/png,image/webp,application/pdf" disabled={Boolean(processingStage)} />
+            <Upload className="h-7 w-7 shrink-0 text-gray-400" />
+            <span className="min-w-0 text-sm"><span className="font-medium text-blue-600">Upload a document</span><span className="text-gray-600"> or drag it here</span><span className="block text-xs text-gray-500">PNG, JPG, WEBP, PDF up to 10MB</span></span>
+          </label>
+          <button type="button" onClick={() => setScannerOpen(true)} disabled={Boolean(processingStage)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-green-600 px-5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"><Camera className="h-5 w-5" /> Scan with camera</button>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">Membership, loan, savings, machinery, Kadiwa Add Inventory and Kadiwa Daily Sales forms. Multi-page forms are supported.</p>
+        {processingStage && <p className="mt-3 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 animate-pulse">{processingStage}</p>}
+      </div>}
+
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        {/* Recent scans beside the open one, so picking the next scan needs no scrolling. */}
+        <div className="order-last rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)] lg:order-none lg:sticky lg:top-0">
+          <h2 className="border-b border-gray-100 px-4 py-3 font-bold text-gray-900">Recent Scans</h2>
+          {scans.length === 0 ? <p className="p-4 text-sm text-gray-500">Uploaded and scanned documents will appear here after AI analysis.</p> : <>
+            <ul className="divide-y divide-gray-100">{scanPages.pageItems.map((scan) => (
+              <li key={scan.id} className={`flex items-center gap-1 pr-2 ${activeScan?.id === scan.id ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                <button type="button" onClick={() => { showScan(scan); showWorkspace(); }} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left">
+                  <span className="shrink-0 rounded-lg bg-blue-50 p-1.5">{scan.captureSource === 'camera' ? <Camera className="h-4 w-4 text-blue-600" /> : <User className="h-4 w-4 text-blue-600" />}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-gray-900">{scan.documentType}</span>
+                    <span className="block truncate text-xs text-gray-500">{scan.fileName}{scan.posted ? ` · ${scan.posted.module} ${scan.posted.recordId}` : ''}</span>
+                    <span className="mt-1 block"><StatusBadge {...scanStatus(scan)} /></span>
+                  </span>
+                </button>
+                {canEdit && !scan.posted && <div className="flex shrink-0 items-center gap-1">
+                  {confirmDeleteId === scan.id && deletingId !== scan.id && <button type="button" onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-white">Cancel</button>}
+                  <button type="button" onClick={() => void removeScan(scan)} disabled={deletingId !== null} aria-label={`Delete ${scan.fileName}`} title="Delete this scan and its file" className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold disabled:opacity-50 ${confirmDeleteId === scan.id ? 'bg-red-600 text-white hover:bg-red-700' : 'text-red-600 hover:bg-red-50'}`}><Trash2 className="h-4 w-4" />{deletingId === scan.id ? 'Deleting...' : confirmDeleteId === scan.id ? 'Delete?' : ''}</button>
+                </div>}
+              </li>
+            ))}</ul>
+            <Pagination page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" />
+          </>}
+        </div>
+
+        <div ref={workspaceRef} className="min-w-0 scroll-mt-4">
+          {!activeScan && <div className="hidden rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-sm text-gray-500 lg:block">
+            <ScanLine className="mx-auto mb-3 h-10 w-10 text-gray-300" />Upload or scan a form, or pick one from Recent Scans to review it here.
+          </div>}
+
+          {activeScan && <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[var(--shadow-card)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-gray-900">{activeScan.documentType}</h2>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">{activeScan.captureSource === 'camera' ? <Camera className="h-3.5 w-3.5 shrink-0" /> : <Upload className="h-3.5 w-3.5 shrink-0" />}<span className="truncate">{activeScan.fileName}</span></span>
+                  {activeScan.targetModule && <span>Goes to: <span className="font-medium text-gray-700">{activeScan.targetModule}</span></span>}
+                  {definition?.module === 'members' && <span title={activeScan.posted ? undefined : 'Given by the system when the member is saved'}>Membership No.: <span className="font-semibold text-gray-900">{memberNumber || 'Pending'}</span></span>}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge {...scanStatus(activeScan)} />
+                {checks.length > 0 && <span title="The share of verification checks that passed. Forms are saved automatically only when every check passes." className={`rounded-full px-2 py-0.5 text-xs font-semibold ${activeScan.confidence === 100 ? 'bg-green-100 text-green-800' : (activeScan.confidence ?? 0) >= 75 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>{passedChecks}/{checks.length} checks{activeScan.confidence !== null && ` · ${activeScan.confidence}%`}</span>}
+              </div>
+            </div>
+
+            {activeScan.posted && <div className="mt-4 flex flex-col gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-3"><Database className="h-5 w-5 shrink-0" /><p>{activeScan.posted.automatically ? 'Every check passed, so this document was saved automatically' : 'This document was verified and saved'} to <strong>{activeScan.targetModule || activeScan.posted.module}</strong> as record <strong>{activeScan.posted.recordId}</strong> on {new Date(activeScan.posted.at).toLocaleString()}.{activeScan.posted.undoUntil && <> You can undo it until {new Date(activeScan.posted.undoUntil).toLocaleString()}.</>}</p></div>
+              {canEdit && activeScan.posted.undoUntil && <div className="flex shrink-0 items-center gap-2">
+                {confirmUndo && <button type="button" onClick={() => setConfirmUndo(false)} disabled={busy === 'undo'} className="rounded-lg border border-green-300 px-3 py-2 text-green-900 hover:bg-green-100">Keep it</button>}
+                <button type="button" onClick={() => void undo()} disabled={Boolean(busy)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 font-semibold disabled:opacity-50 ${confirmUndo ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-green-300 text-green-900 hover:bg-green-100'}`}><Undo2 className="h-4 w-4" />{busy === 'undo' ? 'Undoing...' : confirmUndo ? `Remove ${activeScan.posted.module === 'members' ? 'the member' : 'the request'}` : 'Undo'}</button>
+              </div>}
+            </div>}
+            {activeScan.undone && !activeScan.posted && <div className="mt-4 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><Undo2 className="h-5 w-5 shrink-0" /><p>The automatic save was undone on {new Date(activeScan.undone.at).toLocaleString()} (record {activeScan.undone.recordId} removed). The scan is saved again only when you save it.</p></div>}
+            {activeScan.processingStatus === 'failed' && <div className={`mt-4 flex flex-col gap-3 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between ${queued(activeScan) ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
+              {queued(activeScan)
+                ? <p className="flex gap-2"><Clock className="h-5 w-5 shrink-0" /><span>The AI service was busy, so this document is queued. It is read again automatically at about {timeOf(activeScan.retry!.nextAt!)} (try {activeScan.retry!.count + 1} of {activeScan.retry!.max + 1}); you do not need to do anything.</span></p>
+                : <p>AI could not read this document: {activeScan.processingError || 'unknown error'}</p>}
+              {canEdit && <button type="button" onClick={() => void retryReading()} disabled={Boolean(busy)} className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${queued(activeScan) ? 'border border-blue-300 text-blue-900 hover:bg-blue-100' : 'bg-red-600 text-white hover:bg-red-700'}`}><RefreshCw className={`h-4 w-4 ${busy === 'retry' ? 'animate-spin' : ''}`} />{busy === 'retry' ? 'Reading again...' : queued(activeScan) ? 'Read now' : 'Retry AI reading'}</button>}
+            </div>}
+            {activeScan.documentType === UNRECOGNIZED && activeScan.processingStatus !== 'failed' && <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">The document type could not be identified confidently. Choose the correct type below.</div>}
+
+            {activeScan.processingStatus !== 'failed' && <>
+              <div role="tablist" className="mt-4 flex gap-1 overflow-x-auto border-b border-gray-200">
+                {panelTabs.map((tab) => (
+                  <button key={tab.id} type="button" role="tab" aria-selected={shownPanel === tab.id} onClick={() => setPanel(tab.id)}
+                    className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium ${shownPanel === tab.id ? 'border-green-600 text-green-700' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>
+                    {tab.label}{tab.badge && <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${tabBadge[tab.tone!]}`}>{tab.badge}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {shownPanel === 'ids' && <div className="mt-4">{requirementPanels}</div>}
+
+              {shownPanel === 'checks' && <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center gap-2 mb-2">{authenticity.verdict === 'genuine' ? <ShieldCheck className="h-5 w-5 text-green-600" /> : <ShieldAlert className={`h-5 w-5 ${authenticity.verdict === 'fake' ? 'text-red-600' : 'text-amber-600'}`} />}<h3 className="font-semibold text-gray-900">Authenticity check</h3></div>
+                  <p className="text-sm text-gray-700">AI verdict: <span className="font-semibold capitalize">{authenticity.verdict || 'unknown'}</span>{typeof authenticity.score === 'number' && <> ({authenticity.score}/100)</>}</p>
+                  <ul className="mt-2 space-y-1 text-sm text-gray-600">
+                    <li>Original paper form: {authenticity.physicalDocument === true ? 'Yes' : authenticity.physicalDocument === false ? 'No / screen or edited image' : 'Unknown'}</li>
+                    <li>Form filled in: {authenticity.filledIn === true ? 'Yes' : authenticity.filledIn === false ? 'No (blank or sample)' : 'Unknown'}</li>
+                    <li>Signature present: {authenticity.signaturePresent === true ? 'Yes' : authenticity.signaturePresent === false ? 'No' : 'Unknown'}</li>
+                    {definition?.photoExpected && <li>2x2 picture recognized on the form: {authenticity.photoRecognized === true ? 'Yes' : authenticity.photoRecognized === false ? 'No' : 'Unknown'}</li>}
+                  </ul>
+                  {(authenticity.issues?.length ?? 0) > 0 && <ul className="mt-2 list-disc pl-5 text-sm text-amber-800">{authenticity.issues!.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+                </div>
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-gray-900">Verification against records</h3>
+                    {!locked && <button type="button" onClick={() => void recheck()} disabled={Boolean(busy) || dirty} title={dirty ? 'Save your corrections first' : undefined} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy === 'verify' ? 'animate-spin' : ''}`} /> Check again</button>}
+                  </div>
+                  {dirty && <p className="mb-2 text-sm text-amber-700">You changed the data. It will be checked again when you save or post.</p>}
+                  {checks.length === 0 ? <p className="text-sm text-gray-500">Not verified yet.</p> : <ul className="space-y-2">{checks.map((check) => {
+                    const { icon: Icon, className } = CHECK_STYLE[check.status];
+                    return <li key={check.id} className="flex gap-2 text-sm"><Icon className={`h-4 w-4 mt-0.5 shrink-0 ${className}`} aria-label={check.status} /><div><p className="font-medium text-gray-800">{check.label}</p><p className="text-gray-600">{check.message}</p></div></li>;
+                  })}</ul>}
+                </div>
+              </div>}
+
+              {shownPanel === 'fields' && <div className="mt-4">
+                {!activeScan.posted && flags.size > 0 && !locked && <div className="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" /><p>{flags.size === 1 ? '1 field needs' : `${flags.size} fields need`} a look: {[...flags.keys()].map((key) => fields.find((field) => field.key === key)?.label.replace(/\s*\(.*\)$/, '') ?? titleCase(key.replace(/^(line|good|store|expense)(\d+)/, '$1 $2 '))).join(', ')}. They are highlighted; every other value passed the checks.</p></div>}
+                {canEdit && !locked && <label className="mb-4 flex flex-col gap-1 text-sm font-medium text-gray-700 sm:flex-row sm:items-center sm:gap-3"><span className="shrink-0">Document type</span><select value={activeScan.documentType} onChange={(event) => changeType(event.target.value)} className="block w-full rounded-xl border border-gray-300 p-2 text-sm sm:max-w-sm">{typeOptions.map((type) => <option key={type}>{type}</option>)}</select></label>}
+                {!locked && <p className="mb-2 text-xs text-gray-500">Compare each value with the paper form.</p>}
+                <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">{fields.filter((field) => !tableRows.some((row) => field.key.startsWith(row.key) && TABLE_FIELD.test(field.key))).map((field) => (
+                  <label key={field.key} className="text-xs font-medium text-gray-600">{field.label}{field.required && <span className="text-red-600"> *</span>}
+                    <input
+                      type={field.kind === 'date' ? 'date' : 'text'}
+                      inputMode={field.kind === 'money' || field.kind === 'number' ? 'decimal' : field.kind === 'integer' ? 'numeric' : field.kind === 'phone' ? 'tel' : undefined}
+                      value={activeScan.extractedData[field.key] || ''}
+                      onChange={(event) => updateField(field.key, event.target.value)}
+                      disabled={locked || !canEdit}
+                      aria-invalid={flags.get(field.key)?.status === 'fail' || undefined}
+                      className={inputClass(field.key, 'mt-1 block w-full rounded-lg border p-2 text-sm font-normal text-gray-900 disabled:bg-gray-50 disabled:text-gray-600')}
+                    />
+                    {flags.get(field.key) && !locked && <span className={`mt-1 block font-normal ${flags.get(field.key)!.status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>Check: {flags.get(field.key)!.labels.join(', ')}</span>}
+                  </label>
+                ))}</div>
+                {tableRows.length > 0 && <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="px-3 py-2 font-semibold">Item</th>{TABLE_COLUMNS.map((column) => <th key={column} className="px-3 py-2 font-semibold">{TABLE_COLUMN_LABELS[column]}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-gray-100">{tableRows.map((row) => (
+                      <tr key={row.key}>
+                        <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{row.label}</td>
+                        {TABLE_COLUMNS.map((column) => <td key={column} className="px-2 py-1.5"><input aria-label={`${row.label} ${TABLE_COLUMN_LABELS[column]}`} value={activeScan.extractedData[`${row.key}${column}`] || ''} onChange={(event) => updateField(`${row.key}${column}`, event.target.value)} disabled={locked || !canEdit} inputMode={column === 'Description' || column === 'Unit' ? undefined : 'decimal'} className={inputClass(`${row.key}${column}`, 'w-full rounded-lg border p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600')} /></td>)}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>}
+                {lineTables.map((lines) => {
+                  const shown = shownLines(lines, activeScan.extractedData, addedLines[lines.id] ?? 0);
+                  const canAdd = canEdit && !locked && (shown[shown.length - 1] ?? 0) < lines.rows;
+                  return (
+                    <div key={lines.id} className="mt-4">
+                      <p className="mb-2 text-sm font-semibold text-gray-800">{lines.label} <span className="font-normal text-gray-500">({shown.length} {shown.length === 1 ? 'line' : 'lines'})</span></p>
+                      <div className="overflow-x-auto rounded-xl border border-gray-200">
+                        <table className="w-full text-sm" style={{ minWidth: `${Math.max(420, lines.columns.length * 120)}px` }}>
+                          <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="w-10 px-3 py-2 font-semibold">#</th>{lines.columns.map((column) => <th key={column.key} className="px-3 py-2 font-semibold">{column.label}</th>)}</tr></thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {shown.map((line) => (
+                              <tr key={line}>
+                                <td className="px-3 py-2 text-gray-500">{line}</td>
+                                {lines.columns.map((column) => <td key={column.key} className="px-2 py-1.5"><input aria-label={`${lines.label} line ${line} ${column.label}`} value={activeScan.extractedData[cellKey(lines, line, column.key)] || ''} onChange={(event) => updateField(cellKey(lines, line, column.key), event.target.value)} disabled={locked || !canEdit} inputMode={column.kind === 'money' || column.kind === 'number' ? 'decimal' : undefined} className={inputClass(cellKey(lines, line, column.key), 'w-full rounded-lg border p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600')} /></td>)}
+                              </tr>
+                            ))}
+                            {!shown.length && <tr><td colSpan={lines.columns.length + 1} className="px-3 py-4 text-center text-gray-500">Nothing was read in this part of the form.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                      {canAdd && <button type="button" onClick={() => setAddedLines((current) => ({ ...current, [lines.id]: (current[lines.id] ?? 0) + 1 }))} className="mt-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add line</button>}
+                    </div>
+                  );
+                })}
+              </div>}
+
+              {/* The actions stay in reach at the bottom of the screen on every tab. */}
+              {canEdit && !locked && fields.length > 0 && <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 -mx-5 -mb-5 mt-5 space-y-2 rounded-b-2xl border-t border-gray-200 bg-white/95 px-5 py-3 backdrop-blur md:bottom-0">
+                {definition && hasWarnings && !dirty && <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5" />I compared the flagged items with the original paper form and confirm the document is genuine.</label>}
+                {stillNeeded ? <p className="text-sm text-amber-800">Submit {stillNeeded} before saving.{shownPanel !== 'ids' && requirementPanels && <> <button type="button" onClick={() => setPanel('ids')} className="font-semibold underline">Open {idsLabel}</button></>}</p>
+                  : definition && verification.status === 'failed' && !dirty && <p className="text-sm text-red-700">This document cannot be saved until the failed checks are fixed. Correct the data from the paper form, or reject it if it is not genuine.</p>}
+                <div className="flex flex-wrap gap-2">
+                  {definition && <button type="button" disabled={!canPost || Boolean(busy)} onClick={() => void post()} className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50"><Database className="h-4 w-4" />{busy === 'post' ? 'Saving...' : `Save to ${definition.moduleLabel.replace(/\s*\(.*\)$/, '')}`}</button>}
+                  <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview()} className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">{busy === 'save' ? 'Saving...' : 'Save corrections'}</button>
+                  <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview(true)} className="px-4 py-2 border border-red-200 text-red-700 text-sm rounded-lg hover:bg-red-50 disabled:opacity-50">{busy === 'reject' ? 'Rejecting...' : 'Reject document'}</button>
+                </div>
+              </div>}
+            </>}
           </div>}
         </div>
       </div>
-
-      {canEdit && <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Document</h2>
-          <div onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setDragActive(false); const file = event.dataTransfer.files[0]; if (file) void processFile(file, 'upload'); }} className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragActive ? 'border-blue-600 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}>
-            <input type="file" id="file-upload" className="hidden" onChange={handleChange} accept="image/jpeg,image/png,image/webp,application/pdf" disabled={Boolean(processingStage)} />
-            <Upload className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <label htmlFor="file-upload" className="cursor-pointer"><span className="text-blue-600 hover:text-blue-700 font-medium">Click to upload</span><span className="text-gray-600"> or drag and drop</span></label>
-            <p className="text-sm text-gray-500 mt-2">PNG, JPG, WEBP, PDF up to 10MB.</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Scan Document</h2>
-          <div className="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
-            <Camera className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <button type="button" onClick={() => setScannerOpen(true)} disabled={Boolean(processingStage)} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"><ScanLine className="h-4 w-4" /> Open camera</button>
-            <p className="text-sm text-gray-500 mt-2">Capture membership, loan, savings, machinery, Kadiwa Add Inventory or Kadiwa Daily Sales forms. Multi-page forms are supported.</p>
-          </div>
-        </div>
-        {processingStage && <p className="md:col-span-2 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700 animate-pulse">{processingStage}</p>}
-      </div>}
-
-      {activeScan && <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
-          <div>
-            <p className="text-sm text-gray-500">Document detected</p>
-            <h2 className="text-xl font-bold text-gray-900">{activeScan.documentType}</h2>
-            <p className="text-sm text-gray-500 mt-1 flex items-center gap-1.5">{activeScan.captureSource === 'camera' ? <Camera className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}{activeScan.fileName}</p>
-            {activeScan.targetModule && <p className="text-sm text-gray-600 mt-1">Goes to: <span className="font-medium">{activeScan.targetModule}</span></p>}
-            {definition?.module === 'members' && <p className="text-sm text-gray-600 mt-1">Membership No.: {activeScan.posted
-              ? <span className="font-semibold text-gray-900">{memberNumber}</span>
-              : <><span className="font-semibold text-gray-900">{memberNumber || 'Pending'}</span> <span className="text-gray-500">(given by the system when the member is saved)</span></>}</p>}
-          </div>
-          <div className="text-right space-y-1">
-            <StatusBadge {...scanStatus(activeScan)} />
-            <p className="text-sm text-gray-600" title="The share of verification checks that passed. Forms are saved automatically only when every check passes.">Confidence: <span className="font-semibold">{checks.length ? `${passedChecks} of ${checks.length} checks passed` : 'Not checked yet'}</span>{activeScan.confidence !== null && checks.length > 0 && <span className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${activeScan.confidence === 100 ? 'bg-green-100 text-green-800' : activeScan.confidence >= 75 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>{activeScan.confidence}%</span>}</p>
-          </div>
-        </div>
-
-        {activeScan.posted && <div className="mt-4 flex flex-col gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-3"><Database className="h-5 w-5 shrink-0" /><p>{activeScan.posted.automatically ? 'Every check passed, so this document was saved automatically' : 'This document was verified and saved'} to <strong>{activeScan.targetModule || activeScan.posted.module}</strong> as record <strong>{activeScan.posted.recordId}</strong> on {new Date(activeScan.posted.at).toLocaleString()}.{activeScan.posted.undoUntil && <> You can undo it until {new Date(activeScan.posted.undoUntil).toLocaleString()}.</>}</p></div>
-          {canEdit && activeScan.posted.undoUntil && <div className="flex shrink-0 items-center gap-2">
-            {confirmUndo && <button type="button" onClick={() => setConfirmUndo(false)} disabled={busy === 'undo'} className="rounded-lg border border-green-300 px-3 py-2 text-green-900 hover:bg-green-100">Keep it</button>}
-            <button type="button" onClick={() => void undo()} disabled={Boolean(busy)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 font-semibold disabled:opacity-50 ${confirmUndo ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-green-300 text-green-900 hover:bg-green-100'}`}><Undo2 className="h-4 w-4" />{busy === 'undo' ? 'Undoing...' : confirmUndo ? `Remove ${activeScan.posted.module === 'members' ? 'the member' : 'the request'}` : 'Undo'}</button>
-          </div>}
-        </div>}
-        {activeScan.undone && !activeScan.posted && <div className="mt-4 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><Undo2 className="h-5 w-5 shrink-0" /><p>The automatic save was undone on {new Date(activeScan.undone.at).toLocaleString()} (record {activeScan.undone.recordId} removed). The scan is saved again only when you save it.</p></div>}
-        {activeScan.processingStatus === 'failed' && <div className={`mt-4 flex flex-col gap-3 rounded-lg border p-4 text-sm sm:flex-row sm:items-center sm:justify-between ${queued(activeScan) ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-red-200 bg-red-50 text-red-800'}`}>
-          {queued(activeScan)
-            ? <p className="flex gap-2"><Clock className="h-5 w-5 shrink-0" /><span>The AI service was busy, so this document is queued. It is read again automatically at about {timeOf(activeScan.retry!.nextAt!)} (try {activeScan.retry!.count + 1} of {activeScan.retry!.max + 1}); you do not need to do anything.</span></p>
-            : <p>AI could not read this document: {activeScan.processingError || 'unknown error'}</p>}
-          {canEdit && <button type="button" onClick={() => void retryReading()} disabled={Boolean(busy)} className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${queued(activeScan) ? 'border border-blue-300 text-blue-900 hover:bg-blue-100' : 'bg-red-600 text-white hover:bg-red-700'}`}><RefreshCw className={`h-4 w-4 ${busy === 'retry' ? 'animate-spin' : ''}`} />{busy === 'retry' ? 'Reading again...' : queued(activeScan) ? 'Read now' : 'Retry AI reading'}</button>}
-        </div>}
-        {activeScan.processingStatus !== 'failed' && !activeScan.posted && flags.size > 0 && !locked && <div className="mt-4 flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" /><p>{flags.size === 1 ? '1 field needs' : `${flags.size} fields need`} a look: {[...flags.keys()].map((key) => fields.find((field) => field.key === key)?.label.replace(/\s*\(.*\)$/, '') ?? titleCase(key.replace(/^(line|good|store|expense)(\d+)/, '$1 $2 '))).join(', ')}. They are highlighted below; every other value passed the checks.</p></div>}
-        {activeScan.documentType === UNRECOGNIZED && activeScan.processingStatus !== 'failed' && <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">The document type could not be identified confidently. Choose the correct type below.</div>}
-
-        {requirementPanels && <div ref={idPanelRef} className="mt-5">{requirementPanels}</div>}
-
-        {activeScan.processingStatus !== 'failed' && <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 p-4">
-            <div className="flex items-center gap-2 mb-2">{authenticity.verdict === 'genuine' ? <ShieldCheck className="h-5 w-5 text-green-600" /> : <ShieldAlert className={`h-5 w-5 ${authenticity.verdict === 'fake' ? 'text-red-600' : 'text-amber-600'}`} />}<h3 className="font-semibold text-gray-900">Authenticity check</h3></div>
-            <p className="text-sm text-gray-700">AI verdict: <span className="font-semibold capitalize">{authenticity.verdict || 'unknown'}</span>{typeof authenticity.score === 'number' && <> ({authenticity.score}/100)</>}</p>
-            <ul className="mt-2 space-y-1 text-sm text-gray-600">
-              <li>Original paper form: {authenticity.physicalDocument === true ? 'Yes' : authenticity.physicalDocument === false ? 'No / screen or edited image' : 'Unknown'}</li>
-              <li>Form filled in: {authenticity.filledIn === true ? 'Yes' : authenticity.filledIn === false ? 'No (blank or sample)' : 'Unknown'}</li>
-              <li>Signature present: {authenticity.signaturePresent === true ? 'Yes' : authenticity.signaturePresent === false ? 'No' : 'Unknown'}</li>
-              {definition?.photoExpected && <li>2x2 picture recognized on the form: {authenticity.photoRecognized === true ? 'Yes' : authenticity.photoRecognized === false ? 'No' : 'Unknown'}</li>}
-            </ul>
-            {(authenticity.issues?.length ?? 0) > 0 && <ul className="mt-2 list-disc pl-5 text-sm text-amber-800">{authenticity.issues!.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <h3 className="font-semibold text-gray-900">Verification against records</h3>
-              {!locked && <button type="button" onClick={() => void recheck()} disabled={Boolean(busy) || dirty} title={dirty ? 'Save your corrections first' : undefined} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${busy === 'verify' ? 'animate-spin' : ''}`} /> Check again</button>}
-            </div>
-            {dirty && <p className="mb-2 text-sm text-amber-700">You changed the data. It will be checked again when you save or post.</p>}
-            {checks.length === 0 ? <p className="text-sm text-gray-500">Not verified yet.</p> : <ul className="space-y-2">{checks.map((check) => {
-              const { icon: Icon, className } = CHECK_STYLE[check.status];
-              return <li key={check.id} className="flex gap-2 text-sm"><Icon className={`h-4 w-4 mt-0.5 shrink-0 ${className}`} aria-label={check.status} /><div><p className="font-medium text-gray-800">{check.label}</p><p className="text-gray-600">{check.message}</p></div></li>;
-            })}</ul>}
-          </div>
-        </div>}
-
-        {canEdit && !locked && activeScan.processingStatus !== 'failed' && <div className="mt-5"><label className="text-sm font-medium text-gray-700">Document type</label><select value={activeScan.documentType} onChange={(event) => changeType(event.target.value)} className="mt-1 block w-full rounded-xl border border-gray-300 p-2.5 text-sm">{typeOptions.map((type) => <option key={type}>{type}</option>)}</select></div>}
-
-        {fields.length > 0 && activeScan.processingStatus !== 'failed' && <div className="mt-5">
-          <p className="text-sm font-medium text-gray-700 mb-3">Extracted information {!locked && <span className="font-normal text-gray-500">— compare each value with the paper form</span>}</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.filter((field) => !tableRows.some((row) => field.key.startsWith(row.key) && TABLE_FIELD.test(field.key))).map((field) => (
-            <label key={field.key} className="text-sm text-gray-700">{field.label}{field.required && <span className="text-red-600"> *</span>}
-              <input
-                type={field.kind === 'date' ? 'date' : 'text'}
-                inputMode={field.kind === 'money' || field.kind === 'number' ? 'decimal' : field.kind === 'integer' ? 'numeric' : field.kind === 'phone' ? 'tel' : undefined}
-                value={activeScan.extractedData[field.key] || ''}
-                onChange={(event) => updateField(field.key, event.target.value)}
-                disabled={locked || !canEdit}
-                aria-invalid={flags.get(field.key)?.status === 'fail' || undefined}
-                className={inputClass(field.key, 'mt-1 block w-full rounded-xl border p-2.5 text-sm disabled:bg-gray-50 disabled:text-gray-600')}
-              />
-              {flags.get(field.key) && !locked && <span className={`mt-1 block text-xs ${flags.get(field.key)!.status === 'fail' ? 'text-red-700' : 'text-amber-700'}`}>Check: {flags.get(field.key)!.labels.join(', ')}</span>}
-            </label>
-          ))}</div>
-          {tableRows.length > 0 && <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="px-3 py-2 font-semibold">Item</th>{TABLE_COLUMNS.map((column) => <th key={column} className="px-3 py-2 font-semibold">{TABLE_COLUMN_LABELS[column]}</th>)}</tr></thead>
-              <tbody className="divide-y divide-gray-100">{tableRows.map((row) => (
-                <tr key={row.key}>
-                  <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">{row.label}</td>
-                  {TABLE_COLUMNS.map((column) => <td key={column} className="px-2 py-1.5"><input aria-label={`${row.label} ${TABLE_COLUMN_LABELS[column]}`} value={activeScan.extractedData[`${row.key}${column}`] || ''} onChange={(event) => updateField(`${row.key}${column}`, event.target.value)} disabled={locked || !canEdit} inputMode={column === 'Description' || column === 'Unit' ? undefined : 'decimal'} className={inputClass(`${row.key}${column}`, 'w-full rounded-lg border p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600')} /></td>)}
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>}
-          {lineTables.map((lines) => {
-            const shown = shownLines(lines, activeScan.extractedData, addedLines[lines.id] ?? 0);
-            const canAdd = canEdit && !locked && (shown[shown.length - 1] ?? 0) < lines.rows;
-            return (
-              <div key={lines.id} className="mt-4">
-                <p className="mb-2 text-sm font-semibold text-gray-800">{lines.label} <span className="font-normal text-gray-500">({shown.length} {shown.length === 1 ? 'line' : 'lines'})</span></p>
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full text-sm" style={{ minWidth: `${Math.max(420, lines.columns.length * 120)}px` }}>
-                    <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="w-10 px-3 py-2 font-semibold">#</th>{lines.columns.map((column) => <th key={column.key} className="px-3 py-2 font-semibold">{column.label}</th>)}</tr></thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {shown.map((line) => (
-                        <tr key={line}>
-                          <td className="px-3 py-2 text-gray-500">{line}</td>
-                          {lines.columns.map((column) => <td key={column.key} className="px-2 py-1.5"><input aria-label={`${lines.label} line ${line} ${column.label}`} value={activeScan.extractedData[cellKey(lines, line, column.key)] || ''} onChange={(event) => updateField(cellKey(lines, line, column.key), event.target.value)} disabled={locked || !canEdit} inputMode={column.kind === 'money' || column.kind === 'number' ? 'decimal' : undefined} className={inputClass(cellKey(lines, line, column.key), 'w-full rounded-lg border p-2 text-sm disabled:bg-gray-50 disabled:text-gray-600')} /></td>)}
-                        </tr>
-                      ))}
-                      {!shown.length && <tr><td colSpan={lines.columns.length + 1} className="px-3 py-4 text-center text-gray-500">Nothing was read in this part of the form.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-                {canAdd && <button type="button" onClick={() => setAddedLines((current) => ({ ...current, [lines.id]: (current[lines.id] ?? 0) + 1 }))} className="mt-1.5 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add line</button>}
-              </div>
-            );
-          })}
-
-          {canEdit && !locked && <div className="mt-5 space-y-3">
-            {definition && hasWarnings && !dirty && <label className="flex items-start gap-2 text-sm text-gray-700"><input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} className="mt-0.5" />I compared the flagged items with the original paper form and confirm the document is genuine.</label>}
-            <div className="flex flex-wrap gap-2">
-              {definition && <button type="button" disabled={!canPost || Boolean(busy)} onClick={() => void post()} className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50"><Database className="h-4 w-4" />{busy === 'post' ? 'Saving...' : `Save to ${definition.moduleLabel.replace(/\s*\(.*\)$/, '')}`}</button>}
-              <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview()} className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50">{busy === 'save' ? 'Saving...' : 'Save corrections'}</button>
-              <button type="button" disabled={Boolean(busy)} onClick={() => void saveReview(true)} className="px-4 py-2 border border-red-200 text-red-700 text-sm rounded-lg hover:bg-red-50 disabled:opacity-50">{busy === 'reject' ? 'Rejecting...' : 'Reject document'}</button>
-            </div>
-            {stillNeeded ? <p className="text-sm text-amber-800">Submit {stillNeeded} above before saving.</p>
-              : definition && verification.status === 'failed' && !dirty && <p className="text-sm text-red-700">This document cannot be saved until the failed checks are fixed. Correct the data from the paper form, or reject it if it is not genuine.</p>}
-          </div>}
-        </div>}
-      </div>}
-
-      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200"><h2 className="text-lg font-bold text-gray-900 mb-4">Recent Scans</h2>{scans.length === 0 ? <p className="text-sm text-gray-500">Uploaded and scanned documents will appear here after AI analysis.</p> : <div className="space-y-3">{scanPages.pageItems.map((scan) => (
-        <div key={scan.id} className={`flex items-center gap-2 border rounded-lg pr-2 hover:bg-gray-50 ${activeScan?.id === scan.id ? 'border-green-300 bg-green-50/40' : 'border-gray-200'}`}>
-          <button type="button" onClick={() => showScan(scan)} className="min-w-0 flex-1 p-4 text-left"><div className="flex items-center gap-3"><div className="p-2 rounded-lg bg-blue-50">{scan.captureSource === 'camera' ? <Camera className="w-5 h-5 text-blue-600" /> : <User className="w-5 h-5 text-blue-600" />}</div><div className="min-w-0"><p className="font-bold text-gray-900 truncate">{scan.documentType}</p><p className="text-sm text-gray-500 truncate">{scan.fileName}{scan.posted ? ` · ${scan.posted.module} ${scan.posted.recordId}` : ''}</p></div><span className="ml-auto shrink-0"><StatusBadge {...scanStatus(scan)} /></span></div></button>
-          {canEdit && !scan.posted && <div className="flex shrink-0 items-center gap-1">
-            {confirmDeleteId === scan.id && deletingId !== scan.id && <button type="button" onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-white">Cancel</button>}
-            <button type="button" onClick={() => void removeScan(scan)} disabled={deletingId !== null} aria-label={`Delete ${scan.fileName}`} title="Delete this scan and its file" className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${confirmDeleteId === scan.id ? 'bg-red-600 text-white hover:bg-red-700' : 'text-red-600 hover:bg-red-50'}`}><Trash2 className="h-4 w-4" />{deletingId === scan.id ? 'Deleting...' : confirmDeleteId === scan.id ? 'Delete?' : ''}</button>
-          </div>}
-        </div>
-      ))}<Pagination className="-mx-6 -mb-6 mt-4" page={scanPages.page} totalPages={scanPages.totalPages} total={scanPages.total} pageSize={scanPages.pageSize} onPageChange={scanPages.setPage} onPageSizeChange={scanPages.setPageSize} label="scans" /></div>}</div>
 
       {scannerOpen && <DocumentScannerModal onClose={() => setScannerOpen(false)} onScanned={(file) => { setScannerOpen(false); void processFile(file, 'camera'); }} />}
       {requirementsOpen && activeScan && requirementPanels && !requirementsDone(activeScan) && (
         <ScanRequirementsModal
           {...requirementsText(activeScan, requiredIdSignatures)}
           problems={requirementProblems(activeScan)}
-          onClose={() => { setRequirementsOpen(false); setTimeout(() => idPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }}
+          onClose={() => { setRequirementsOpen(false); setPanel('ids'); showWorkspace(); }}
         >{requirementPanels}</ScanRequirementsModal>
       )}
       {idCamera && (

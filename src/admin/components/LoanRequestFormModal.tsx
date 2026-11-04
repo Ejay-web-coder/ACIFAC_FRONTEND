@@ -1,7 +1,8 @@
-import { useEffect, type ReactNode } from 'react';
-import { AlertTriangle, CheckCircle, Eye, PenLine, RefreshCcw, X, XCircle } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { AlertTriangle, CheckCircle, Clock, Eye, PenLine, RefreshCcw, X, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AdminLoanRequest } from '../../app/services/authApi';
-import { formatDate, formatDateTime } from '../../utils/dateTime';
+import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
 const peso = (value: number | string | null | undefined) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const text = (value: unknown) => (value === null || value === undefined || String(value).trim() === '' ? '' : String(value));
@@ -34,18 +35,42 @@ function Fields({ rows }: { rows: Array<[string, ReactNode]> }) {
  * before deciding: borrower, farm, loan (with the in-kind table), co-maker,
  * collateral, IDs and signature. Approve or Decline is chosen here.
  */
-export function LoanRequestFormModal({ request, idSummary, onViewSignature, onDecide, onClose }: {
+type Decision = 'approved' | 'declined' | 'evaluation';
+const DECISIONS: Array<{ key: Decision; label: string }> = [
+  { key: 'approved', label: 'Approved' }, { key: 'declined', label: 'Disapproved' }, { key: 'evaluation', label: 'For Evaluation' },
+];
+
+export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewSignature, onDecide, onClose }: {
   request: AdminLoanRequest;
   idSummary?: ReactNode;
+  /** The administrator reviewing it: "Evaluated / Approved by". */
+  reviewerName: string;
   onViewSignature: () => void;
-  onDecide: (status: 'approved' | 'declined') => void;
+  onDecide: (status: 'approved' | 'declined', reason?: string) => Promise<void>;
   onClose: () => void;
 }) {
+  // VI. For Office Use Only: the administrator ticks the decision, then saves it.
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !declining) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, declining]);
+  const decide = async (status: 'approved' | 'declined', reason?: string) => {
+    if (saving) return;
+    setSaving(true);
+    try { await onDecide(status, reason); } finally { setSaving(false); }
+  };
+  const save = () => {
+    if (decision === 'approved') void decide('approved');
+    else if (decision === 'declined') setDeclining(true);
+    else if (decision === 'evaluation') {
+      toast.info(`Application #${request.id} stays pending for evaluation`, { description: 'Open it again to approve or disapprove it.' });
+      onClose();
+    }
+  };
 
   const items = request.inKindItems ?? [];
   const inKindTotal = items.reduce((sum, item) => sum + Math.round(Number(item.quantity) * Number(item.unitPrice) * 100), 0) / 100;
@@ -162,16 +187,92 @@ export function LoanRequestFormModal({ request, idSummary, onViewSignature, onDe
                 ) : <p className="mt-2 text-sm text-slate-500">Not signed.</p>}
               </div>
             </Section>
+
+            {/* Filled in by the office only; members never see this part of their application. */}
+            <Section title="VII. For Office Use Only">
+              <div className="rounded-b-md border border-slate-300 p-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Decision">
+                  {DECISIONS.map(({ key, label }) => {
+                    const disabled = key === 'approved' && blocked;
+                    const on = decision === key;
+                    const tone = key === 'approved' ? 'border-green-600 bg-green-50 text-green-800' : key === 'declined' ? 'border-red-500 bg-red-50 text-red-800' : 'border-amber-500 bg-amber-50 text-amber-900';
+                    return (
+                      <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                        title={disabled ? 'The member must pay at least 80% of the open loan first.' : undefined}>
+                        <input type="radio" name="office-decision" checked={on} disabled={disabled} onChange={() => setDecision(key)} className="h-4 w-4 accent-current" />{label}
+                      </label>
+                    );
+                  })}
+                </div>
+                <dl className="mt-3 grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-300 bg-slate-300 sm:grid-cols-3">
+                  {[
+                    ['Approved Cash Amount (Php)', peso(cashAmount)],
+                    ['Approved In-Kind Amount (Php)', peso(inKindTotal)],
+                    ['Approved Total Amount (Php)', peso(request.amount)],
+                  ].map(([label, value], index) => (
+                    <div key={label} className="bg-white p-2">
+                      <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+                      <dd className={`mt-0.5 min-h-[1.25rem] text-sm tabular-nums text-slate-900 ${index === 2 ? 'font-bold' : 'font-medium'}`}>{decision === 'approved' ? value : ''}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <dl className="mt-2 grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-300 bg-slate-300 sm:grid-cols-[2fr_1fr]">
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Evaluated / Approved by</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decision ? reviewerName : ''}</dd></div>
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Date</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decision ? formatDate(dateOnlyToday()) : ''}</dd></div>
+                </dl>
+                <p className="mt-2 text-xs text-slate-500">
+                  {decision === 'approved' ? 'Saving approves the application as applied for and releases the loan with these amounts.'
+                    : decision === 'declined' ? 'Saving asks for the reason, which is sent to the member.'
+                      : decision === 'evaluation' ? 'The application stays pending until it is approved or disapproved.'
+                        : 'Tick the decision, then save it.'}
+                </p>
+              </div>
+            </Section>
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3 sm:px-6">
-          <button type="button" onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Close</button>
-          <button type="button" onClick={() => onDecide('declined')} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50"><XCircle className="h-4 w-4" />Decline</button>
-          <button type="button" onClick={() => onDecide('approved')} disabled={blocked} title={blocked ? 'The member must pay at least 80% of the open loan first.' : undefined}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"><CheckCircle className="h-4 w-4" />{open && !blocked ? 'Approve & Restructure' : 'Approve'}</button>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 sm:px-6">
+          <button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200">Close</button>
+          <button type="button" onClick={save} disabled={!decision || saving}
+            className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${decision === 'declined' ? 'bg-red-600 hover:bg-red-700' : decision === 'evaluation' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
+            {decision === 'declined' ? <><XCircle className="h-4 w-4" />Disapprove…</>
+              : decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation</>
+                : <><CheckCircle className="h-4 w-4" />{saving ? 'Approving…' : decision === 'approved' && open ? 'Approve & Restructure' : decision === 'approved' ? 'Approve' : 'Tick a decision'}</>}
+          </button>
         </div>
       </div>
+      {declining && <DeclineModal name={request.memberName} saving={saving} onCancel={() => setDeclining(false)} onDecline={(reason) => void decide('declined', reason)} />}
+    </div>
+  );
+}
+
+// Why the application is disapproved (optional); the member is told the reason.
+function DeclineModal({ name, saving, onCancel, onDecline }: { name: string; saving: boolean; onCancel: () => void; onDecline: (reason?: string) => void }) {
+  const [reason, setReason] = useState('');
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  return (
+    <div className="acf-modal fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true" aria-labelledby="decline-title">
+      <form onSubmit={(event) => { event.preventDefault(); onDecline(reason.trim() || undefined); }} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600"><XCircle className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h3 id="decline-title" className="text-lg font-bold text-slate-900">Disapprove {name}&apos;s application?</h3>
+            <p className="text-sm text-slate-600">The member is told it was declined, with the reason below.</p>
+          </div>
+        </div>
+        <label className="mt-4 block text-sm font-medium text-slate-700">Reason <span className="font-normal text-slate-500">(optional)</span>
+          <textarea autoFocus rows={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. The farm area could not be verified."
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200" />
+        </label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200">Cancel</button>
+          <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"><XCircle className="h-4 w-4" />{saving ? 'Declining…' : 'Disapprove'}</button>
+        </div>
+      </form>
     </div>
   );
 }
