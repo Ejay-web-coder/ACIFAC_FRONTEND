@@ -8,6 +8,24 @@ body,
   overflow-x: hidden;
 }
 
+/* Computers: the app's frame (sidebar, top bar, page area) fills the window
+   and never moves; only the page area scrolls. Without this the window itself
+   could scroll (overflow-x: hidden above makes html, body and #root
+   scrollable), sliding the whole frame up and leaving white space below. */
+@media (min-width: 768px) {
+  html.acf-shell-lock,
+  html.acf-shell-lock body,
+  html.acf-shell-lock #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  .acf-shell {
+    height: 100dvh;
+    overflow: hidden;
+    overflow: clip;
+  }
+}
+
 body {
   margin: 0;
   background: #ffffff;

@@ -1,7 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
-import { createVendorAccountRequest, setVendorPasswordRequest, updateVendorAccountRequest, type Account } from '../../app/services/authApi';
+import { createVendorAccountRequest, fetchKadiwaBranches, setVendorPasswordRequest, updateVendorAccountRequest, type Account, type KadiwaBranch } from '../../app/services/authApi';
+
+// The open Kadiwa branches a vendor can sell at.
+function useOpenBranches() {
+  const [branches, setBranches] = useState<KadiwaBranch[]>([]);
+  useEffect(() => { fetchKadiwaBranches().then((response) => setBranches(response.branches.filter((branch) => branch.status === 'active'))).catch(() => undefined); }, []);
+  return branches;
+}
 
 const INPUT = 'mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2';
 const PASSWORD_HINT = 'Use 8+ characters with uppercase, lowercase, number, and symbol.';
@@ -10,6 +17,8 @@ const PASSWORD_HINT = 'Use 8+ characters with uppercase, lowercase, number, and 
 // username to sign in with, and the password the administrator gives the vendor.
 export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const [form, setForm] = useState({ fullName: '', username: '', password: '', confirmPassword: '' });
+  const branches = useOpenBranches();
+  const [branchId, setBranchId] = useState<number | ''>('');
   const [saving, setSaving] = useState(false);
   const set = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [field]: event.target.value });
 
@@ -19,7 +28,7 @@ export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => vo
     if (form.password !== form.confirmPassword) { toast.error('The passwords do not match.'); return; }
     setSaving(true);
     try {
-      const response = await createVendorAccountRequest({ ...form, username: form.username.trim().toLowerCase(), fullName: form.fullName.trim() });
+      const response = await createVendorAccountRequest({ ...form, username: form.username.trim().toLowerCase(), fullName: form.fullName.trim(), branchId: branchId || branches[0]?.id });
       toast.success('Vendor account created', { description: response.message });
       onCreated();
     } catch (error) {
@@ -48,6 +57,12 @@ export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => vo
         <label className="text-sm font-medium text-gray-700">Confirm password
           <input required minLength={8} type="password" autoComplete="new-password" value={form.confirmPassword} onChange={set('confirmPassword')} className={INPUT} />
         </label>
+        <label className="text-sm font-medium text-gray-700">Branch
+          <select value={branchId || branches[0]?.id || ''} onChange={(event) => setBranchId(Number(event.target.value))} className={INPUT}>
+            {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+          </select>
+          <span className="mt-1 block text-xs font-normal text-gray-500">The vendor sells and records sales at this branch only.</span>
+        </label>
       </div>
       <div className="mt-4 flex gap-2">
         <button type="submit" disabled={saving} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Creating...' : 'Create vendor account'}</button>
@@ -60,6 +75,8 @@ export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => vo
 // Change a vendor's name or set a new password (the vendor is signed out and uses the new one).
 export function VendorAccountEditor({ account, onClose, onSaved }: { account: Account; onClose: () => void; onSaved: () => void }) {
   const [fullName, setFullName] = useState(account.full_name || '');
+  const branches = useOpenBranches();
+  const [branchId, setBranchId] = useState<number>(account.kadiwa_branch_id ?? 1);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState<'name' | 'password' | null>(null);
@@ -69,11 +86,11 @@ export function VendorAccountEditor({ account, onClose, onSaved }: { account: Ac
     if (saving) return;
     setSaving('name');
     try {
-      const response = await updateVendorAccountRequest(account.user_id, fullName.trim());
+      const response = await updateVendorAccountRequest(account.user_id, fullName.trim(), branchId);
       toast.success(response.message);
       onSaved();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to save the name.');
+      toast.error(error instanceof Error ? error.message : 'Unable to save the vendor.');
     } finally {
       setSaving(null);
     }
@@ -110,7 +127,13 @@ export function VendorAccountEditor({ account, onClose, onSaved }: { account: Ac
           <label className="block text-sm font-medium text-gray-700">Full name
             <input required minLength={3} maxLength={200} value={fullName} onChange={(event) => setFullName(event.target.value)} className={INPUT} />
           </label>
-          <button type="submit" disabled={saving !== null || fullName.trim() === (account.full_name || '')} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">{saving === 'name' ? 'Saving...' : 'Save name'}</button>
+          <label className="block text-sm font-medium text-gray-700">Branch
+            <select value={branchId} onChange={(event) => setBranchId(Number(event.target.value))} className={INPUT}>
+              {!branches.some((branch) => branch.id === branchId) && <option value={branchId}>{account.kadiwa_branch_name || 'Current branch'}</option>}
+              {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+          </label>
+          <button type="submit" disabled={saving !== null || (fullName.trim() === (account.full_name || '') && branchId === (account.kadiwa_branch_id ?? 1))} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50">{saving === 'name' ? 'Saving...' : 'Save'}</button>
         </form>
         <form onSubmit={(event) => void savePassword(event)} className="space-y-2 border-t border-gray-100 pt-4">
           <p className="text-sm font-semibold text-gray-900">Set a new password</p>

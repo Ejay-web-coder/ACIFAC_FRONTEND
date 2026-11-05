@@ -7,6 +7,8 @@ import type { Pagination } from './authApi';
 export type ActivityCategory = 'community_development' | 'education_training' | 'meeting';
 export type ActivityStatus = 'scheduled' | 'completed' | 'cancelled';
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused';
+/** all: every member must attend; selected: only the members chosen. */
+export type AttendeeScope = 'all' | 'selected';
 
 export const ACTIVITY_CATEGORIES: Array<{ value: ActivityCategory; label: string }> = [
   { value: 'community_development', label: 'Community Development' },
@@ -43,6 +45,9 @@ export interface Activity {
   description: string;
   organizer: string;
   status: ActivityStatus;
+  attendeeScope: AttendeeScope;
+  /** How many members were chosen (selected members only). */
+  inviteeCount: number;
   finalizedAt: string | null;
   finalizedBy: string | null;
   cancelledAt: string | null;
@@ -62,7 +67,11 @@ export interface Activity {
   rate: number | null;
 }
 
+export interface ActivityInvitee { id: number; memberNumber: string | null; name: string }
+
 export interface ActivityDetails extends Activity {
+  /** The members who must attend, when only selected members must. */
+  invitees: ActivityInvitee[];
   /** Members on the list: everyone who was a member on the activity date, and anyone already recorded. */
   members: number;
   unmarked: number;
@@ -84,6 +93,9 @@ export interface ActivityInput {
   organizer: string;
   status: ActivityStatus;
   cancellationReason?: string;
+  attendeeScope: AttendeeScope;
+  /** The members who must attend (selected members only); left out to keep them as they are. */
+  memberIds?: number[];
 }
 
 export interface ActivityMemberRow {

@@ -147,7 +147,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
   return (
     <div className="space-y-3 lg:space-y-4">
       {/* Your total savings */}
-      <Link to="/member-profile" className="grid gap-3 rounded-3xl bg-[#1b3d26] p-4 text-white shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-raised)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-8 lg:p-7">
+      <Link to="/member/savings" className="grid gap-3 rounded-3xl bg-[#1b3d26] p-4 text-white shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-raised)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-8 lg:p-7">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white/90 lg:text-lg">Your total savings</p>
           <div className="mt-1 text-[3.25rem] lg:mt-3 lg:text-[5.5rem]">
@@ -192,7 +192,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
             <button key={key} type="button" role="tab" aria-selected={listTab === key} onClick={() => setListTab(key)}
               className={`min-h-9 flex-1 rounded-lg px-2 text-sm font-semibold ${listTab === key ? 'bg-green-50 text-green-900 ring-1 ring-green-200' : 'text-gray-600 hover:bg-gray-50'}`}>{label}</button>
           ))}
-          <Link to={listTab === 'transactions' ? '/transaction' : '/member-profile'} className="inline-flex min-h-9 shrink-0 items-center rounded-lg px-1.5 text-green-800 hover:bg-green-50" aria-label={listTab === 'transactions' ? 'View all transactions' : 'My attendance'}><ChevronRight className="h-5 w-5" /></Link>
+          <Link to={listTab === 'transactions' ? '/transaction' : '/member/attendance'} className="inline-flex min-h-9 shrink-0 items-center rounded-lg px-1.5 text-green-800 hover:bg-green-50" aria-label={listTab === 'transactions' ? 'View all transactions' : 'My attendance'}><ChevronRight className="h-5 w-5" /></Link>
         </div>
         {listTab === 'transactions' ? transactionsList : <UpcomingActivities limit={2} embedded />}
       </section>

@@ -51,6 +51,9 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
 }) {
   // VI. For Office Use Only: the administrator ticks the decision, then saves it.
   const [decision, setDecision] = useState<Decision | null>(null);
+  // An application already approved or disapproved opens read-only, ticked with its decision.
+  const decided = request.status !== 'pending';
+  const shown: Decision | null = decided ? (request.status as Decision) : decision;
   const [declining, setDeclining] = useState(false);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -76,7 +79,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
   const inKindTotal = items.reduce((sum, item) => sum + Math.round(Number(item.quantity) * Number(item.unitPrice) * 100), 0) / 100;
   const cashAmount = Math.max(0, request.amount - inKindTotal);
   // The member's open loan: approving restructures it once 80% is paid; before that it blocks approval.
-  const open = request.openLoanNumber && request.openLoanTotal ? {
+  const open = !decided && request.openLoanNumber && request.openLoanTotal ? {
     number: request.openLoanNumber, balance: request.openLoanBalance ?? 0, total: request.openLoanTotal,
     paidPercent: Math.floor(((request.openLoanTotal - (request.openLoanBalance ?? 0)) / request.openLoanTotal) * 1000) / 10,
   } : null;
@@ -193,12 +196,12 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
               <div className="rounded-b-md border border-slate-300 p-3">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Decision">
                   {DECISIONS.map(({ key, label }) => {
-                    const disabled = key === 'approved' && blocked;
-                    const on = decision === key;
+                    const disabled = decided || (key === 'approved' && blocked);
+                    const on = shown === key;
                     const tone = key === 'approved' ? 'border-green-600 bg-green-50 text-green-800' : key === 'declined' ? 'border-red-500 bg-red-50 text-red-800' : 'border-amber-500 bg-amber-50 text-amber-900';
                     return (
-                      <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
-                        title={disabled ? 'The member must pay at least 80% of the open loan first.' : undefined}>
+                      <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled && !on ? 'cursor-not-allowed opacity-50' : disabled ? 'cursor-default' : ''}`}
+                        title={disabled && !decided ? 'The member must pay at least 80% of the open loan first.' : undefined}>
                         <input type="radio" name="office-decision" checked={on} disabled={disabled} onChange={() => setDecision(key)} className="h-4 w-4 accent-current" />{label}
                       </label>
                     );
@@ -212,16 +215,18 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                   ].map(([label, value], index) => (
                     <div key={label} className="bg-white p-2">
                       <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-                      <dd className={`mt-0.5 min-h-[1.25rem] text-sm tabular-nums text-slate-900 ${index === 2 ? 'font-bold' : 'font-medium'}`}>{decision === 'approved' ? value : ''}</dd>
+                      <dd className={`mt-0.5 min-h-[1.25rem] text-sm tabular-nums text-slate-900 ${index === 2 ? 'font-bold' : 'font-medium'}`}>{shown === 'approved' ? value : ''}</dd>
                     </div>
                   ))}
                 </dl>
                 <dl className="mt-2 grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-300 bg-slate-300 sm:grid-cols-[2fr_1fr]">
-                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Evaluated / Approved by</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decision ? reviewerName : ''}</dd></div>
-                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Date</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decision ? formatDate(dateOnlyToday()) : ''}</dd></div>
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Evaluated / Approved by</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? '' : decision ? reviewerName : ''}</dd></div>
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Date</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? (request.reviewedAt ? formatDate(request.reviewedAt) : '') : decision ? formatDate(dateOnlyToday()) : ''}</dd></div>
                 </dl>
+                {decided && request.status === 'declined' && request.reviewNotes && <p className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-800">Reason: {request.reviewNotes}</p>}
                 <p className="mt-2 text-xs text-slate-500">
-                  {decision === 'approved' ? 'Saving approves the application as applied for and releases the loan with these amounts.'
+                  {decided ? `This application was ${request.status === 'approved' ? 'approved' : 'disapproved'}${request.reviewedAt ? ` on ${formatDate(request.reviewedAt)}` : ''}.`
+                    : decision === 'approved' ? 'Saving approves the application as applied for and releases the loan with these amounts.'
                     : decision === 'declined' ? 'Saving asks for the reason, which is sent to the member.'
                       : decision === 'evaluation' ? 'The application stays pending until it is approved or disapproved.'
                         : 'Tick the decision, then save it.'}
@@ -233,12 +238,12 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
 
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 sm:px-6">
           <button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200">Close</button>
-          <button type="button" onClick={save} disabled={!decision || saving}
+          {!decided && <button type="button" onClick={save} disabled={!decision || saving}
             className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${decision === 'declined' ? 'bg-red-600 hover:bg-red-700' : decision === 'evaluation' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
             {decision === 'declined' ? <><XCircle className="h-4 w-4" />Disapprove…</>
               : decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation</>
                 : <><CheckCircle className="h-4 w-4" />{saving ? 'Approving…' : decision === 'approved' && open ? 'Approve & Restructure' : decision === 'approved' ? 'Approve' : 'Tick a decision'}</>}
-          </button>
+          </button>}
         </div>
       </div>
       {declining && <DeclineModal name={request.memberName} saving={saving} onCancel={() => setDeclining(false)} onDecline={(reason) => void decide('declined', reason)} />}

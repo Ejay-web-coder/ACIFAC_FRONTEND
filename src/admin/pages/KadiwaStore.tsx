@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Search, Plus, Receipt, ShoppingCart, Package, Pencil, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { AlertTriangle, Search, Plus, Receipt, Send, ShoppingCart, Package, Pencil, Store, Trash2, TrendingUp, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
-import { fetchKadiwaData, restockKadiwaInventory, type KadiwaGood, type KadiwaInventoryItem, type KadiwaSale, type KadiwaSummary } from '../../app/services/authApi';
+import { fetchKadiwaData, restockKadiwaInventory, type KadiwaBranch, type KadiwaBranchFilter, type KadiwaGood, type KadiwaInventoryItem, type KadiwaSale, type KadiwaSummary } from '../../app/services/authApi';
+import { BranchesModal } from '../components/kadiwa/BranchesModal';
+import { SendToBranchModal } from '../components/kadiwa/SendToBranchModal';
 import { AddInventorySheet, DeleteInventoryItem, EditInventoryItem, lineValue, peso, productLabel, sizeLabel, unitProfit } from '../components/kadiwa/InventoryForms';
 import { NewSaleSheet, SalesHistory, type SalesPeriod } from '../components/kadiwa/SalesForms';
 import { VendorSalesReview } from '../components/kadiwa/VendorSalesReview';
@@ -12,6 +14,14 @@ import { Pagination } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 
 type InventoryItem = KadiwaInventoryItem;
+// The branch shown is kept in this browser; the office's own store, the main
+// store (branch 1), comes first.
+const BRANCH_KEY = 'acifac-kadiwa-branch';
+const MAIN_BRANCH_ID = 1;
+const savedBranch = (): KadiwaBranchFilter => {
+  const value = window.localStorage.getItem(BRANCH_KEY);
+  return value === 'all' ? 'all' : value && Number(value) > 0 ? Number(value) : MAIN_BRANCH_ID;
+};
 
 interface KadiwaStoreProps {
   userRole: UserRole;
@@ -35,10 +45,19 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   // Sales History opens on today; it reloads whenever the Kadiwa data does.
   const [historyPeriod, setHistoryPeriod] = useState<SalesPeriod>(() => ({ mode: 'day', date: dateOnlyToday() }));
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [branches, setBranches] = useState<KadiwaBranch[]>([]);
+  const [branch, setBranchState] = useState<KadiwaBranchFilter>(savedBranch);
+  const [showBranches, setShowBranches] = useState(false);
+  // The product whose stock is being sent to another branch.
+  const [sendingItem, setSendingItem] = useState<InventoryItem | null>(null);
+  const setBranch = (value: KadiwaBranchFilter) => { setBranchState(value); window.localStorage.setItem(BRANCH_KEY, String(value)); };
 
   const loadData = useCallback(() => {
-    fetchKadiwaData({ limit: 100 })
+    fetchKadiwaData({ limit: 100, branch })
       .then((data) => {
+        setBranches(data.branches);
+        // A branch saved here that no longer exists falls back to every branch.
+        if (branch !== 'all' && !data.branches.some((item) => item.id === branch)) setBranch(MAIN_BRANCH_ID);
         setGoods(data.goods);
         setInventory(data.inventory);
         setSummary(data.summary);
@@ -47,7 +66,8 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
         setError('');
       })
       .catch((loadError: Error) => setError(loadError.message));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branch]);
 
   useEffect(() => { loadData(); }, [loadData]);
   useLiveRefresh(['kadiwa_inventory', 'kadiwa_sales'], loadData);
@@ -71,6 +91,14 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   const inventoryValue = summary?.inventoryValue ?? 0;
 
   const canEdit = userRole === 'admin';
+  // New sales and products go to the branch shown, or (all branches) to an open branch chosen in the form.
+  const openBranches = branches.filter((item) => item.status === 'active');
+  const shownBranch = branch === 'all' ? null : branches.find((item) => item.id === branch) ?? null;
+  const formBranches = shownBranch ? (shownBranch.status === 'active' ? [shownBranch] : []) : openBranches;
+  // Products can be added to any open branch; the one shown comes first.
+  const inventoryBranches = shownBranch?.status === 'active' ? [shownBranch, ...openBranches.filter((item) => item.id !== shownBranch.id)] : openBranches;
+  const manyBranches = branches.length > 1;
+  const showBranchNames = branch === 'all' && manyBranches;
 
   // The today cards open today's sales, where each sale and product sold can be checked.
   const openTodaysSales = () => {
@@ -131,6 +159,11 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   );
   const editButton = (item: InventoryItem) => (
     <span className="inline-flex items-center gap-1">
+      {openBranches.some((branch) => branch.id !== item.branchId) && (
+        <button type="button" onClick={() => setSendingItem(item)} disabled={item.stock <= 0} className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-40" aria-label={`Send ${productLabel(item)} to a branch`} title="Send stock to another branch">
+          <Send className="h-3.5 w-3.5" />Send
+        </button>
+      )}
       <button type="button" onClick={() => setEditingItem(item)} className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50" aria-label={`Edit ${productLabel(item)}`}>
         <Pencil className="h-3.5 w-3.5" />Edit
       </button>
@@ -164,8 +197,22 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm text-gray-600">Manage sales and store stock</p>
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600">Manage sales and store stock{shownBranch ? ` of ${shownBranch.name}` : manyBranches ? ' of every branch' : ''}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {manyBranches && (
+              <select value={String(branch)} onChange={(event) => setBranch(event.target.value === 'all' ? 'all' : Number(event.target.value))} aria-label="Branch shown" className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800">
+                {branches.map((item) => <option key={item.id} value={item.id}>{item.name}{item.status === 'closed' ? ' (closed)' : ''}</option>)}
+                <option value="all">All branches</option>
+              </select>
+            )}
+            {canEdit && (
+              <button type="button" onClick={() => setShowBranches(true)} className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                <Store className="h-4 w-4 text-green-700" />{manyBranches ? 'Branches' : 'Add a branch'}
+              </button>
+            )}
+          </div>
+          {shownBranch?.status === 'closed' && <p className="text-sm text-amber-800">{shownBranch.name} is closed: its records are shown, but it takes no new sales or products.</p>}
           {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </div>
         {canEdit && (
@@ -173,6 +220,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
             <button
               type="button"
               onClick={() => setShowStockForm(true)}
+              disabled={!inventoryBranches.length}
               className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"
             >
               <Package className="h-4 w-4" />
@@ -181,7 +229,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
             <button
               type="button"
               onClick={() => setShowForm(true)}
-              disabled={!goods.length}
+              disabled={!goods.length || !formBranches.length}
               className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:cursor-wait disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
@@ -292,7 +340,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   {productName(item)}
-                  <p className="text-xs text-gray-500">{item.id} · {item.category}</p>
+                  <p className="text-xs text-gray-500">{item.id} · {item.category}{showBranchNames && item.branchName ? ` · ${item.branchName}` : ''}</p>
                 </div>
                 <p className="shrink-0 text-right font-bold tabular-nums text-gray-900">{peso(lineValue(item))}</p>
               </div>
@@ -333,7 +381,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
                 <tr key={item.id} className="align-middle hover:bg-gray-50">
                   <td className="px-4 py-3">
                     {productName(item)}
-                    <p className="text-xs text-gray-500">{item.id} · low at {item.reorderLevel} {item.unit}</p>
+                    <p className="text-xs text-gray-500">{item.id} · low at {item.reorderLevel} {item.unit}{showBranchNames && item.branchName ? ` · ${item.branchName}` : ''}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{item.category}</td>
                   <td className="px-4 py-3 text-right">{stockBadge(item)}</td>
@@ -360,12 +408,14 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
         <Pagination page={inventoryPages.page} totalPages={inventoryPages.totalPages} total={inventoryPages.total} pageSize={inventoryPages.pageSize} onPageChange={inventoryPages.setPage} onPageSizeChange={inventoryPages.setPageSize} label="products" />
       </div>}
 
-      {activeSection === 'sales' && <div id="kadiwa-sales" className="scroll-mt-4"><SalesHistory period={historyPeriod} onPeriodChange={setHistoryPeriod} refreshKey={historyRefresh} /></div>}
+      {activeSection === 'sales' && <div id="kadiwa-sales" className="scroll-mt-4"><SalesHistory period={historyPeriod} onPeriodChange={setHistoryPeriod} refreshKey={historyRefresh} branch={branch} showBranch={showBranchNames} /></div>}
 
       {showForm && (
         <NewSaleSheet
           goods={goods}
           inventory={inventory}
+          branches={formBranches}
+          defaultBranchId={formBranches[0]?.id ?? 1}
           onClose={() => setShowForm(false)}
           onSaved={(sale) => { setShowForm(false); setActiveSection('sales'); setHistoryPeriod({ mode: 'day', date: sale.saleDate }); loadData(); }}
         />
@@ -373,10 +423,15 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
 
       {showStockForm && (
         <AddInventorySheet
+          branches={inventoryBranches}
+          defaultBranchId={inventoryBranches[0]?.id ?? 1}
           onClose={() => setShowStockForm(false)}
           onSaved={() => { setShowStockForm(false); setActiveSection('inventory'); loadData(); }}
         />
       )}
+
+      {sendingItem && <SendToBranchModal item={sendingItem} branches={branches} onClose={() => setSendingItem(null)} onSent={() => { setSendingItem(null); loadData(); }} />}
+      {showBranches && <BranchesModal branches={branches} onClose={() => setShowBranches(false)} onChanged={loadData} />}
 
       {deletingItem && (
         <DeleteInventoryItem

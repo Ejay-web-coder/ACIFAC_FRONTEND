@@ -99,7 +99,7 @@ export function VendorSalesReview({ sales, onReviewed }: { sales: KadiwaSale[]; 
         {reports.map((report) => (
           <li key={report.key} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-100 bg-white px-3 py-2.5">
             <div className="min-w-0">
-              <p className="font-semibold text-gray-900">{report.seller} <span className="font-normal text-gray-500">· {formatDate(report.saleDate)}</span></p>
+              <p className="font-semibold text-gray-900">{report.seller} <span className="font-normal text-gray-500">· {formatDate(report.saleDate)}{report.parts[0]?.branchName ? ` · ${report.parts[0].branchName}` : ''}</span></p>
               <p className="text-xs text-gray-500">
                 {report.parts.length === 1
                   ? `${report.parts[0].id} · sent ${formatTime(report.parts[0].date)}`

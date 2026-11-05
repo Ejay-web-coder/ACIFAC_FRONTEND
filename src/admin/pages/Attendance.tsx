@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, ClipboardCheck, ClipboardList, FileBarChart, History, LoaderCircle, MapPin, Percent, Search, Users, X,
+  AlertTriangle, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, ClipboardCheck, ClipboardList, FileBarChart, History, LoaderCircle, MapPin, Pencil, Percent, Search, Users, X,
 } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { EmptyState, Pagination, StatCard } from '../../app/components/common/UiKit';
@@ -50,6 +50,8 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
   const [tick, setTick] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [openActivity, setOpenActivity] = useState<{ id: number; record: boolean } | null>(null);
+  // An activity not held yet is edited straight from the list.
+  const [editing, setEditing] = useState<Activity | null>(null);
   const [openMember, setOpenMember] = useState<number | null>(null);
   const invalidPeriod = Boolean(filters.from && filters.to && filters.from > filters.to);
 
@@ -111,7 +113,12 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
           <ClipboardList className="h-3.5 w-3.5" />{activity.final ? 'Correct' : 'Record'}
         </button>
       )}
-      <button type="button" onClick={(event) => { event.stopPropagation(); open(activity); }} className="inline-flex min-h-9 items-center whitespace-nowrap rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50" aria-label={`Open ${activity.title}`}>Details</button>
+      {!canRecord(activity) && activity.status !== 'cancelled' && (
+        <button type="button" onClick={(event) => { event.stopPropagation(); setEditing(activity); }} className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-green-600 px-3 text-xs font-semibold text-green-700 hover:bg-green-50" aria-label={`Edit ${activity.title}`}>
+          <Pencil className="h-3.5 w-3.5" />Edit
+        </button>
+      )}
+      <button type="button" onClick={(event) => { event.stopPropagation(); open(activity); }} className="inline-flex min-h-9 items-center whitespace-nowrap rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50" aria-label={`Summary of ${activity.title}`}>Details</button>
     </div>
   );
 
@@ -218,7 +225,7 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
         <section className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]" aria-labelledby="activities-title">
           <div className="border-b border-gray-100 px-4 py-3">
             <h2 id="activities-title" className="font-bold text-gray-900">Activities</h2>
-            <p className="text-sm text-gray-600">Open an activity for its attendance list. Record attendance from the day of the activity, then finalize it.</p>
+            <p className="text-sm text-gray-600">Details shows the summary of an activity and its attendance. Record attendance from the day of the activity, then finalize it.</p>
           </div>
           {loading && !activities.length ? <p className="flex items-center justify-center gap-2 p-10 text-sm text-gray-500" role="status"><LoaderCircle className="h-4 w-4 animate-spin" />Loading activities…</p>
             : !activities.length ? (
@@ -241,6 +248,7 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
                           <p className="font-semibold text-gray-900">{activity.title}</p>
                           <p className="text-sm text-gray-600">{formatDate(activity.activityDate, true)} · {timeRange(activity.startTime, activity.endTime)}</p>
                           <p className="text-sm text-gray-600">{activity.venue}</p>
+                          {activity.attendeeScope === 'selected' && <p className="text-xs font-medium text-green-800">For {activity.inviteeCount} selected {activity.inviteeCount === 1 ? 'member' : 'members'}</p>}
                         </button>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <ActivityStatusBadge activity={activity} />
@@ -262,7 +270,7 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
                         const count = attendanceSummary(activity);
                         return (
                           <tr key={activity.id} onClick={() => open(activity)} className="cursor-pointer align-top hover:bg-green-50/40">
-                            <td className="px-4 py-3"><p className="font-semibold text-gray-900">{activity.title}</p>{activity.organizer && <p className="text-xs text-gray-500">{activity.organizer}</p>}</td>
+                            <td className="px-4 py-3"><p className="font-semibold text-gray-900">{activity.title}</p>{activity.organizer && <p className="text-xs text-gray-500">{activity.organizer}</p>}{activity.attendeeScope === 'selected' && <p className="text-xs font-medium text-green-800">For {activity.inviteeCount} selected {activity.inviteeCount === 1 ? 'member' : 'members'}</p>}</td>
                             <td className="px-4 py-3 text-gray-700">{activity.categoryLabel}</td>
                             <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDate(activity.activityDate, true)}<p className="text-xs text-gray-500">{timeRange(activity.startTime, activity.endTime)}</p></td>
                             <td className="px-4 py-3 text-gray-700">{activity.venue}</td>
@@ -292,7 +300,10 @@ export function Attendance({ userRole }: { userRole: UserRole }) {
       {showCreate && (
         <ActivityFormModal activity={null} onClose={() => setShowCreate(false)} onSaved={(activity) => { setShowCreate(false); reload(); setOpenActivity({ id: activity.id, record: false }); }} />
       )}
-      {openActivity && <ActivityModal activityId={openActivity.id} startRecording={openActivity.record} onClose={() => setOpenActivity(null)} onChanged={reload} />}
+      {editing && (
+        <ActivityFormModal activity={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />
+      )}
+      {openActivity && <ActivityModal activityId={openActivity.id} mode={openActivity.record ? 'record' : 'details'} onClose={() => setOpenActivity(null)} onChanged={reload} />}
       {openMember !== null && <MemberParticipationModal memberId={openMember} onClose={() => setOpenMember(null)} />}
     </div>
   );

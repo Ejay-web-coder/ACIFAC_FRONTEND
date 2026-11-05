@@ -119,7 +119,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
 
         {/* Content */}
         <div className="p-4 sm:p-6">
-          {activeTab === 'activity' && <ActivityLog />}
+          {activeTab === 'activity' && <ActivityLog onChangePassword={() => setActiveTab('security')} />}
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} className="space-y-6">

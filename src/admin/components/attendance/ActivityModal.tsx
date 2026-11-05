@@ -13,12 +13,12 @@ import { ActivityFormModal } from './ActivityFormModal';
 import { AttendanceSheet } from './AttendanceSheet';
 import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
-/** One activity: its details and counts, the attendance list (recorded here),
- * Finalize, Edit and Cancel, and the history of changes. */
-export function ActivityModal({ activityId, startRecording = false, onClose, onChanged }: {
+/** One activity. details: a read-only summary of the activity and its
+ * attendance, with the history of changes. record: the attendance list to mark,
+ * with Finalize, Edit and Cancel. */
+export function ActivityModal({ activityId, mode, onClose, onChanged }: {
   activityId: number;
-  /** Opened with "Record Attendance": scroll to the member list. */
-  startRecording?: boolean;
+  mode: 'details' | 'record';
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -45,15 +45,16 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
   }, [activityId]);
   useEffect(() => { if (showHistory) loadHistory(); }, [showHistory, loadHistory, sheetKey, details?.updatedAt]);
 
+  const recording = mode === 'record';
   // "Record Attendance" opens straight at the member list.
   const loaded = Boolean(details);
   useEffect(() => {
-    if (!startRecording || !loaded) return;
+    if (!recording || !loaded) return;
     window.requestAnimationFrame(() => {
       document.getElementById('attendance-sheet')?.scrollIntoView({ block: 'start' });
       document.getElementById('attendance-search')?.focus({ preventScroll: true });
     });
-  }, [startRecording, loaded]);
+  }, [recording, loaded]);
 
   const afterChange = () => { load(); setSheetKey((key) => key + 1); onChanged(); };
   const requestClose = async () => {
@@ -101,6 +102,7 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
         ? { tone: 'gray', text: `Attendance can be recorded from the day of the activity, ${formatDate(details.activityDate)}.` }
         : details.final
           ? { tone: 'green', text: `Attendance is final${details.finalizedBy ? ` (finalized by ${details.finalizedBy}` : ''}${details.finalizedAt ? ` on ${formatDateTime(details.finalizedAt)})` : details.finalizedBy ? ')' : ''}. A record can still be corrected: each correction needs a reason and is kept in the change history.` }
+          : !recording ? { tone: 'amber', text: `Attendance is not final yet: ${details.recorded} of ${details.members} ${details.members === 1 ? 'member' : 'members'} recorded so far. Use Record in the activity list to mark the others and finalize it.` }
           : { tone: 'amber', text: `Mark the members who came, then Finalize Attendance. Until then nobody is counted absent. Finalizing records the ${details.toMarkAbsent} active ${details.toMarkAbsent === 1 ? 'member' : 'members'} not marked as absent.` };
   const NOTICE_STYLE: Record<string, string> = {
     red: 'border-red-200 bg-red-50 text-red-800', gray: 'border-gray-200 bg-gray-50 text-gray-700', green: 'border-green-200 bg-green-50 text-green-900', amber: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -117,7 +119,7 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
           <div className="shrink-0 bg-green-700 px-5 py-4 text-white">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-green-100">{details?.categoryLabel ?? 'Activity'}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-green-100">{details?.categoryLabel ?? 'Activity'}{recording ? ' · Record Attendance' : ' · Summary'}</p>
                 <h2 id="activity-title" className="text-xl font-bold sm:text-2xl">{details?.title ?? 'Loading…'}</h2>
                 {details && (
                   <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-green-50">
@@ -141,6 +143,12 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
                   <p className="text-xs text-gray-500">Created by {details.createdBy ?? 'the office'} · {formatDateTime(details.createdAt)}</p>
                 </div>
                 {details.description && <p className="whitespace-pre-line rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">{details.description}</p>}
+                <p className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+                  <span className="font-semibold text-gray-900">Mandatory for: </span>
+                  {details.attendeeScope === 'selected'
+                    ? `${details.inviteeCount} selected ${details.inviteeCount === 1 ? 'member' : 'members'}${details.invitees.length ? `: ${details.invitees.slice(0, 8).map((member) => member.name).join(', ')}${details.invitees.length > 8 ? ` and ${details.invitees.length - 8} more` : ''}` : ''}`
+                    : 'all members'}
+                </p>
 
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   {(['present', 'late', 'excused', 'absent'] as const).map((status) => (
@@ -162,7 +170,7 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
 
                 {notice && <p className={`rounded-xl border px-4 py-3 text-sm ${NOTICE_STYLE[notice.tone]}`} role="status">{notice.text}</p>}
 
-                <AttendanceSheet activity={details} refreshKey={sheetKey} onSaved={afterChange} onPendingChange={setPendingCount} />
+                <AttendanceSheet activity={details} readOnly={!recording} refreshKey={sheetKey} onSaved={afterChange} onPendingChange={setPendingCount} />
 
                 <section className="rounded-2xl border border-gray-200 bg-white">
                   <button type="button" onClick={() => setShowHistory((open) => !open)} aria-expanded={showHistory} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
@@ -193,7 +201,12 @@ export function ActivityModal({ activityId, startRecording = false, onClose, onC
             )}
           </div>
 
-          {details && (
+          {details && !recording && (
+            <div className="flex shrink-0 justify-end border-t border-gray-200 bg-white px-4 py-3 sm:px-5">
+              <button type="button" onClick={requestClose} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-gray-100 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-200 sm:w-auto">Close</button>
+            </div>
+          )}
+          {details && recording && (
             <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <div className="grid grid-cols-2 gap-2 sm:flex">
                 <button type="button" onClick={() => setDialog('edit')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-green-600 px-4 text-sm font-semibold text-green-700 hover:bg-green-50"><Pencil className="h-4 w-4" />Edit</button>

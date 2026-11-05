@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock, Eye, Filter, LoaderCircle, Plus, Search, Users, Wallet, X } from 'lucide-react';
 import { EmptyState, Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
@@ -34,7 +34,7 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
   const [memberFilter, setMemberFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
-  const [form, setForm] = useState({ member: '', memberId: '', amount: '', date: dateOnlyToday(), type: 'Deposit' as TransactionType, reference: '', notes: '' });
+  const [form, setForm] = useState({ member: '', memberId: '', memberDbId: '', amount: '', date: dateOnlyToday(), type: 'Deposit' as TransactionType, reference: '', notes: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showAddModal, setShowAddModal] = useState(false);
   // The member whose savings window is open.
@@ -91,23 +91,17 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const next: Record<string, string> = {};
-    if (!form.member) next.member = 'Member is required.';
+    if (!form.memberDbId) next.member = 'Search and choose a member.';
     if (!form.amount || Number(form.amount) <= 0) next.amount = 'Amount must be greater than 0.';
     if (!form.date) next.date = 'Date is required.';
     setErrors(next);
     if (Object.keys(next).length) return;
 
-    const selected = members.find((member) => member.memberName === form.member);
-    if (!selected) {
-      toast.error('Please select a valid member.');
-      return;
-    }
-
     if (isSaving) return;
     setIsSaving(true);
     try {
       const response = await createSavingsRequest({
-        memberId: selected.id,
+        memberId: Number(form.memberDbId),
         amount: form.amount,
         date: form.date,
         paymentMethod: 'Deposit',
@@ -115,8 +109,8 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
         notes: form.notes,
       });
       afterChange();
-      toast.success('Savings recorded successfully', { description: `${selected.memberName}'s total savings are now ${peso(response.memberTotal)}.` });
-      setForm({ member: '', memberId: '', amount: '', date: dateOnlyToday(), type: 'Deposit', reference: '', notes: '' });
+      toast.success('Savings recorded successfully', { description: `${form.member}'s total savings are now ${peso(response.memberTotal)}.` });
+      setForm({ member: '', memberId: '', memberDbId: '', amount: '', date: dateOnlyToday(), type: 'Deposit', reference: '', notes: '' });
       setErrors({});
       setShowAddModal(false);
     } catch (error) {
@@ -126,7 +120,7 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
     }
   };
 
-  if (view === 'add') return <AddSavings form={form} errors={errors} update={update} submit={submit} members={members} />;
+  if (view === 'add') return <AddSavings form={form} errors={errors} update={update} submit={submit} />;
   if (view === 'history') return <History records={filtered} members={members} search={search} setSearch={setSearch} memberFilter={memberFilter} setMemberFilter={setMemberFilter} typeFilter={typeFilter} setTypeFilter={setTypeFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} />;
   return <>
     <div className="space-y-6">
@@ -175,7 +169,7 @@ export function Savings({ userRole, view }: { userRole: UserRole; view: SavingsV
             <X className="h-5 w-5" />
           </button>
         </div>
-        <AddSavings form={form} errors={errors} update={update} submit={submit} onCancel={() => setShowAddModal(false)} members={members} />
+        <AddSavings form={form} errors={errors} update={update} submit={submit} onCancel={() => setShowAddModal(false)} />
       </div>
     </div>}
   </>;
@@ -484,5 +478,53 @@ function SavingsEntryForm({ kind, member, available, keep, onCancel, onSaved }: 
 function Header({ title, description, action }: { title?: string; description: string; action?: ReactNode }) { return <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-medium text-green-600"></p>{title && <h2 className="mt-1 text-2xl font-bold text-gray-900">{title}</h2>}<p className="mt-1 text-sm text-gray-600">{description}</p></div>{action}</div>; }
 function RecentActivity({ records, filtered, members, search, setSearch, memberFilter, setMemberFilter, typeFilter, setTypeFilter, dateFilter, setDateFilter }: { records: SavingsRecord[]; filtered: SavingsRecord[]; members: Array<{ id: number; memberId: string; memberName: string }>; search: string; setSearch: (value: string) => void; memberFilter: string; setMemberFilter: (value: string) => void; typeFilter: string; setTypeFilter: (value: string) => void; dateFilter: string; setDateFilter: (value: string) => void }) { const [showHistory, setShowHistory] = useState(false); return <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between gap-3"><h3 className="font-bold text-gray-900">Recent Savings Activity</h3><button type="button" onClick={() => setShowHistory(current => !current)} className="text-sm font-medium text-green-700 hover:text-green-800">{showHistory ? 'Hide history' : 'View history'}</button></div>{showHistory ? <History records={filtered} members={members} search={search} setSearch={setSearch} memberFilter={memberFilter} setMemberFilter={setMemberFilter} typeFilter={typeFilter} setTypeFilter={setTypeFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} /> : records.length ? <div className="space-y-3">{records.slice(0, 5).map((record) => <div key={record.id} className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0"><div className="min-w-0"><p className="truncate text-sm font-medium text-gray-900">{record.memberName}</p><p className="text-xs text-gray-500">{record.type} · {formatDate(record.date)}</p></div><span className={`shrink-0 text-sm font-semibold ${record.type === 'Withdrawal' ? 'text-amber-700' : 'text-green-700'}`}>{signed(record.type, record.amount)}</span></div>)}</div> : <p className="py-8 text-center text-sm text-gray-500">No savings records yet.</p>}</div>; }
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) { return <label className="block text-sm font-medium text-gray-700">{label}<div className="mt-2">{children}</div>{error && <p className="mt-1 text-xs text-red-600">{error}</p>}</label>; }
-function AddSavings({ form, errors, update, submit, onCancel, members }: { form: { member: string; memberId: string; amount: string; date: string; type: TransactionType; reference: string; notes: string }; errors: Record<string, string>; update: (field: string, value: string) => void; submit: (event: FormEvent) => void; onCancel?: () => void; members: Array<{ id: number; memberId: string; memberName: string }> }) { return <form onSubmit={submit} className="space-y-4 p-6"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Member" error={errors.member}><select value={form.member} onChange={(event) => { const selected = members.find((member) => member.memberName === event.target.value); update('member', event.target.value); update('memberId', selected?.memberId || ''); }} className={INPUT}><option value="">Select member</option>{members.map((member) => <option key={member.memberId}>{member.memberName}</option>)}</select></Field><Field label="Member ID"><input readOnly value={form.memberId} className="w-full rounded-xl border border-gray-300 bg-gray-50 px-3 py-2" placeholder="Auto-filled" /></Field><Field label="Savings Amount" error={errors.amount}><input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} className={INPUT} placeholder="0.00" /></Field><Field label="Date" error={errors.date}><input type="date" value={form.date} onChange={(event) => update('date', event.target.value)} className={INPUT} /></Field><Field label="Reference"><input value={form.reference} onChange={(event) => update('reference', event.target.value)} className={INPUT} placeholder="Optional reference" /></Field><div className="md:col-span-2"><Field label="Notes"><textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} className={`min-h-24 ${INPUT}`} placeholder="Optional notes" /></Field></div></div><p className="text-xs text-gray-500">To withdraw, open the member in Members with Savings.</p><div className="flex gap-3 border-t border-gray-200 pt-4"><button type="submit" className="flex-1 rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700">Add Savings</button><button type="button" onClick={onCancel} className="flex-1 rounded-lg bg-gray-200 px-4 py-2 font-medium text-gray-700 hover:bg-gray-300">Cancel</button></div></form>; }
+// Search a member by name or member ID (on the server, so every member can be found) and choose one.
+function MemberSearch({ value, onChoose }: { value: string; onChoose: (member: { id: number; memberId: string; name: string } | null) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Array<{ id: number; memberId: string; name: string }>>([]);
+  const [searching, setSearching] = useState(false);
+  const latest = useRef(0);
+  useEffect(() => {
+    const text = query.trim();
+    if (value || !text) { setResults([]); return undefined; }
+    const timer = window.setTimeout(() => {
+      const id = ++latest.current;
+      setSearching(true);
+      fetchMembers(text, 10)
+        .then((response) => { if (id === latest.current) setResults(response.data.map((member) => ({ id: member.id, memberId: member.memberId, name: member.name }))); })
+        .catch(() => toast.error('Unable to search members.'))
+        .finally(() => { if (id === latest.current) setSearching(false); });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, value]);
+
+  if (value) return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-green-300 bg-green-50 px-3 py-2">
+      <span className="min-w-0 truncate font-medium text-gray-900">{value}</span>
+      <button type="button" onClick={() => { onChoose(null); setQuery(''); }} className="shrink-0 text-sm font-semibold text-green-700 hover:underline">Change</button>
+    </div>
+  );
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or member ID" aria-label="Search a member by name or member ID" className={`${INPUT} pl-9`} autoComplete="off" />
+      {query.trim() && (
+        <ul className="absolute inset-x-0 top-full z-10 mt-1 max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg" role="listbox" aria-label="Matching members">
+          {searching && !results.length ? <li className="px-3 py-2 text-sm text-gray-500">Searching…</li>
+            : !results.length ? <li className="px-3 py-2 text-sm text-gray-500">No member matches.</li>
+              : results.map((member) => (
+                <li key={member.id}>
+                  <button type="button" role="option" aria-selected={false} onClick={() => { onChoose(member); setQuery(''); }} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-green-50">
+                    <span className="font-medium text-gray-900">{member.name}</span>
+                    <span className="shrink-0 text-xs text-gray-500">{member.memberId}</span>
+                  </button>
+                </li>
+              ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AddSavings({ form, errors, update, submit, onCancel }: { form: { member: string; memberId: string; memberDbId: string; amount: string; date: string; type: TransactionType; reference: string; notes: string }; errors: Record<string, string>; update: (field: string, value: string) => void; submit: (event: FormEvent) => void; onCancel?: () => void }) { return <form onSubmit={submit} className="space-y-4 p-6"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><Field label="Member" error={errors.member}><MemberSearch value={form.member} onChoose={(member) => { update('member', member?.name ?? ''); update('memberId', member?.memberId ?? ''); update('memberDbId', member ? String(member.id) : ''); }} /></Field><Field label="Member ID"><input readOnly value={form.memberId} className="w-full rounded-xl border border-gray-300 bg-gray-50 px-3 py-2" placeholder="Auto-filled" /></Field><Field label="Savings Amount" error={errors.amount}><input type="number" min="0.01" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} className={INPUT} placeholder="0.00" /></Field><Field label="Date" error={errors.date}><input type="date" value={form.date} onChange={(event) => update('date', event.target.value)} className={INPUT} /></Field><Field label="Reference"><input value={form.reference} onChange={(event) => update('reference', event.target.value)} className={INPUT} placeholder="Optional reference" /></Field><div className="md:col-span-2"><Field label="Notes"><textarea value={form.notes} onChange={(event) => update('notes', event.target.value)} className={`min-h-24 ${INPUT}`} placeholder="Optional notes" /></Field></div></div><p className="text-xs text-gray-500">To withdraw, open the member in Members with Savings.</p><div className="flex gap-3 border-t border-gray-200 pt-4"><button type="submit" className="flex-1 rounded-xl bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700">Add Savings</button><button type="button" onClick={onCancel} className="flex-1 rounded-lg bg-gray-200 px-4 py-2 font-medium text-gray-700 hover:bg-gray-300">Cancel</button></div></form>; }
 function History({ records, members, search, setSearch, memberFilter, setMemberFilter, typeFilter, setTypeFilter, dateFilter, setDateFilter }: { records: SavingsRecord[]; members: Array<{ id: number; memberId: string; memberName: string }>; search: string; setSearch: (value: string) => void; memberFilter: string; setMemberFilter: (value: string) => void; typeFilter: string; setTypeFilter: (value: string) => void; dateFilter: string; setDateFilter: (value: string) => void }) { const pages = usePagination(records, { resetKey: `${search}|${memberFilter}|${typeFilter}|${dateFilter}` }); return <div className="space-y-6"><Header title="Savings History" description="Review member deposits and withdrawals separately from share capital contributions" /><div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]"><div className="flex flex-col gap-3 border-b border-gray-200 p-4 xl:flex-row"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search member, ID, or reference" className="input-style pl-9" /></div><div className="flex flex-col gap-2 sm:flex-row"><div className="flex items-center gap-2"><Filter className="h-4 w-4 shrink-0 text-gray-500" /><select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value)} className="input-style"><option value="all">All Members</option>{members.map((member) => <option key={member.memberId} value={member.memberId}>{member.memberName}</option>)}</select></div><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="input-style"><option value="all">All Types</option>{types.map((type) => <option key={type}>{type}</option>)}</select><input type="date" aria-label="Filter by date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} className="input-style" /></div></div><div className="overflow-x-auto"><table className="w-full min-w-[960px]"><thead className="bg-gray-50"><tr>{['Date', 'Member ID', 'Member Name', 'Transaction Type', 'Amount', 'Reference / Notes', 'Status'].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{heading}</th>)}</tr></thead><tbody className="divide-y divide-gray-200">{records.length ? pages.pageItems.map((record) => <tr key={record.id} className="hover:bg-gray-50"><td className="px-4 py-3 text-sm text-gray-600">{formatDate(record.date)}</td><td className="px-4 py-3 text-sm text-gray-600">{record.memberId}</td><td className="px-4 py-3 text-sm font-medium text-gray-900">{record.memberName}</td><td className="px-4 py-3"><TypeBadge type={record.type} /></td><td className={`px-4 py-3 text-sm font-semibold ${record.type === 'Withdrawal' ? 'text-amber-700' : 'text-gray-900'}`}>{signed(record.type, record.amount)}</td><td className="px-4 py-3 text-sm text-gray-600">{record.reference}{record.notes && <span className="block text-xs text-gray-400">{record.notes}</span>}</td><td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${record.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{record.status}</span></td></tr>) : <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">No savings records match your filters.</td></tr>}</tbody></table></div><Pagination page={pages.page} totalPages={pages.totalPages} total={pages.total} pageSize={pages.pageSize} onPageChange={pages.setPage} onPageSizeChange={pages.setPageSize} label="entries" /></div></div>; }

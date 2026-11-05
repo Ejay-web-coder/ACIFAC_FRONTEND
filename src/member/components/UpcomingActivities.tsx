@@ -57,7 +57,7 @@ export function UpcomingActivities({ limit = 2, embedded = false }: { limit?: nu
     <section className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]" aria-labelledby="upcoming-activities-title">
       <header className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
         <h2 id="upcoming-activities-title" className="text-base font-bold text-gray-900">Upcoming activities</h2>
-        <Link to="/member-profile" className="inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-semibold text-green-800 hover:bg-green-50">My attendance<ChevronRight className="h-4 w-4" /></Link>
+        <Link to="/member/attendance" className="inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-semibold text-green-800 hover:bg-green-50">My attendance<ChevronRight className="h-4 w-4" /></Link>
       </header>
       {body}
     </section>

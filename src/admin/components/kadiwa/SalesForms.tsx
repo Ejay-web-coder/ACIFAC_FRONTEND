@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Eye, LoaderCircle, Plus, Search, Trash2, X }
 import { toast } from 'sonner';
 import {
   createKadiwaSale, fetchKadiwaSales,
-  type KadiwaGood, type KadiwaInventoryItem, type KadiwaSale, type KadiwaSaleExpense, type KadiwaSaleGoodInput, type KadiwaSalesLine, type KadiwaSalesReport,
+  type KadiwaGood, type KadiwaInventoryItem, type KadiwaSale, type KadiwaSaleExpense, type KadiwaSaleGoodInput, type KadiwaSalesLine, type KadiwaSalesReport, type KadiwaBranch, type KadiwaBranchFilter,
 } from '../../../app/services/authApi';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatTime } from '../../../utils/dateTime';
 import { CATEGORIES, peso, productLabel } from './InventoryForms';
@@ -101,9 +101,13 @@ function writeSaleDraft(draft: SaleDraft | null, key = DRAFT_KEY) {
 // Store items sold from the inventory (how many of each product) are deducted
 // from stock and counted under GROCERIES, with their cost and net income.
 // What is typed is kept in this browser until it is saved.
-export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
-  goods: KadiwaGood[]; inventory: KadiwaInventoryItem[]; onClose: () => void; onSaved: (sale: KadiwaSale) => void;
+// branches: the open branches the sale can be for (one when the page shows a single branch);
+// only the chosen branch's store items can be sold.
+export function NewSaleSheet({ goods, inventory: allInventory, branches, defaultBranchId, onClose, onSaved }: {
+  goods: KadiwaGood[]; inventory: KadiwaInventoryItem[]; branches: KadiwaBranch[]; defaultBranchId: number; onClose: () => void; onSaved: (sale: KadiwaSale) => void;
 }) {
+  const [branchId, setBranchId] = useState(defaultBranchId);
+  const inventory = useMemo(() => allInventory.filter((item) => item.branchId === branchId), [allInventory, branchId]);
   const draft = useMemo(() => readSaleDraft(), []);
   // Quick search: shows only the goods and store items that match. What is typed in hidden lines is kept.
   const [search, setSearch] = useState('');
@@ -232,6 +236,7 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
     setSaving(true);
     try {
       const response = await createKadiwaSale({
+        branchId,
         saleDate,
         expenses: expenseLines.map((row) => ({ description: row.description.trim(), amount: row.amount.trim() })),
         goods: filled.map((row): KadiwaSaleGoodInput => ({
@@ -368,6 +373,13 @@ export function NewSaleSheet({ goods, inventory, onClose, onSaved }: {
         {/* The search and the date stay at the top while the goods scroll under them. */}
         <div className="flex-1 overflow-y-auto">
         <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_9.5rem] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-6">
+          {branches.length > 1 ? (
+            <label className="col-span-2 text-sm font-medium text-gray-700">Branch
+              <select value={branchId} onChange={(event) => { setBranchId(Number(event.target.value)); setError(''); }} className={`${INPUT} mt-1`}>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </label>
+          ) : branches[0] && <p className="col-span-2 text-sm text-gray-700">Branch: <span className="font-semibold text-gray-900">{branches[0].name}</span></p>}
           <label className="text-sm font-medium text-gray-700">Search
             <span className="relative mt-1 block">
               {searchInput}
@@ -462,7 +474,7 @@ const MODES: Array<{ key: SalesPeriodMode; label: string }> = [
   { key: 'all', label: 'Overall' },
 ];
 
-export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: SalesPeriod; onPeriodChange: (period: SalesPeriod) => void; refreshKey: number }) {
+export function SalesHistory({ period, onPeriodChange, refreshKey, branch = 'all', showBranch = false }: { period: SalesPeriod; onPeriodChange: (period: SalesPeriod) => void; refreshKey: number; branch?: KadiwaBranchFilter; showBranch?: boolean }) {
   const range = periodRange(period);
   const today = dateOnlyToday();
   const [sales, setSales] = useState<KadiwaSale[]>([]);
@@ -478,12 +490,12 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchKadiwaSales(range.from, range.to, overall)
+    fetchKadiwaSales(range.from, range.to, overall, branch)
       .then((data) => { if (!cancelled) { setSales(data.sales); setReport(data.report); setOverallRange(overall ? { from: data.from, to: data.to } : null); setError(''); } })
       .catch((loadError: Error) => { if (!cancelled) setError(loadError.message || 'Unable to load the sales.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [range.from, range.to, overall, refreshKey]);
+  }, [range.from, range.to, overall, refreshKey, branch]);
 
   const query = search.trim().toLowerCase();
   const shownSales = query ? sales.filter((sale) => `${sale.id} ${sale.seller}`.toLowerCase().includes(query)) : sales;
@@ -581,7 +593,7 @@ export function SalesHistory({ period, onPeriodChange, refreshKey }: { period: S
                     <button type="button" onClick={() => setOpenSale(sale)} className="flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-green-50/50 sm:px-4" aria-label={`View sale ${sale.id} by ${sale.seller}`}>
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-gray-900">{sale.seller}</p>
-                        <p className="text-xs text-gray-500">{formatDate(sale.saleDate)} · {sale.id} · {saleContents(sale)}</p>
+                        <p className="text-xs text-gray-500">{formatDate(sale.saleDate)} · {sale.id}{showBranch && sale.branchName ? ` · ${sale.branchName}` : ''} · {saleContents(sale)}</p>
                       </div>
                       <div className="text-right">
                         <p className="font-bold tabular-nums text-gray-900">{peso(saleGross(sale))}</p>

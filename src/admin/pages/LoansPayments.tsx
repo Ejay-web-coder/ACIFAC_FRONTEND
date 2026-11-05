@@ -14,6 +14,7 @@ import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import { FarmInputPricesModal } from '../components/FarmInputPricesModal';
 import { LoanPaymentsList } from '../components/LoanPaymentsList';
 import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
+import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
 
 type Loan = AdminLoan;
@@ -26,6 +27,12 @@ const memberPhotoPath = (member: Member) => `/api/members/${member.id}/documents
 const ID_LABELS: Record<LoanIdHolder, string> = { borrower: 'Borrower\'s ID', coMaker: 'Co-maker\'s ID' };
 const openLoanId = (kind: 'loans' | 'loan-requests', id: number, holder: LoanIdHolder) => {
   openProtectedFile(loanIdPath(kind, id, holder)).catch((error: Error) => toast.error('Unable to open the ID', { description: error.message }));
+};
+// The decision on an application, as the office form words it.
+const REQUEST_STATUS: Record<LoanRequest['status'], { label: string; tone: string }> = {
+  pending: { label: 'For Evaluation', tone: 'bg-amber-50 text-amber-800 ring-amber-200' },
+  approved: { label: 'Approved', tone: 'bg-green-50 text-green-800 ring-green-200' },
+  declined: { label: 'Disapproved', tone: 'bg-red-50 text-red-700 ring-red-200' },
 };
 const hasIds = (documents?: LoanIdDocuments) => Boolean(documents && Object.keys(documents).length);
 const openLoanSignature = (kind: 'loans' | 'loan-requests', id: number) => {
@@ -77,6 +84,15 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     const status = searchParams.get('status');
     return status === 'active' || status === 'paid' || status === 'overdue' ? status : 'all';
   });
+  // Loan Requests tab: by decision, newest or oldest first, a page at a time.
+  const [requestStatus, setRequestStatus] = useState<'all' | LoanRequest['status']>('all');
+  const [requestOrder, setRequestOrder] = useState<'newest' | 'oldest'>('newest');
+  const requestSearch = searchTerm.trim().toLowerCase();
+  const shownRequests = loanRequests
+    .filter((request) => requestStatus === 'all' || request.status === requestStatus)
+    .filter((request) => !requestSearch || [request.memberName, request.id, request.memberNumber].some((value) => String(value ?? '').toLowerCase().includes(requestSearch)))
+    .sort((a, b) => (new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()) * (requestOrder === 'newest' ? -1 : 1));
+  const requestPages = usePagination(shownRequests, { resetKey: `${requestStatus}|${requestOrder}|${requestSearch}` });
   const [showAddLoanModal, setShowAddLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   // Payments are received on weekdays during office hours only.
@@ -93,7 +109,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const [viewingLoanId, setViewingLoanId] = useState<number | null>(null);
   // The loan application whose form is open (View), to approve or decline from it.
   const [viewingRequestId, setViewingRequestId] = useState<number | null>(null);
-  const viewingRequest = viewingRequestId === null ? null : loanRequests.find((row) => row.id === viewingRequestId && row.status === 'pending') ?? null;
+  const viewingRequest = viewingRequestId === null ? null : loanRequests.find((row) => row.id === viewingRequestId) ?? null;
   const viewingLoan = viewingLoanId === null ? null : loans.find((row) => row.databaseId === viewingLoanId) ?? null;
   const memberLink = (id: number | null | undefined, name: string, className: string) => id
     ? <button type="button" onClick={() => setHistoryMember({ id, name })} className={`${className} text-left hover:text-green-700 hover:underline`} title="Loan summary and payment history">{name}</button>
@@ -133,7 +149,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       const [loanData, paymentData, requestData] = await Promise.all([
         fetchAdminLoans({ page: loanPage, limit: pageSize, search, status: filterStatus === 'all' ? undefined : filterStatus }),
         fetchAdminPayments({ page: paymentPage, limit: pageSize, search }),
-        fetchAdminLoanRequests({ status: 'pending', limit: 100 }),
+        // Every application, pending first, so the decided ones show their status too.
+        fetchAdminLoanRequests({ limit: 100 }),
       ]);
       setLoans(loanData.loans);
       setSummary(loanData.summary);
@@ -357,6 +374,22 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <option value="overdue">Overdue</option>
               </select>
             )}
+            {activeTab === 'requests' && (
+              <>
+                <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value as typeof requestStatus)} aria-label="Filter loan requests by status"
+                  className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-44">
+                  <option value="all">All Status</option>
+                  <option value="pending">For Evaluation</option>
+                  <option value="approved">Approved</option>
+                  <option value="declined">Disapproved</option>
+                </select>
+                <select value={requestOrder} onChange={(e) => setRequestOrder(e.target.value as typeof requestOrder)} aria-label="Sort loan requests by date"
+                  className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-48">
+                  <option value="newest">Newest to oldest</option>
+                  <option value="oldest">Oldest to newest</option>
+                </select>
+              </>
+            )}
           </div>
         </div>
 
@@ -368,6 +401,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <div key={loan.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <h3>{memberLink(loan.memberDatabaseId, loan.memberName, 'break-words font-bold text-gray-900')}</h3>
+                    {loan.dateApproved && <p className="mt-0.5 text-sm text-gray-500">Approved {formatDate(loan.dateApproved)}</p>}
                     {/* Paid and overdue loans say so; no next-payment reminder for the others. */}
                     {(loan.status === 'paid' || !loan.nextPaymentDate || loan.status === 'overdue') && (
                     <p className={`mt-0.5 flex items-center gap-1.5 text-sm ${loan.status === 'overdue' ? 'text-red-700' : 'text-gray-500'}`}>
@@ -462,25 +496,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
               {paymentPagination && <Pager page={paymentPagination.page} totalPages={paymentPagination.totalPages} total={paymentPagination.total} pageSize={pageSize} onPageChange={setPaymentPage} onPageSizeChange={setPageSize} label="payments" />}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <h2 className="text-lg font-bold text-gray-900">Pending Loan Requests</h2>
-                  <p className="text-sm text-gray-600 mt-1">Review applications submitted by members.</p>
-                </div>
-                <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800 ring-1 ring-amber-200">
-                  {loanRequests.filter(request => request.status === 'pending').length} pending
-                </span>
-              </div>
-              {loanRequests.filter(request => request.status === 'pending').map(request => (
+            <div className="space-y-3">
+              {requestPages.pageItems.map(request => (
                 <div key={request.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-bold text-gray-900">{request.memberName}</h3>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${REQUEST_STATUS[request.status].tone}`}>{REQUEST_STATUS[request.status].label}</span>
                       <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium capitalize text-gray-700">{request.loanType}</span>
-                      {request.openLoanNumber && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200"><RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Has open loan {request.openLoanNumber}</span>}
+                      {request.status === 'pending' && request.openLoanNumber && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200"><RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Has open loan {request.openLoanNumber}</span>}
                     </div>
-                    <p className="mt-1 text-sm text-gray-700">{peso(request.amount)} · Application {request.id} · Submitted {formatDateTime(request.submittedAt)}</p>
+                    <p className="mt-1 text-sm text-gray-700">{peso(request.amount)} · Application {request.id} · Submitted {formatDateTime(request.submittedAt)}{request.status !== 'pending' && request.reviewedAt ? ` · ${REQUEST_STATUS[request.status].label} ${formatDateTime(request.reviewedAt)}` : ''}</p>
                   </div>
                   <button type="button" onClick={() => setViewingRequestId(request.id)}
                     className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
@@ -488,9 +514,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   </button>
                 </div>
               ))}
-              {loanRequests.filter(request => request.status === 'pending').length === 0 && (
-                <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={ClipboardList} title="No pending loan requests" message="Loan applications will appear here when members submit them." compact /></div>
+              {shownRequests.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-gray-300">{loanRequests.length
+                  ? <EmptyState icon={ClipboardList} title="No loan requests match your filters" message="Try a different search or status." compact />
+                  : <EmptyState icon={ClipboardList} title="No loan requests yet" message="Loan applications will appear here when members submit them." compact />}</div>
               )}
+              {shownRequests.length > 0 && <Pager page={requestPages.page} totalPages={requestPages.totalPages} total={requestPages.total} pageSize={requestPages.pageSize} onPageChange={requestPages.setPage} onPageSizeChange={requestPages.setPageSize} label="loan requests" />}
             </div>
           )}
         </div>

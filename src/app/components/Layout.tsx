@@ -1,7 +1,6 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { PageHeadingContext, type PageHeading } from './pageHeading';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { lazy, Suspense } from 'react';
 import { toast } from 'sonner';
 import {
   LayoutDashboard,
@@ -21,6 +20,7 @@ import {
   ArrowRightLeft,
   Menu,
   Wallet,
+  PiggyBank,
   ClipboardPlus,
   Megaphone,
   ChevronDown,
@@ -29,12 +29,14 @@ import {
   CalendarCheck,
   CircleCheck,
   Trash2,
+  UserCog,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../App';
 import {
   createAnnouncementRequest, deleteAnnouncementRequest, fetchAdminAccounts, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
-  markAnnouncementDoneRequest, markNotificationRead, type AppNotification, type AuditLogEntry,
+  markAnnouncementDoneRequest, markNotificationRead, type AnnouncementAudience, type AppNotification, type AuditLogEntry,
 } from '../services/authApi';
 import { closeLiveUpdates, useLiveRefresh } from '../../lib/liveUpdates';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './ui/sheet';
@@ -44,7 +46,11 @@ import { EmptyState, ListSkeleton } from './common/UiKit';
 import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
 import { confirmAction } from './common/ConfirmDialog';
 
-const AccountManagement = lazy(() => import('../../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
+/** What the layout gives the pages under it (useOutletContext). */
+export interface LayoutOutletContext {
+  /** Opens the audit log on one administrator's actions. */
+  viewAdminActivity: (userId: number | string) => void;
+}
 
 interface LayoutProps {
   userRole: UserRole;
@@ -77,9 +83,17 @@ interface Announcement {
   id: string;
   title: string;
   message: string;
-  audience: 'All Members' | 'Admins Only';
+  audience: AnnouncementAudience;
   postedAt: string;
 }
+
+const AUDIENCE_LABELS: Record<AnnouncementAudience, string> = { All: 'All', 'Members Only': 'Members only', 'Admins Only': 'Admins only', 'Vendors Only': 'Vendors only' };
+const AUDIENCE_HINTS: Record<AnnouncementAudience, string> = {
+  All: 'Everyone gets it in their notifications: members, administrators and Kadiwa vendors.',
+  'Members Only': 'Only members get it in their notifications.',
+  'Admins Only': 'Only administrators get it in their notifications.',
+  'Vendors Only': 'Only Kadiwa store vendors get it in their notifications.',
+};
 
 interface NavItem {
   name: string;
@@ -98,6 +112,8 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/member-dashboard', icon: LayoutDashboard, roles: ['member'], group: 'Overview', aliases: ['/member/dashboard'], short: 'Home' },
   { name: 'My Profile', href: '/member-profile', icon: User, roles: ['member'], group: 'My Account', aliases: ['/member/profile'], short: 'Profile' },
   { name: 'Loan Status', href: '/loan-status', icon: PhilippinePeso, roles: ['member'], group: 'My Account', aliases: ['/member/loans'], short: 'Loans' },
+  { name: 'Savings', href: '/member/savings', icon: PiggyBank, roles: ['member'], group: 'My Account', short: 'Savings' },
+  { name: 'Attendance', href: '/member/attendance', icon: CalendarCheck, roles: ['member'], group: 'My Account', short: 'Attendance' },
   { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Transaction' },
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
   { name: 'Members', href: '/membership', icon: Users, roles: ['admin'], group: 'Members', aliases: ['/admin/members'], short: 'Members' },
@@ -108,7 +124,12 @@ const navigation: NavItem[] = [
   { name: 'Kadiwa Store', href: '/kadiwa', icon: Store, roles: ['admin'], group: 'Operations', aliases: ['/admin/kadiwa'], short: 'Kadiwa' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin'], group: 'Overview', aliases: ['/admin/analytics'], short: 'Analytics' },
   { name: 'Report', href: '/reports', icon: FileBarChart, roles: ['admin'], group: 'Overview', aliases: ['/admin/reports'], short: 'Report' },
+  { name: 'Manage Users', href: '/admin/accounts', icon: UserCog, roles: ['admin'], group: 'System', short: 'Users' },
   { name: 'OCR Scanner', href: '/ocr', icon: ScanLine, roles: ['admin'], group: 'System', aliases: ['/admin/ocr'], short: 'OCR' },
+  { name: 'Kadiwa Store', href: '/vendor', icon: Store, roles: ['vendor'], group: 'Overview', short: 'Store' },
+  { name: 'Sales History', href: '/vendor/history', icon: History, roles: ['vendor'], group: 'Overview', short: 'History' },
+  { name: 'Analytics', href: '/vendor/analytics', icon: BarChart3, roles: ['vendor'], group: 'Overview', short: 'Analytics' },
+  { name: 'Activity Log', href: '/vendor/activity', icon: FileText, roles: ['vendor'], group: 'System', short: 'Activity' },
   { name: 'Settings', href: '/settings', icon: SettingsIcon, roles: ['admin', 'member'], group: 'System', aliases: ['/admin/settings', '/member/settings'], short: 'Settings' },
 ];
 
@@ -117,8 +138,8 @@ const bottomNavHrefs: Record<UserRole, string[]> = {
   admin: ['/dashboard', '/membership', '/loans', '/kadiwa'],
   // Rental booking is the members' most used page; My Profile is under More.
   member: ['/member-dashboard', '/loan-status', '/transaction', '/rental-booking'],
-  // A vendor has no menus: their one page is outside this layout.
-  vendor: [],
+  // A vendor has one page: the day's sales form.
+  vendor: ['/vendor', '/vendor/history', '/vendor/analytics', '/vendor/activity'],
 };
 
 const groupOrder: NavItem['group'][] = ['Overview', 'My Account', 'Members', 'Finance', 'Operations', 'System'];
@@ -127,7 +148,6 @@ const isActive = (item: NavItem, pathname: string) => item.href === pathname || 
 
 export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [showManageUsersModal, setShowManageUsersModal] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const notificationsRef = useRef<HTMLDivElement>(null);
@@ -137,7 +157,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', audience: 'All Members' as Announcement['audience'] });
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', audience: 'All' as Announcement['audience'] });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -202,6 +222,13 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     if (!isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
+  // While the app's frame is shown, the window itself never scrolls (see .acf-shell-lock).
+  useEffect(() => {
+    document.documentElement.classList.add('acf-shell-lock');
+    window.scrollTo(0, 0);
+    return () => document.documentElement.classList.remove('acf-shell-lock');
+  }, []);
+
   // Close menus on navigation.
   useEffect(() => {
     setSidebarOpen(false);
@@ -242,6 +269,10 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     item.roles.includes(userRole)
   );
 
+  const outletContext: LayoutOutletContext = {
+    viewAdminActivity: (userId) => { setAuditLogsAdmin(String(userId)); setAuditLogsFilter('all'); setAuditLogsSearch(''); setShowAuditLogs(true); },
+  };
+
   const currentItem = navigation.find((item) => item.roles.includes(userRole) && isActive(item, location.pathname));
   const current = currentItem?.name || 'Dashboard';
   // A page may put its own heading in the top bar (the member dashboard's welcome).
@@ -279,7 +310,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     }
     try {
       await createAnnouncementRequest({ title: announcementForm.title.trim(), message: announcementForm.message.trim(), audience: announcementForm.audience });
-      setAnnouncementForm({ title: '', message: '', audience: 'All Members' });
+      setAnnouncementForm({ title: '', message: '', audience: 'All' });
       loadAnnouncements();
       toast.success('Announcement posted successfully');
     } catch (error) {
@@ -416,7 +447,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   const iconButton = 'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-600 hover:bg-green-50 hover:text-green-800 focus-visible:outline-green-600';
 
   return (
-    <div className="min-h-screen bg-white md:flex md:h-screen md:overflow-hidden">
+    <div className="acf-shell min-h-screen bg-white md:flex">
       {/* Sidebar: icon rail on tablets, full sidebar on desktops. Hidden on phones. */}
       {!isMobile && (
         <aside className="hidden h-screen w-[4.75rem] shrink-0 flex-col border-r border-gray-200 bg-white md:flex lg:w-64 xl:w-72" aria-label="Main navigation">
@@ -571,26 +602,15 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                           <FileText className="h-4 w-4 text-green-700" />
                           Audit Logs
                         </button>
-
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setShowManageUsersModal(true);
-                            setShowProfileMenu(false);
-                          }}
-                          className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-gray-700 hover:bg-green-50"
-                        >
-                          <Users className="h-4 w-4 text-green-700" />
-                          Manage Users
-                        </button>
                       </>
                     )}
 
-                    <Link to="/settings" role="menuitem" onClick={() => setShowProfileMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-gray-700 hover:bg-green-50">
-                      <SettingsIcon className="h-4 w-4 text-green-700" />
-                      Settings
-                    </Link>
+                    {userRole !== 'vendor' && (
+                      <Link to="/settings" role="menuitem" onClick={() => setShowProfileMenu(false)} className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-gray-700 hover:bg-green-50">
+                        <SettingsIcon className="h-4 w-4 text-green-700" />
+                        Settings
+                      </Link>
+                    )}
 
                     <div className="my-1 border-t border-gray-100" />
                     <button
@@ -614,7 +634,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
         {/* Main content */}
         <main className="acf-bottom-safe flex-1 bg-gray-50/60 md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 lg:px-8">
-            <PageHeadingContext.Provider value={setPageHeading}><Outlet /></PageHeadingContext.Provider>
+            <PageHeadingContext.Provider value={setPageHeading}><Outlet context={outletContext} /></PageHeadingContext.Provider>
           </div>
         </main>
       </div>
@@ -666,9 +686,6 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                   <button type="button" onClick={() => { setSidebarOpen(false); setShowAuditLogs(true); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-[15px] font-medium text-gray-700 hover:bg-green-50">
                     <FileText className="h-5 w-5 text-green-700" />Audit Logs
                   </button>
-                  <button type="button" onClick={() => { setSidebarOpen(false); setShowManageUsersModal(true); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-[15px] font-medium text-gray-700 hover:bg-green-50">
-                    <Users className="h-5 w-5 text-green-700" />Manage Users
-                  </button>
                 </>
               )}
               <button type="button" onClick={handleLogout} disabled={isLoggingOut} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-[15px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">
@@ -694,14 +711,14 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                 <div><h3 className="font-semibold text-gray-900">Create Announcement</h3><p className="mt-1 text-sm text-gray-600">Post a notice for your selected audience.</p></div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="text-sm font-medium text-gray-700 sm:col-span-2">Title<input required value={announcementForm.title} onChange={(event) => setAnnouncementForm({ ...announcementForm, title: event.target.value })} className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm" placeholder="Announcement title" /></label>
-                  <label className="text-sm font-medium text-gray-700">Audience<select value={announcementForm.audience} onChange={(event) => setAnnouncementForm({ ...announcementForm, audience: event.target.value as Announcement['audience'] })} className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm"><option>All Members</option><option>Admins Only</option></select></label>
-                  <div className="flex items-end"><p className="text-xs text-gray-500">All Members announcements appear in member notifications.</p></div>
+                  <label className="text-sm font-medium text-gray-700">Audience<select value={announcementForm.audience} onChange={(event) => setAnnouncementForm({ ...announcementForm, audience: event.target.value as Announcement['audience'] })} className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm">{(Object.keys(AUDIENCE_LABELS) as Announcement['audience'][]).map((value) => <option key={value} value={value}>{AUDIENCE_LABELS[value]}</option>)}</select></label>
+                  <div className="flex items-end"><p className="text-xs text-gray-500">{AUDIENCE_HINTS[announcementForm.audience]}</p></div>
                   <label className="text-sm font-medium text-gray-700 sm:col-span-2">Message<textarea required value={announcementForm.message} onChange={(event) => setAnnouncementForm({ ...announcementForm, message: event.target.value })} className="mt-1.5 min-h-24 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm" placeholder="Write your announcement" /></label>
                 </div>
                 <div className="flex justify-end"><button type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 sm:w-auto"><Megaphone className="h-4 w-4" />Post Announcement</button></div>
               </form>
 
-              <div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Posted Announcements</h3>{announcements.length ? <div className="space-y-3">{announcements.map((announcement) => <article key={announcement.id} className="rounded-2xl border border-gray-200 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900">{announcement.title}</h4><p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{announcement.message}</p></div><span className="w-fit shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-800 ring-1 ring-green-200">{announcement.audience}</span></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">{announcement.postedAt}</p><div className="flex gap-2"><button type="button" onClick={() => void removeAnnouncement(announcement, 'done')} disabled={removingAnnouncement === announcement.id} title="It has served its purpose: take it off the list (kept on record)" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"><CircleCheck className="h-4 w-4" />Done</button><button type="button" onClick={() => void removeAnnouncement(announcement, 'delete')} disabled={removingAnnouncement === announcement.id} title="Posted by mistake: remove it for everyone" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button></div></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={Megaphone} title="No announcements yet" message="Announcements you post will be listed here." compact /></div>}</div>
+              <div className="mt-6"><h3 className="mb-3 font-semibold text-gray-900">Posted Announcements</h3>{announcements.length ? <div className="space-y-3">{announcements.map((announcement) => <article key={announcement.id} className="rounded-2xl border border-gray-200 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900">{announcement.title}</h4><p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{announcement.message}</p></div><span className="w-fit shrink-0 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-800 ring-1 ring-green-200">{AUDIENCE_LABELS[announcement.audience] ?? announcement.audience}</span></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">{announcement.postedAt}</p><div className="flex gap-2"><button type="button" onClick={() => void removeAnnouncement(announcement, 'done')} disabled={removingAnnouncement === announcement.id} title="It has served its purpose: take it off the list (kept on record)" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50"><CircleCheck className="h-4 w-4" />Done</button><button type="button" onClick={() => void removeAnnouncement(announcement, 'delete')} disabled={removingAnnouncement === announcement.id} title="Posted by mistake: remove it for everyone" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button></div></div></article>)}</div> : <div className="rounded-2xl border border-dashed border-gray-300"><EmptyState icon={Megaphone} title="No announcements yet" message="Announcements you post will be listed here." compact /></div>}</div>
             </div>
           </div>
         </div>
@@ -826,26 +843,6 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
         </div>
       )}
 
-      {showManageUsersModal && (
-        <div className="acf-modal acf-modal-page fixed inset-0 z-50 overflow-y-auto bg-gray-900/50 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Manage Users">
-          <div className="mx-auto min-h-full max-w-7xl rounded-2xl bg-gray-50 shadow-xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-gray-200 bg-white px-4 py-3 sm:px-6">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-green-50 p-2 ring-1 ring-green-100"><Users className="h-5 w-5 text-green-700" /></div>
-                <h2 className="text-lg font-bold text-gray-900">Manage Users</h2>
-              </div>
-              <button type="button" onClick={() => setShowManageUsersModal(false)} className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700" aria-label="Close Manage Users">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
-              <Suspense fallback={<ListSkeleton rows={5} />}>
-                <AccountManagement onViewActivity={(account) => { setAuditLogsAdmin(String(account.user_id)); setAuditLogsFilter('all'); setAuditLogsSearch(''); setShowManageUsersModal(false); setShowAuditLogs(true); }} />
-              </Suspense>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, LoaderCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchKadiwaSales, type KadiwaSalesReport } from '../../../app/services/authApi';
+import { fetchKadiwaBranches, fetchKadiwaSales, type KadiwaBranch, type KadiwaBranchFilter, type KadiwaSalesReport } from '../../../app/services/authApi';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { dateOnlyToday } from '../../../utils/dateTime';
 import { peso } from './InventoryForms';
@@ -19,18 +19,23 @@ export function KadiwaSalesReportPanel() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  // One branch's sheet, or every branch together.
+  const [branches, setBranches] = useState<KadiwaBranch[]>([]);
+  const [branch, setBranch] = useState<KadiwaBranchFilter>('all');
+  useEffect(() => { fetchKadiwaBranches().then((response) => setBranches(response.branches)).catch(() => undefined); }, []);
+  const branchName = branch === 'all' ? '' : branches.find((item) => item.id === branch)?.name ?? '';
   const range = periodRange(period);
   const isFuture = range.from > dateOnlyToday();
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetchKadiwaSales(range.from, range.to)
+    fetchKadiwaSales(range.from, range.to, false, branch)
       .then((data) => { if (active) setReport(data.report); })
       .catch((error: Error) => { if (active) { setReport(null); toast.error(error.message); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [range.from, range.to, refresh]);
+  }, [range.from, range.to, refresh, branch]);
   useLiveRefresh(['kadiwa_sales'], () => setRefresh((key) => key + 1));
 
   const exportPdf = async () => {
@@ -38,7 +43,7 @@ export function KadiwaSalesReportPanel() {
     setExporting(true);
     try {
       const pdf = await import('./kadiwaReportPdf');
-      await pdf.downloadKadiwaSalesReportPdf(report, range.title);
+      await pdf.downloadKadiwaSalesReportPdf(report, branchName ? `${range.title} · ${branchName.toUpperCase()}` : range.title);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to make the PDF.');
     } finally {
@@ -57,6 +62,12 @@ export function KadiwaSalesReportPanel() {
     <div className="space-y-4">
       <ReportStep number={1} title="Choose the period" hint="The DA sheet covers 15 days (1 to 15, or 16 to the end of the month), or a whole month.">
         <div className="flex flex-wrap items-center gap-2">
+          {branches.length > 1 && (
+            <select value={String(branch)} onChange={(event) => setBranch(event.target.value === 'all' ? 'all' : Number(event.target.value))} aria-label="Branch" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm">
+              <option value="all">All branches</option>
+              {branches.map((item) => <option key={item.id} value={item.id}>{item.name}{item.status === 'closed' ? ' (closed)' : ''}</option>)}
+            </select>
+          )}
           <div className="grid grid-cols-2 rounded-lg bg-gray-100 p-0.5" role="group" aria-label="Period">{modeButton('half', '15 days')}{modeButton('month', 'Month')}</div>
           <div className="flex flex-1 items-center gap-1 sm:flex-none">
             <button type="button" onClick={() => setPeriod((current) => shiftPeriod(current, -1))} className="rounded-lg p-2 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></button>

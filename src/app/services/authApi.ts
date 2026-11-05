@@ -521,6 +521,19 @@ export interface MyMemberData {
     civil_status?: string | null;
     livelihood?: string | null;
     farm_area_ha?: string | number | null;
+    corn_area_ha?: number | null;
+    palay_area_ha?: number | null;
+    yearly_income?: number | null;
+    education?: string | null;
+    rsbsa_no?: string | null;
+    id_type?: string | null;
+    id_number?: string | null;
+    spouse_name?: string | null;
+    spouse_age?: number | null;
+    spouse_contact?: string | null;
+    children?: string | null;
+    emergency_contact?: string | null;
+    additional_info?: { motherMaidenName?: string; motherFirstName?: string; motherMiddleName?: string; motherLastName?: string; membershipType?: string } | null;
     membership_date: string;
     share_capital: number;
     status: string;
@@ -645,6 +658,9 @@ export interface Account {
   position?: string | null;
   created_by_name?: string | null;
   last_activity_at?: string | null;
+  /** Kadiwa vendors: the branch they sell at. */
+  kadiwa_branch_id?: number | null;
+  kadiwa_branch_name?: string | null;
 }
 
 /** An email, number or username already taken (problem), or null when it is free. */
@@ -685,9 +701,9 @@ export const updateAccountStatusRequest = (id: number, status: Account['account_
 export const resetMemberPasswordRequest = (id: number) => apiPost<{ message: string }>(`/api/admin/accounts/${id}/reset-password`);
 
 // Kadiwa store vendors: a name, a username and a password the administrator gives; both name and password can be changed.
-export const createVendorAccountRequest = (payload: { fullName: string; username: string; password: string; confirmPassword: string }) =>
+export const createVendorAccountRequest = (payload: { fullName: string; username: string; password: string; confirmPassword: string; branchId?: number }) =>
   apiPost<{ message: string }>('/api/admin/accounts/vendors', payload);
-export const updateVendorAccountRequest = (id: number, fullName: string) => apiPatch<{ message: string }>(`/api/admin/accounts/vendors/${id}`, { fullName });
+export const updateVendorAccountRequest = (id: number, fullName: string, branchId?: number) => apiPatch<{ message: string }>(`/api/admin/accounts/vendors/${id}`, { fullName, branchId });
 export const setVendorPasswordRequest = (id: number, password: string, confirmPassword: string) =>
   apiPost<{ message: string }>(`/api/admin/accounts/vendors/${id}/password`, { password, confirmPassword });
 
@@ -850,6 +866,19 @@ export interface KadiwaProducts {
   runningOutDays: number;
 }
 export const fetchKadiwaProducts = (from: string, to: string) => apiGet<KadiwaProducts>(`/api/admin/analytics/kadiwa-products${query({ from, to })}`);
+/** One day (or month) of the Kadiwa chart. */
+type KadiwaTrendRow = { period: string; gross: number; costOfGoods: number; sales: number; expenses: number; transactions: number };
+/** The Kadiwa chart and products of one branch, or every branch. */
+export const fetchKadiwaAnalytics = (from: string, to: string, branch: KadiwaBranchFilter = 'all') =>
+  apiGet<{ sales: KadiwaTrendRow[]; products: KadiwaProducts }>(`/api/kadiwa/analytics${query({ from, to, branch })}`);
+/** The vendor's own sales dated from..to (YYYY-MM-DD), newest first, each with its status. */
+export async function fetchVendorSales(from: string, to: string) {
+  const data = await apiGet<{ sales: Record<string, unknown>[] }>(`/api/vendor/kadiwa/sales${query({ from, to })}`);
+  return data.sales.map(mapSale);
+}
+/** The vendor's own branch: its Kadiwa chart and products. */
+export const fetchVendorKadiwaAnalytics = (from: string, to: string) =>
+  apiGet<{ sales: KadiwaTrendRow[]; products: KadiwaProducts; branch: { id: number; name: string } | null }>(`/api/vendor/kadiwa/analytics${query({ from, to })}`);
 
 export type CreditVerdict = 'lend' | 'caution' | 'do_not_lend' | 'no_history';
 
@@ -989,6 +1018,9 @@ export interface KadiwaSale {
   /** Net income: goods sold - expenses - cost of goods. */
   netSales: number;
   paymentMethod: 'cash';
+  /** The store branch where it was sold. */
+  branchId: number;
+  branchName: string | null;
   /** pending: a vendor's sale waiting for an administrator; rejected: sent back (reviewNotes says why). Only completed sales count. */
   status: 'completed' | 'pending' | 'rejected';
   /** Sent by a Kadiwa store vendor (createdBy: their account); reviewedBy confirmed or rejected it. */
@@ -1042,7 +1074,28 @@ export interface KadiwaInventoryItem {
   /** Cost price (puhunan) per unit; the stock is valued at it when set. */
   costPrice: number | null;
   reorderLevel: number;
+  /** The store branch whose stock it is. */
+  branchId: number;
+  branchName: string | null;
 }
+
+/** A store of the cooperative: each keeps its own stock and records its own sales. */
+export interface KadiwaBranch {
+  id: number;
+  name: string;
+  address: string;
+  /** closed: kept with its records, but takes no new sales or products. */
+  status: 'active' | 'closed';
+  createdAt: string;
+  products: number;
+  vendors: number;
+}
+/** all: every branch together. */
+export type KadiwaBranchFilter = number | 'all';
+
+export const fetchKadiwaBranches = () => apiGet<{ branches: KadiwaBranch[] }>('/api/kadiwa/branches');
+export const createKadiwaBranch = (payload: { name: string; address: string }) => apiPost<{ branch: KadiwaBranch }>('/api/kadiwa/branches', payload);
+export const updateKadiwaBranch = (id: number, payload: { name: string; address: string; status: KadiwaBranch['status'] }) => apiPatch<{ branch: KadiwaBranch }>(`/api/kadiwa/branches/${id}`, payload);
 
 /** A product as typed in the add sheet or the edit form. */
 export interface KadiwaInventoryInput {
@@ -1091,9 +1144,10 @@ const mapSale = (sale: Record<string, unknown>): KadiwaSale => ({
 const toNumberOrNull = (value: unknown) => (value === null || value === undefined || value === '' ? null : toNumber(value));
 const mapInventory = (item: Record<string, unknown>): KadiwaInventoryItem => ({ ...(item as unknown as KadiwaInventoryItem), sizeValue: toNumberOrNull(item.sizeValue), stock: toNumber(item.stock), price: toNumber(item.price), costPrice: toNumberOrNull(item.costPrice), reorderLevel: toNumber(item.reorderLevel) });
 
-export async function fetchKadiwaData(params: { page?: number; limit?: number } = {}) {
-  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown>; goods?: Record<string, unknown>[]; pendingSales?: Record<string, unknown>[] }>(`/api/kadiwa${query(params)}`);
+export async function fetchKadiwaData(params: { page?: number; limit?: number; branch?: KadiwaBranchFilter } = {}) {
+  const data = await apiGet<{ inventory: Record<string, unknown>[]; sales: Record<string, unknown>[]; pagination: Pagination; summary: Record<string, unknown>; goods?: Record<string, unknown>[]; pendingSales?: Record<string, unknown>[]; branches?: KadiwaBranch[] }>(`/api/kadiwa${query(params)}`);
   return {
+    branches: data.branches || [],
     pendingSales: (data.pendingSales || []).map(mapSale),
     inventory: data.inventory.map(mapInventory),
     sales: data.sales.map(mapSale),
@@ -1106,8 +1160,8 @@ export async function fetchKadiwaData(params: { page?: number; limit?: number } 
 // Sales dated from..to (YYYY-MM-DD, inclusive), newest first, with the report
 // of every good sold in the period; `overall`: every sale, from the first one
 // to today (from and to say which days that was).
-export async function fetchKadiwaSales(from: string, to: string, overall = false) {
-  const data = await apiGet<{ from: string; to: string; sales: Record<string, unknown>[]; report: { lines: Record<string, unknown>[]; totals: Record<string, unknown> } }>(`/api/kadiwa/sales${query(overall ? { overall: 'true' } : { from, to })}`);
+export async function fetchKadiwaSales(from: string, to: string, overall = false, branch: KadiwaBranchFilter = 'all') {
+  const data = await apiGet<{ from: string; to: string; sales: Record<string, unknown>[]; report: { lines: Record<string, unknown>[]; totals: Record<string, unknown> } }>(`/api/kadiwa/sales${query({ ...(overall ? { overall: 'true' } : { from, to }), branch })}`);
   const totals = data.report.totals;
   return {
     from: data.from,
@@ -1121,7 +1175,7 @@ export async function fetchKadiwaSales(from: string, to: string, overall = false
 }
 
 // The New Sale form sends `expenses` (their sum is the sale's expenses); Sell Products sends `totalExpenses`.
-export async function createKadiwaSale(payload: { sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string; memberPurchases?: Array<{ memberId: number; amount: string }> }) {
+export async function createKadiwaSale(payload: { branchId?: number; sellerName?: string; saleDate: string; goods: KadiwaSaleGoodInput[]; items: Array<{ inventoryId: string; quantity: string }>; expenses?: Array<{ description: string; amount: string }>; totalExpenses?: string; memberPurchases?: Array<{ memberId: number; amount: string }> }) {
   const data = await apiPost<{ sale: Record<string, unknown> }>('/api/kadiwa/sales', payload);
   return { sale: mapSale(data.sale) };
 }
@@ -1140,8 +1194,9 @@ export async function reviewKadiwaSalesRequest(ids: string[], decision: 'confirm
 
 // The vendor's page: the goods and store items for the sale form, and the vendor's own sales, newest first.
 export async function fetchVendorKadiwa() {
-  const data = await apiGet<{ goods: Record<string, unknown>[]; inventory?: Record<string, unknown>[]; sales: Record<string, unknown>[] }>('/api/vendor/kadiwa');
+  const data = await apiGet<{ goods: Record<string, unknown>[]; inventory?: Record<string, unknown>[]; sales: Record<string, unknown>[]; branch?: Pick<KadiwaBranch, 'id' | 'name' | 'address' | 'status'> | null }>('/api/vendor/kadiwa');
   return {
+    branch: data.branch ?? null,
     goods: data.goods.map((good) => ({ ...(good as unknown as KadiwaGood), price: toNumberOrNull(good.price) })),
     inventory: (data.inventory || []).map(mapInventory),
     sales: data.sales.map(mapSale),
@@ -1155,8 +1210,8 @@ export async function submitVendorKadiwaSale(payload: { saleDate: string; goods:
 }
 
 // Saves a whole sheet of products at once; nothing is saved when a row is refused.
-export async function createKadiwaInventory(items: KadiwaInventoryInput[]) {
-  const data = await apiPost<{ items: Record<string, unknown>[] }>('/api/kadiwa/inventory', { items });
+export async function createKadiwaInventory(items: KadiwaInventoryInput[], branchId?: number) {
+  const data = await apiPost<{ items: Record<string, unknown>[] }>('/api/kadiwa/inventory', { items, branchId });
   return { items: data.items.map(mapInventory) };
 }
 
@@ -1170,6 +1225,12 @@ export async function updateKadiwaInventory(id: string, payload: Omit<KadiwaInve
 // Deletes a product. One already sold is kept for its past sales (keptForPastSales) and leaves the inventory.
 export const deleteKadiwaInventory = (id: string) =>
   apiDelete<{ id: string; name: string; keptForPastSales: boolean; pastSales: number }>(`/api/kadiwa/inventory/${encodeURIComponent(id)}`);
+
+// Sends stock to another branch: it joins the same product there, or is added with the same prices.
+export async function transferKadiwaInventory(id: string, branchId: number, quantity: string) {
+  const data = await apiPost<{ from: Record<string, unknown>; to: Record<string, unknown>; addedToBranch: boolean }>(`/api/kadiwa/inventory/${encodeURIComponent(id)}/transfer`, { branchId, quantity });
+  return { from: mapInventory(data.from), to: mapInventory(data.to), addedToBranch: data.addedToBranch };
+}
 
 export async function restockKadiwaInventory(id: string, quantity: number) {
   const data = await apiPatch<{ item: Record<string, unknown> }>(`/api/kadiwa/inventory/${id}/restock`, { quantity });
@@ -1194,7 +1255,9 @@ export const fetchNotifications = (params: { page?: number; limit?: number; unre
 export const markNotificationRead = (id: number) => apiPatch<{ success: boolean }>(`/api/notifications/${id}/read`);
 export const markAllNotificationsRead = () => apiPatch<{ updated: number }>('/api/notifications/read-all');
 
-export interface AnnouncementRecord { id: number; title: string; message: string; audience: 'All Members' | 'Admins Only'; postedAt: string; postedBy?: string | null }
+/** Who an announcement is for: every account, or only members, administrators or Kadiwa vendors. */
+export type AnnouncementAudience = 'All' | 'Members Only' | 'Admins Only' | 'Vendors Only';
+export interface AnnouncementRecord { id: number; title: string; message: string; audience: AnnouncementAudience; postedAt: string; postedBy?: string | null }
 
 export const fetchAnnouncements = () => apiGet<{ data: AnnouncementRecord[]; pagination: Pagination }>('/api/announcements?limit=50');
 export const createAnnouncementRequest = (payload: { title: string; message: string; audience: AnnouncementRecord['audience'] }) => apiPost<{ data: AnnouncementRecord }>('/api/announcements', payload);

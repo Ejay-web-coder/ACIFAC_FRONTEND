@@ -23,7 +23,11 @@ export function KadiwaProductInsights({ from, to, refreshKey }: { from: string; 
 
   // The figures of the period picked (not the last one while the next loads).
   const shown = data && data.period.from === from ? data : null;
+  return <KadiwaProductsCard data={shown} error={error} />;
+}
 
+/** The Products card: best sellers and items running out; data null while loading. */
+export function KadiwaProductsCard({ data: shown, error = '' }: { data: KadiwaProducts | null; error?: string }) {
   return <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[var(--shadow-card)] sm:p-6">
     <h2 className="text-lg font-bold text-gray-900">Products</h2>
     {error && !shown ? <p className="mt-3 text-sm text-gray-500">{error}</p> : !shown ? <p className="mt-3 text-sm text-gray-500">Loading live data...</p> : <>

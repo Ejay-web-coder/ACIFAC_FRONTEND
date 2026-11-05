@@ -3,7 +3,7 @@ import { AlertTriangle, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createKadiwaInventory, deleteKadiwaInventory, updateKadiwaInventory,
-  type KadiwaInventoryInput, type KadiwaInventoryItem, type KadiwaSizeUnit,
+  type KadiwaInventoryInput, type KadiwaInventoryItem, type KadiwaSizeUnit, type KadiwaBranch,
 } from '../../../app/services/authApi';
 import { KadiwaBlankForm } from './KadiwaBlankForm';
 import { confirmAction } from '../../../app/components/common/ConfirmDialog';
@@ -85,7 +85,9 @@ function writeDraft(value: { rows: SheetRow[]; category: string; reorderLevel: s
 
 // Adds many products at once, one line each, like a page of the notebook.
 // What is typed is kept in this browser until it is saved or cleared.
-export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; onSaved: (items: KadiwaInventoryItem[]) => void }) {
+export function AddInventorySheet({ branches, defaultBranchId, onClose, onSaved }: { branches: KadiwaBranch[]; defaultBranchId: number; onClose: () => void; onSaved: (items: KadiwaInventoryItem[]) => void }) {
+  // The branch whose stock the products join.
+  const [branchId, setBranchId] = useState(defaultBranchId);
   const draft = useMemo(readDraft, []);
   const [rows, setRows] = useState<SheetRow[]>(() => draft?.rows ?? [1, 2, 3].map((key) => blankRow(key)));
   const [category, setCategory] = useState<KadiwaInventoryItem['category']>(draft?.category ?? 'Groceries');
@@ -157,7 +159,7 @@ export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; o
       const response = await createKadiwaInventory(filled.map((row): KadiwaInventoryInput => ({
         name: row.name.trim(), category, sizeValue: row.sizeValue.trim(), sizeUnit: row.sizeValue.trim() ? row.sizeUnit : '',
         unit: row.unit, stock: row.stock.trim(), price: row.price.trim(), costPrice: row.costPrice.trim(), reorderLevel: reorderLevel.trim(),
-      })));
+      })), branchId);
       writeDraft(null);
       toast.success(`${response.items.length} ${response.items.length === 1 ? 'product' : 'products'} added`, { description: `Inventory value ${peso(response.items.reduce((sum, item) => sum + lineValue(item), 0))}` });
       onSaved(response.items);
@@ -180,6 +182,13 @@ export function AddInventorySheet({ onClose, onSaved }: { onClose: () => void; o
         </div>
 
         <div className="flex flex-wrap items-end gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:px-6">
+          {branches.length > 1 ? (
+            <label className="text-sm font-medium text-gray-700">Branch
+              <select value={branchId} onChange={(event) => setBranchId(Number(event.target.value))} className={`${FIELD} mt-1 block w-48 px-2.5`}>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </select>
+            </label>
+          ) : branches[0] && <p className="pb-2 text-sm text-gray-700">Branch: <span className="font-semibold text-gray-900">{branches[0].name}</span></p>}
           <label className="text-sm font-medium text-gray-700">Category
             <select value={category} onChange={(event) => setCategory(event.target.value as KadiwaInventoryItem['category'])} className={`${FIELD} mt-1 block w-40 px-2.5`}>
               {CATEGORIES.map((option) => <option key={option}>{option}</option>)}

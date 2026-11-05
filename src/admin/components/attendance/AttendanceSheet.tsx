@@ -28,13 +28,18 @@ const sameDraft = (a: Draft, b: Draft) => a.status === b.status && (isAttended(a
  * recorded, each member is marked Present, Late, Absent or Excused; changes
  * stay on this page (across pages of the list) until Save. Nothing is saved
  * for members nobody marked: they are recorded absent only by Finalize. */
-export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey }: {
+export function AttendanceSheet({ activity, readOnly = false, onSaved, onPendingChange, refreshKey }: {
   activity: ActivityDetails;
+  /** The activity's summary (Details): the list only, nothing can be marked. */
+  readOnly?: boolean;
   onSaved: () => void;
   onPendingChange: (count: number) => void;
   refreshKey: number;
 }) {
-  const editable = activity.recordable;
+  const editable = activity.recordable && !readOnly;
+  // Members ticked to be marked together (kept across pages until marked or cleared).
+  const [selected, setSelected] = useState<Record<number, ActivityMemberRow>>({});
+  const selectedCount = Object.keys(selected).length;
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -76,7 +81,7 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
   useLiveRefresh(['activity_attendance', 'members'], reload);
 
   const current = (row: ActivityMemberRow) => pending[row.memberId]?.draft ?? savedDraft(row);
-  const update = (row: ActivityMemberRow, patch: Partial<Draft>) => setPending((previous) => {
+  const withChange = (previous: typeof pending, row: ActivityMemberRow, patch: Partial<Draft>) => {
     const base = previous[row.memberId]?.draft ?? savedDraft(row);
     if (!base && !patch.status) return previous;
     const draft: Draft = { ...(base ?? { status: patch.status as AttendanceStatus, checkInTime: '', remarks: '' }), ...patch };
@@ -85,6 +90,27 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
     const next = { ...previous };
     if (saved && sameDraft(saved, draft)) delete next[row.memberId];
     else next[row.memberId] = { row, draft };
+    return next;
+  };
+  const update = (row: ActivityMemberRow, patch: Partial<Draft>) => setPending((previous) => withChange(previous, row, patch));
+  // Marks every ticked member at once, then clears the ticks.
+  const markSelected = (status: AttendanceStatus) => {
+    setPending((previous) => Object.values(selected).reduce((next, row) => withChange(next, row, { status }), previous));
+    setSelected({});
+  };
+  const toggle = (row: ActivityMemberRow) => setSelected((previous) => {
+    const next = { ...previous };
+    if (next[row.memberId]) delete next[row.memberId];
+    else next[row.memberId] = row;
+    return next;
+  });
+  const allOnPageSelected = rows.length > 0 && rows.every((row) => selected[row.memberId]);
+  const togglePage = () => setSelected((previous) => {
+    const next = { ...previous };
+    for (const row of rows) {
+      if (allOnPageSelected) delete next[row.memberId];
+      else next[row.memberId] = row;
+    }
     return next;
   });
   const undo = (memberId: number) => setPending((previous) => {
@@ -143,7 +169,7 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
           <div>
             <h3 id="attendance-sheet-title" className="font-bold text-gray-900">{editable ? 'Record Attendance' : 'Attendance List'}</h3>
             <p className="text-sm text-gray-600">
-              {editable ? 'Search a member by name or member ID, then mark them. Only the members you mark are saved.' : 'Members who were members on the activity date, with their attendance.'}
+              {editable ? 'Search a member by name or member ID, then mark them, or tick several and mark them all at once. Only the members you mark are saved.' : 'Members who were members on the activity date, with their attendance.'}
             </p>
           </div>
           <div className="relative w-full sm:max-w-xs">
@@ -166,11 +192,30 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
             ))}
           </div>
           {editable && (
-            <button type="button" onClick={markPagePresent} disabled={!unmarkedOnPage.length} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-green-600 px-3 text-xs font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400">
-              <CheckCheck className="h-4 w-4" />Mark {unmarkedOnPage.length || ''} unmarked on this page Present
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {rows.length > 0 && (
+                <label className="inline-flex min-h-9 shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                  <input type="checkbox" checked={allOnPageSelected} onChange={togglePage} className="h-4 w-4 accent-green-600" />
+                  Select all on this page
+                </label>
+              )}
+              <button type="button" onClick={markPagePresent} disabled={!unmarkedOnPage.length} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-green-600 px-3 text-xs font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400">
+                <CheckCheck className="h-4 w-4" />Mark {unmarkedOnPage.length || ''} unmarked on this page Present
+              </button>
+            </div>
           )}
         </div>
+        {editable && selectedCount > 0 && (
+          <div className="flex flex-col gap-2 rounded-xl border border-green-200 bg-green-50 p-2 sm:flex-row sm:items-center sm:justify-between" role="group" aria-label="Mark the selected members">
+            <p className="px-1 text-sm font-semibold text-green-900">{selectedCount} {selectedCount === 1 ? 'member' : 'members'} selected · mark as</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:flex">
+              {ATTENDANCE_STATUSES.map((option) => (
+                <button key={option.value} type="button" onClick={() => markSelected(option.value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold ${STATUS_BUTTON[option.value]}`}>{option.label}</button>
+              ))}
+              <button type="button" onClick={() => setSelected({})} className="col-span-2 min-h-9 rounded-lg bg-white px-3 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 sm:col-span-1">Clear</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {error ? <p className="p-6 text-sm text-red-600" role="alert">{error}</p>
@@ -184,6 +229,10 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
                   return (
                     <li key={row.memberId} className={`px-4 py-3 ${changed ? 'bg-amber-50/70' : ''}`}>
                       <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)_minmax(0,18rem)] lg:items-center">
+                        <div className="flex min-w-0 items-start gap-3">
+                        {editable && (
+                          <input type="checkbox" checked={Boolean(selected[row.memberId])} onChange={() => toggle(row)} aria-label={`Select ${row.name}`} className="mt-1 h-5 w-5 shrink-0 accent-green-600" />
+                        )}
                         <div className="min-w-0">
                           <p className="font-semibold text-gray-900">{row.name}</p>
                           <p className="flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
@@ -196,6 +245,7 @@ export function AttendanceSheet({ activity, onSaved, onPendingChange, refreshKey
                             ) : row.source === 'finalization' ? <span>Not marked; recorded absent at finalization</span>
                               : row.recordedBy ? <span>Saved by {row.recordedBy}</span> : null}
                           </p>
+                        </div>
                         </div>
                         {editable ? (
                           <div className="grid grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1" role="group" aria-label={`Attendance of ${row.name}`}>

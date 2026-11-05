@@ -26,9 +26,14 @@ const Settings = lazy(() => import('../admin/pages/Settings').then((module) => (
 const MemberSettings = lazy(() => import('../member/pages/MemberSettings').then((module) => ({ default: module.MemberSettings })));
 const Savings = lazy(() => import('../admin/pages/Savings').then((module) => ({ default: module.Savings })));
 const RentalBooking = lazy(() => import('../member/pages/RentalBooking').then((module) => ({ default: module.RentalBooking })));
+const MemberAttendance = lazy(() => import('../member/pages/MemberAttendance').then((module) => ({ default: module.MemberAttendance })));
+const MemberSavings = lazy(() => import('../member/pages/MemberSavings').then((module) => ({ default: module.MemberSavings })));
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
+const VendorHistory = lazy(() => import('../vendor/pages/VendorHistory').then((module) => ({ default: module.VendorHistory })));
+const VendorActivity = lazy(() => import('../vendor/pages/VendorActivity').then((module) => ({ default: module.VendorActivity })));
+const VendorAnalytics = lazy(() => import('../vendor/pages/VendorAnalytics').then((module) => ({ default: module.VendorAnalytics })));
 const VendorKadiwa = lazy(() => import('../vendor/pages/VendorKadiwa').then((module) => ({ default: module.VendorKadiwa })));
 
 /** vendor: a Kadiwa store vendor, who only sends the day's sales and expenses for review. */
@@ -140,9 +145,12 @@ export default function App() {
             )
           }
         />
-        {/* A Kadiwa vendor has one page, the day's sales form, without the menus. */}
-        <Route path="/vendor" element={!isAuthenticated ? <Navigate to="/login" replace /> : <RoleRoute userRole={userRole} allowedRole="vendor"><VendorKadiwa /></RoleRoute>} />
-        <Route element={isAuthenticated && userRole === 'vendor' ? <Navigate to="/vendor" replace /> : isAuthenticated ? <PasswordChangeGate required={mustChangePassword}><Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /></PasswordChangeGate> : <Navigate to="/login" replace />}>
+        {/* A Kadiwa vendor has the sidebar too, with their one page: the day's sales form. */}
+        <Route element={isAuthenticated ? <PasswordChangeGate required={mustChangePassword}><Layout userRole={userRole} setUserRole={setUserRole} setIsAuthenticated={setIsAuthenticated} /></PasswordChangeGate> : <Navigate to="/login" replace />}>
+          <Route path="/vendor" element={<RoleRoute userRole={userRole} allowedRole="vendor"><VendorKadiwa /></RoleRoute>} />
+          <Route path="/vendor/analytics" element={<RoleRoute userRole={userRole} allowedRole="vendor"><VendorAnalytics /></RoleRoute>} />
+          <Route path="/vendor/history" element={<RoleRoute userRole={userRole} allowedRole="vendor"><VendorHistory /></RoleRoute>} />
+          <Route path="/vendor/activity" element={<RoleRoute userRole={userRole} allowedRole="vendor"><VendorActivity /></RoleRoute>} />
           <Route path="/admin-dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/accounts" element={<RoleRoute userRole={userRole} allowedRole="admin"><AccountManagement /></RoleRoute>} />
@@ -176,8 +184,10 @@ export default function App() {
           <Route path="/member/loans" element={<RoleRoute userRole={userRole} allowedRole="member"><LoanStatus userRole={userRole} /></RoleRoute>} />
           <Route path="/member/transactions" element={<RoleRoute userRole={userRole} allowedRole="member"><Transaction userRole={userRole} /></RoleRoute>} />
           <Route path="/member/rental-booking" element={<RoleRoute userRole={userRole} allowedRole="member"><RentalBooking userRole={userRole} /></RoleRoute>} />
+          <Route path="/member/attendance" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberAttendance /></RoleRoute>} />
+          <Route path="/member/savings" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberSavings /></RoleRoute>} />
           <Route path="/member/settings" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberSettings mustChangePassword={mustChangePassword} /></RoleRoute>} />
-          <Route path="/settings" element={userRole === 'admin' ? <Settings userRole={userRole} mustChangePassword={mustChangePassword} /> : <MemberSettings mustChangePassword={mustChangePassword} />} />
+          <Route path="/settings" element={userRole === 'vendor' ? <Navigate to="/vendor" replace /> : userRole === 'admin' ? <Settings userRole={userRole} mustChangePassword={mustChangePassword} /> : <MemberSettings mustChangePassword={mustChangePassword} />} />
         </Route>
         <Route path="*" element={<Navigate to={isAuthenticated ? homePath(userRole) : '/login'} replace />} />
         </Routes>

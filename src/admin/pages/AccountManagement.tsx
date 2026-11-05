@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { History, KeyRound, Mail, Pencil, Phone, Plus, RefreshCw, Search, ShieldCheck, Store, UserCog, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLiveRefresh } from '../../lib/liveUpdates';
@@ -12,13 +13,17 @@ import {
   updateAccountStatusRequest,
 } from '../../app/services/authApi';
 import { formatDateTime } from '../../utils/dateTime';
+import type { LayoutOutletContext } from '../../app/components/Layout';
 import { Pagination } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { AdminAccountForm } from '../components/AdminAccountForm';
 import { VendorAccountEditor, VendorAccountForm } from '../components/VendorAccountForms';
 
 /** onViewActivity: opens the audit log on one administrator's actions (given where the audit log is at hand). */
-export function AccountManagement({ onViewActivity }: { onViewActivity?: (account: Account) => void } = {}) {
+export function AccountManagement({ onViewActivity: viewActivityProp }: { onViewActivity?: (account: Account) => void } = {}) {
+  // As its own page, the layout's audit log opens on the administrator.
+  const layout = useOutletContext<LayoutOutletContext | undefined>();
+  const onViewActivity = viewActivityProp ?? (layout?.viewAdminActivity ? (account: Account) => layout.viewAdminActivity(account.user_id) : undefined);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showCreateAdmin, setShowCreateAdmin] = useState(false);
   // Kadiwa store vendors: the form to make one, and the vendor whose name or password is being changed.
@@ -113,7 +118,7 @@ export function AccountManagement({ onViewActivity }: { onViewActivity?: (accoun
       <span className="block text-xs text-gray-500">{account.created_by_name ? `Made by ${account.created_by_name}` : 'First administrator'}{account.last_activity_at ? ` · Last activity ${formatDateTime(account.last_activity_at)}` : ''}</span>
     </div></div>
   ) : account.role === 'VENDOR' ? (
-    <div className="flex flex-wrap items-center gap-2"><Store className="h-4 w-4 shrink-0 text-amber-700" /><span className="font-medium text-gray-900">{account.full_name || account.username}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">Kadiwa vendor</span></div>
+    <div className="flex flex-wrap items-center gap-2"><Store className="h-4 w-4 shrink-0 text-amber-700" /><span className="font-medium text-gray-900">{account.full_name || account.username}</span><span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">Kadiwa vendor</span>{account.kadiwa_branch_name && <span className="text-xs text-gray-500">{account.kadiwa_branch_name}</span>}</div>
   ) : <div className="flex flex-wrap items-center gap-x-2"><UserRound className="h-4 w-4 shrink-0 text-gray-400" /><span className="font-medium text-gray-900">{account.first_name || ''} {account.last_name || ''}</span><span className="text-gray-500">{account.member_number}</span></div>;
   // What the account signs in with: members their email or mobile number; administrators keep their username.
   const signsInWith = (account: Account) => (

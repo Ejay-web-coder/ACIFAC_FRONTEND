@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { User, Phone, MapPin, Calendar, CreditCard, PiggyBank, HandCoins, Wallet, Coins, Receipt, CalendarCheck, X } from 'lucide-react';
+import { User, CreditCard, PiggyBank, HandCoins, Wallet, Coins, Receipt, X, IdCard, Sprout, Users } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
@@ -7,7 +7,6 @@ import { DividendBreakdown, peso, percent, periodText, useMyDividend, YearSelect
 import { PatronageBreakdown } from '../components/MemberPatronageRefund';
 import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
-import { ParticipationProfile } from '../../app/components/attendance/ParticipationProfile';
 import { useIsMobile } from '../../app/components/ui/use-mobile';
 
 interface MemberProfileProps {
@@ -50,7 +49,16 @@ function Icon3D({ icon: Icon, color, small = false }: { icon: ComponentType<{ cl
   );
 }
 
-type PanelKey = 'financial' | 'shares' | 'loans' | 'attendance';
+type PanelKey = 'financial' | 'shares' | 'loans';
+
+// Age in whole years on today's date, from YYYY-MM-DD; null when it cannot be worked out.
+function ageOn(birthDate: string) {
+  const [year, month, day] = birthDate.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const now = new Date();
+  const age = now.getFullYear() - year - (now.getMonth() + 1 < month || (now.getMonth() + 1 === month && now.getDate() < day) ? 1 : 0);
+  return age >= 0 && age < 130 ? age : null;
+}
 
 export function MemberProfile({ userRole }: MemberProfileProps) {
   const { memberData, error } = useMyMemberData();
@@ -77,6 +85,44 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
 
   const { member, loans, payments, shareDetails } = memberData;
   const address = [member.address, member.barangay, member.municipality, member.province].filter(Boolean).join(', ');
+  const hectares = (value: string | number | null | undefined) => (value === null || value === undefined || value === '' ? '' : `${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 2 })} ha`);
+  const extra = member.additional_info ?? {};
+  const mother = extra.motherMaidenName || [extra.motherFirstName, extra.motherMiddleName, extra.motherLastName].filter(Boolean).join(' ');
+  const capitalize = (value: string | null | undefined) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '');
+  const infoGroups: Array<{ title: string; icon: ComponentType<{ className?: string }>; items: Array<[string, ReactNode]> }> = [
+    { title: 'Personal Information', icon: User, items: [
+      ['Phone Number', member.phone],
+      ['Email', member.email],
+      ['Address', address],
+      ['Date of Birth', member.date_of_birth ? `${formatDate(member.date_of_birth)}${ageOn(member.date_of_birth) !== null ? ` (${ageOn(member.date_of_birth)} years old)` : ''}` : ''],
+      ['Sex', capitalize(member.gender)],
+      ['Civil Status', capitalize(member.civil_status)],
+      ['Education', member.education],
+      ["Mother's Maiden Name", mother],
+    ] },
+    { title: 'Membership', icon: IdCard, items: [
+      ['Member ID', member.member_number || String(member.id)],
+      ['Member Since', formatDate(member.membership_date)],
+      ['Membership Status', capitalize(member.status)],
+      ['Membership Type', extra.membershipType],
+      ['Valid ID', [member.id_type, member.id_number].filter(Boolean).join(' · ')],
+    ] },
+    { title: 'Farm & Livelihood', icon: Sprout, items: [
+      ['Livelihood', member.livelihood],
+      ['RSBSA No.', member.rsbsa_no],
+      ['Total Farm Area', hectares(member.farm_area_ha)],
+      ['Corn Area', hectares(member.corn_area_ha)],
+      ['Palay Area', hectares(member.palay_area_ha)],
+      ['Yearly Income', member.yearly_income ? peso(member.yearly_income) : ''],
+    ] },
+    { title: 'Family & Emergency Contact', icon: Users, items: [
+      ['Spouse', member.spouse_name],
+      ['Spouse Age', member.spouse_age ? String(member.spouse_age) : ''],
+      ['Spouse Contact', member.spouse_contact],
+      ['Children', member.children],
+      ['Emergency Contact', member.emergency_contact],
+    ] },
+  ];
   const totalLoanBalance = sumMoney(loans.map((loan) => loan.balance));
   const money = (value: number) => `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
@@ -225,7 +271,6 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
     { key: 'financial', title: 'Financial Summary', note: dividend ? `Dividend ${peso(dividend.dividend)}` : 'Dividend & refund', icon: Wallet, color: 'purple', body: financialSummary },
     { key: 'shares', title: 'Share History', note: money(shareDetails.total), icon: Coins, color: 'green', body: shareContributions },
     { key: 'loans', title: 'Loan Payments', note: `Balance ${money(totalLoanBalance)}`, icon: Receipt, color: 'blue', body: loanPayments },
-    { key: 'attendance', title: 'My Activity Attendance', note: 'Meetings & trainings', icon: CalendarCheck, color: 'orange', body: <ParticipationProfile variant="member" /> },
   ];
   const open = isMobile ? panels.find((panel) => panel.key === openPanel) : undefined;
 
@@ -253,44 +298,24 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         </div>
       </div>
 
-      {/* Personal Information */}
-      <div className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200">
-        <h2 className="text-lg font-bold text-gray-900 mb-4">Personal Information</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Phone className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Phone Number</p>
-              <p className="font-medium text-gray-900">{member.phone || 'Not provided'}</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <MapPin className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Address</p>
-              <p className="font-medium text-gray-900">{address || 'Not provided'}</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-gray-100 rounded-lg">
-              <Calendar className="w-5 h-5 text-gray-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Member Since</p>
-              <p className="font-medium text-gray-900">{formatDate(member.membership_date)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Personal Information, grouped as on the membership form */}
+      {infoGroups.map((group) => (
+        <section key={group.title} className="bg-white rounded-2xl p-6 shadow-[var(--shadow-card)] border border-gray-200" aria-label={group.title}>
+          <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-gray-900"><group.icon className="h-5 w-5 text-green-700" />{group.title}</h2>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+            {group.items.map(([label, value]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-sm text-gray-500">{label}</dt>
+                <dd className={`break-words font-medium ${value ? 'text-gray-900' : 'text-gray-400'}`}>{value || 'Not provided'}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+      <p className="-mt-3 text-xs text-gray-500">To correct any of these details, please tell the ACIFAC office.</p>
 
       {isMobile ? (
-        <nav aria-label="My records" className="grid grid-cols-2 gap-3">
+        <nav aria-label="My records" className="grid grid-cols-3 gap-2">
           {panels.map((panel) => (
             <button key={panel.key} type="button" onClick={() => setOpenPanel(panel.key)}
               className="flex flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-white px-3 pb-4 pt-5 text-center shadow-[var(--shadow-card)] transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-raised)] active:scale-[0.98]">

@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Calendar, FileText, Download, Eye, PiggyBank, Tractor, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Calendar, Download, Eye, PiggyBank, Tractor, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
@@ -261,13 +261,13 @@ export function Transaction({ userRole }: TransactionProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Phones: the kinds as chips, and the sort, in one strip. */}
       <div className="space-y-2 md:hidden">
-        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Show">
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-1" role="group" aria-label="Show">
           {FILTERS.map(([value, label]) => (
             <button key={value} type="button" onClick={() => setFilterType(value)} aria-pressed={filterType === value}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 transition ${filterType === value ? 'bg-green-600 text-white ring-green-600' : 'bg-white text-gray-700 ring-gray-300 hover:bg-green-50'}`}>{label}</button>
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${filterType === value ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-green-50'}`}>{label}</button>
           ))}
         </div>
         <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
@@ -281,42 +281,26 @@ export function Transaction({ userRole }: TransactionProps) {
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="hidden bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-3 sm:p-4 md:block">
-        <div>
-          <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-4">
-            <div className="min-w-0">
-              <label className="block text-sm text-gray-600 mb-2">Filter Type</label>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value as any)}
-                className="h-11 w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-56"
-              >
-                <option value="all">All Transactions</option>
-                <option value="savings">Savings Deposits</option>
-                <option value="withdrawal">Savings Withdrawals</option>
-                <option value="rental">Machinery Rentals</option>
-                <option value="payment">Loan Payments</option>
-                <option value="debt">Loan Disbursements</option>
-              </select>
-            </div>
-            <div className="min-w-0">
-              <label className="block text-sm text-gray-600 mb-2">Sort By</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="h-11 w-full min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-sm sm:w-56"
-              >
-                <option value="date">Date (Newest)</option>
-                <option value="amount">Amount (Highest)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Transactions Table */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] overflow-hidden">
+        {/* Tablets and desktops: the filter and sort above the table, in one bar. */}
+        <div className="hidden flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 md:flex">
+          <p className="text-sm text-gray-600"><span className="font-semibold text-gray-900">{sortedTransactions.length}</span> {sortedTransactions.length === 1 ? 'transaction' : 'transactions'} · tap View or Download for a receipt</p>
+          <div className="flex items-center gap-2">
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value as any)} aria-label="Filter type" className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm">
+              <option value="all">All Transactions</option>
+              <option value="savings">Savings Deposits</option>
+              <option value="withdrawal">Savings Withdrawals</option>
+              <option value="rental">Machinery Rentals</option>
+              <option value="payment">Loan Payments</option>
+              <option value="debt">Loan Disbursements</option>
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} aria-label="Sort by" className="h-10 rounded-xl border border-gray-300 bg-white px-3 text-sm">
+              <option value="date">Date (Newest)</option>
+              <option value="amount">Amount (Highest)</option>
+            </select>
+          </div>
+        </div>
         <PagedList items={sortedTransactions} resetKey={`${filterType}|${sortBy}`} label="transactions">{(pageItems) => (
         <>
         {/* Phones: one row per transaction; tap it for the receipt. */}
@@ -338,58 +322,46 @@ export function Transaction({ userRole }: TransactionProps) {
             );
           })}
         </ul>
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed">
             <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Type</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Description</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Date & Time</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Category</th>
-                <th className="px-6 py-4 text-right text-sm font-semibold text-gray-900">Amount</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Receipt</th>
+              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <th className="w-[11rem] px-4 py-2.5">Type</th>
+                <th className="px-4 py-2.5">Description</th>
+                <th className="w-[8.5rem] px-4 py-2.5">Date</th>
+                <th className="w-[9rem] px-4 py-2.5 text-right">Amount</th>
+                <th className="w-[11.5rem] px-4 py-2.5">Receipt</th>
               </tr>
             </thead>
             <tbody>
               {pageItems.map((txn) => (
-                <tr key={txn.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
-                  <td className="px-6 py-4">
+                <tr key={txn.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                  <td className="px-4 py-2.5">
                     {(() => {
                       const style = TYPE_STYLE[txn.type];
                       const Icon = style.icon;
                       return (
-                        <div className={`inline-flex items-center gap-2 whitespace-nowrap px-3 py-1 rounded-lg ${style.chip}`}>
-                          <Icon className={`w-5 h-5 ${style.amount}`} />
+                        <div className={`inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1 ${style.chip}`}>
+                          <Icon className={`h-4 w-4 shrink-0 ${style.amount}`} />
                           <span className={`text-sm font-medium ${style.text}`}>{style.label}</span>
                         </div>
                       );
                     })()}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="min-w-[14rem]">
-                      <p className="font-medium text-gray-900">{txn.description}</p>
-                      {txn.detail && <p className="text-xs text-gray-600 mt-0.5">{txn.detail}</p>}
-                      <p className="text-xs text-gray-600 mt-1">Ref: {txn.reference}</p>
-                    </div>
+                  <td className="px-4 py-2.5">
+                    <p className="truncate text-sm font-medium text-gray-900" title={txn.description}>{txn.description}</p>
+                    <p className="truncate text-xs text-gray-500" title={[txn.detail, `Ref: ${txn.reference}`].filter(Boolean).join(' · ')}>{txn.detail ? `${txn.detail} · ` : ''}Ref: {txn.reference}</p>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 whitespace-nowrap text-sm text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      {formatDate(txn.date)}
-                    </div>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-600">
+                    <span className="inline-flex items-center gap-1.5"><Calendar className="h-4 w-4 shrink-0" />{formatDate(txn.date)}</span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="whitespace-nowrap px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                      {txn.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <p className={`whitespace-nowrap text-lg font-bold ${TYPE_STYLE[txn.type].amount}`}>
+                  <td className="px-4 py-2.5 text-right">
+                    <p className={`whitespace-nowrap text-base font-bold tabular-nums ${TYPE_STYLE[txn.type].amount}`}>
                       {TYPE_STYLE[txn.type].sign}{peso(txn.amount)}
                     </p>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleViewReceipt(txn)}
                         className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition"
@@ -521,19 +493,6 @@ export function Transaction({ userRole }: TransactionProps) {
         </div>
       )}
 
-      {/* Additional Info */}
-      <div className="hidden bg-white rounded-2xl border border-gray-200 shadow-[var(--shadow-card)] p-6 md:block">
-        <div className="flex items-start gap-4">
-          <FileText className="w-5 h-5 text-blue-600 mt-1" />
-          <div>
-            <h4 className="font-semibold text-gray-900 mb-2">Transaction Details</h4>
-            <p className="text-sm text-gray-600">
-              Your savings deposits, machinery rental bookings, loan disbursements and loan payments are all listed here for record-keeping, reconciliation, and audit purposes. 
-              You can download a receipt for any transaction to keep for your records.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
