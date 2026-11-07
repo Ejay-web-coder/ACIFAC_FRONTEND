@@ -35,7 +35,7 @@ const COLUMN_ALIASES: Record<string, keyof MemberImportRow> = {
 const TEMPLATE_HEADERS = ['First Name', 'Middle Name', 'Last Name', 'Suffix', 'Email', 'Phone', 'Address', 'Barangay', 'Municipality', 'Province', 'Birthday', 'Gender', 'Civil Status', 'RSBSA No', 'Livelihood', 'Farm Area', 'Membership Date', 'Share Capital'];
 const TEMPLATE_EXAMPLE = ['Juan', 'Santos', 'Dela Cruz', '', 'juan.delacruz@example.com', '09171234567', 'Purok 1', 'San Isidro', 'Cabanatuan', 'Nueva Ecija', '1985-04-12', 'Male', 'Married', '', 'Rice farming', '1.5', '', '500'];
 
-const REQUIRED: Array<[keyof MemberImportRow, string]> = [['first_name', 'first name'], ['last_name', 'last name'], ['email', 'email'], ['phone', 'phone'], ['address', 'address']];
+const REQUIRED: Array<[keyof MemberImportRow, string]> = [['first_name', 'first name'], ['last_name', 'last name'], ['phone', 'phone'], ['address', 'address']];
 const DATE_FIELDS = new Set<keyof MemberImportRow>(['date_of_birth', 'membership_date']);
 
 const normalizeHeader = (header: string) => header.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -210,7 +210,7 @@ export function MemberImportModal({ onClose, onImported }: { onClose: () => void
                 </button>
                 {fileName && <span className="inline-flex items-center gap-2 truncate text-sm text-slate-600"><FileSpreadsheet className="h-4 w-4 shrink-0 text-green-600" />{fileName}</span>}
               </div>
-              <p className="text-sm text-slate-500">Required columns: <strong>First Name</strong>, <strong>Last Name</strong> (or a single <strong>Name</strong> column), <strong>Email</strong>, <strong>Phone</strong>, <strong>Address</strong>. Leave the member ID out; it is assigned on import. A blank Membership Date means today. ID documents can be attached to each member afterwards.</p>
+              <p className="text-sm text-slate-500">Required columns: <strong>First Name</strong>, <strong>Last Name</strong> (or a single <strong>Name</strong> column), <strong>Phone</strong>, <strong>Address</strong>; <strong>Email</strong> is optional. Leave the member ID out; it is assigned on import. A blank Membership Date means today. ID documents can be attached to each member afterwards.</p>
 
               {parsing && <p className="text-sm text-slate-500">Reading file...</p>}
               {parseError && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle className="h-4 w-4 shrink-0" />{parseError}</div>}

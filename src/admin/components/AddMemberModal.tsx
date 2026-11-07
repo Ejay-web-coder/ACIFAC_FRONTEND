@@ -512,8 +512,8 @@ export function MemberForm({
     else if (isAdd && !/^(?:63|0)?9\d{9}$/.test(form.cpNo.trim().replace(/^\+/, '').replace(/[\s().-]/g, ''))) next.cpNo = 'Enter a mobile number like 0917 123 4567: the member signs in with it.';
     if (form.idType === 'Other' && !form.idTypeOther.trim()) next.idTypeOther = 'Specify the ID type.';
     if (form.farmArea !== '' && !(Number(form.farmArea) >= 0)) next.farmArea = 'Farm area must be 0 or more.';
-    if (!form.email.trim()) next.email = 'Email is required for the member account.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) next.email = 'Enter a valid email address.';
+    // Email is optional: a member without one signs in with their mobile number.
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) next.email = 'Enter a valid email address.';
     if (!form.membershipAcceptanceDate) next.membershipAcceptanceDate = 'Acceptance date is required.';
     if (form.membershipFee !== '' && !(Number(form.membershipFee) >= 0)) next.membershipFee = 'Enter zero or more.';
     if (isAdd) {
@@ -723,7 +723,7 @@ export function MemberForm({
         {/* Not on the printed form, but needed for the member's account: the member
             signs in with this email or mobile number (the same number as CP #). */}
         <FormTable cols="grid-cols-1 sm:grid-cols-3" className="mt-2">
-          <Cell label="Email (member account login)" required error={errors.email}>{input('email', { type: 'email', placeholder: 'member@email.com' })}</Cell>
+          <Cell label="Email (optional)" error={errors.email}>{input('email', { type: 'email', placeholder: 'member@email.com' })}</Cell>
           <Cell label="Mobile No. (member account login)" required error={errors.cpNo}>{input('cpNo', { type: 'tel', placeholder: '09XX XXX XXXX', title: 'The same number as CP #' })}</Cell>
           <Cell label={isAdd ? 'Initial Share Capital' : 'Share Capital'} error={errors.shareCapital}>
             {isAdd ? input('shareCapital', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' }) : readOnly ? view(peso(form.shareCapital) || '₱0.00') : (
