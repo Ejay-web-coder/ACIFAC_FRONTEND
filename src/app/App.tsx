@@ -31,6 +31,7 @@ const MemberSavings = lazy(() => import('../member/pages/MemberSavings').then((m
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
+const AdminChart = lazy(() => import('../app/components/OrgChart').then((module) => ({ default: () => <module.OrgChartPanel editable /> })));
 const VendorHistory = lazy(() => import('../vendor/pages/VendorHistory').then((module) => ({ default: module.VendorHistory })));
 const VendorActivity = lazy(() => import('../vendor/pages/VendorActivity').then((module) => ({ default: module.VendorActivity })));
 const VendorAnalytics = lazy(() => import('../vendor/pages/VendorAnalytics').then((module) => ({ default: module.VendorAnalytics })));
@@ -153,6 +154,7 @@ export default function App() {
           <Route path="/vendor/activity" element={<RoleRoute userRole={userRole} allowedRole="vendor"><VendorActivity /></RoleRoute>} />
           <Route path="/admin-dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
+          <Route path="/admin/chart" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminChart /></RoleRoute>} />
           <Route path="/admin/accounts" element={<RoleRoute userRole={userRole} allowedRole="admin"><AccountManagement /></RoleRoute>} />
           <Route path="/member-dashboard" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberDashboard userRole={userRole} /></RoleRoute>} />
           <Route path="/member-profile" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberProfile userRole={userRole} /></RoleRoute>} />

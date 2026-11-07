@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { User, Bell, Shield, Save, History } from 'lucide-react';
+import { User, Bell, Shield, Save, History, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRequest } from '../../app/services/authApi';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { ActivityLog } from './ActivityLog';
+import { OrgChartPanel } from '../../app/components/OrgChart';
 
-type SettingsTab = 'profile' | 'notifications' | 'security' | 'activity';
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'activity' | 'chart';
 
 export function MemberSettings({ mustChangePassword = false }: { mustChangePassword?: boolean }) {
   // ?tab=activity opens the activity log (the old Activity Log page sends members here).
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (mustChangePassword ? 'security' : searchParams.get('tab') === 'activity' ? 'activity' : 'profile'));
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => (mustChangePassword ? 'security' : searchParams.get('tab') === 'activity' ? 'activity' : searchParams.get('tab') === 'chart' ? 'chart' : 'profile'));
   const [profileData, setProfileData] = useState({ name: '', phone: '', membershipNumber: '' });
   const [notificationEmail, setNotificationEmail] = useState<string | null>(null);
   // The saved number (not the one being edited) and whether codes can be texted to it.
@@ -114,11 +115,23 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <History className="w-5 h-5" />
               Activity Log
             </button>
+            <button
+              onClick={() => setActiveTab('chart')}
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'chart'
+                  ? 'border-green-600 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Network className="w-5 h-5" />
+              Organization Chart
+            </button>
           </div>
         </div>
 
         {/* Content */}
         <div className="p-4 sm:p-6">
+          {activeTab === 'chart' && <OrgChartPanel />}
           {activeTab === 'activity' && <ActivityLog onChangePassword={() => setActiveTab('security')} />}
           {/* Profile Tab */}
           {activeTab === 'profile' && (

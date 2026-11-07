@@ -30,6 +30,7 @@ import {
   CircleCheck,
   Trash2,
   UserCog,
+  Network,
   History,
   type LucideIcon,
 } from 'lucide-react';
@@ -124,6 +125,7 @@ const navigation: NavItem[] = [
   { name: 'Kadiwa Store', href: '/kadiwa', icon: Store, roles: ['admin'], group: 'Operations', aliases: ['/admin/kadiwa'], short: 'Kadiwa' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin'], group: 'Overview', aliases: ['/admin/analytics'], short: 'Analytics' },
   { name: 'Report', href: '/reports', icon: FileBarChart, roles: ['admin'], group: 'Overview', aliases: ['/admin/reports'], short: 'Report' },
+  { name: 'Chart', href: '/admin/chart', icon: Network, roles: ['admin'], group: 'Members', short: 'Chart' },
   { name: 'Manage Users', href: '/admin/accounts', icon: UserCog, roles: ['admin'], group: 'System', short: 'Users' },
   { name: 'OCR Scanner', href: '/ocr', icon: ScanLine, roles: ['admin'], group: 'System', aliases: ['/admin/ocr'], short: 'OCR' },
   { name: 'Kadiwa Store', href: '/vendor', icon: Store, roles: ['vendor'], group: 'Overview', short: 'Store' },
