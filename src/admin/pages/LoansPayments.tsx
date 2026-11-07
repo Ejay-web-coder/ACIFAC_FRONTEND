@@ -4,7 +4,7 @@ import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Downl
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, fetchPaymentHours, isPaymentDay, loanIdPath, loanSignaturePath, officeOpenAt, recordAdminLoanPayment, weekdayName, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination, type PaymentHours } from '../../app/services/authApi';
+import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, loanIdPath, loanSignaturePath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
@@ -95,9 +95,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const requestPages = usePagination(shownRequests, { resetKey: `${requestStatus}|${requestOrder}|${requestSearch}` });
   const [showAddLoanModal, setShowAddLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  // Payments are received on weekdays during office hours only.
-  const [paymentHours, setPaymentHours] = useState<PaymentHours | null>(null);
-  const [officeOpen, setOfficeOpen] = useState(true);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
   // The open loan being given a new schedule.
@@ -193,25 +190,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     toast.success('Loan approved successfully', { description: `${loan.id} has been created using server-verified amounts.` });
   };
 
-  useEffect(() => {
-    fetchPaymentHours().then(setPaymentHours).catch(() => undefined);
-  }, []);
-  // While the payment window is open, it closes itself when office hours end.
-  useEffect(() => {
-    if (!paymentHours || !showPaymentModal) return undefined;
-    const check = () => setOfficeOpen(officeOpenAt(paymentHours));
-    check();
-    const timer = window.setInterval(check, 15000);
-    return () => window.clearInterval(timer);
-  }, [paymentHours, showPaymentModal]);
-
-  // Today, or the last day the office received payments.
-  const lastPaymentDay = () => {
-    let date = dateOnlyToday();
-    for (let step = 0; paymentHours && step < 7 && !isPaymentDay(paymentHours, date); step += 1) date = addDateOnlyDays(date, -1);
-    return date;
-  };
-
   const handleRecordPayment = (loan: Loan) => {
     setSelectedLoanForPayment(loan);
     // A single-payment loan defaults to the whole balance (a part may be paid);
@@ -219,20 +197,17 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     const suggested = loan.repayment === 'single' ? loan.balance : Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
     setPaymentData({
       amount: suggested.toFixed(2),
-      paymentDate: lastPaymentDay()
+      // Payments are recorded any day and time; dated today unless changed.
+      paymentDate: dateOnlyToday()
     });
     setShowPaymentModal(true);
   };
-  const paymentDayError = paymentHours && paymentData.paymentDate && !isPaymentDay(paymentHours, paymentData.paymentDate)
-    ? `Payments are received ${paymentHours.label} only. ${formatDate(paymentData.paymentDate)} is a ${weekdayName(paymentData.paymentDate)}.`
-    : '';
 
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLoanForPayment || isSubmittingPayment) return;
 
     const paymentAmount = paymentData.amount.trim();
-    if (paymentDayError || (paymentHours && !officeOpenAt(paymentHours))) return;
     setIsSubmittingPayment(true);
     try {
       const { payment } = await recordAdminLoanPayment(selectedLoanForPayment.databaseId, { amount: paymentAmount, paymentDate: paymentData.paymentDate });
@@ -585,19 +560,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     max={dateOnlyToday()}
                     value={paymentData.paymentDate}
                     onChange={(e) => setPaymentData({ ...paymentData, paymentDate: e.target.value })}
-                    aria-invalid={paymentDayError ? true : undefined}
-                    className={`w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent ${paymentDayError ? 'border-red-400' : 'border-gray-300'}`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
-                  {paymentDayError && <p className="mt-1 text-xs text-red-600">{paymentDayError}</p>}
                 </div>
-                {paymentHours && (officeOpen ? (
-                  <p className="flex items-start gap-2 text-xs text-gray-600"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Office hours for payments: {paymentHours.label}.</p>
-                ) : (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
-                    <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>The office is closed now. Loan payments can be recorded only during office hours: <strong>{paymentHours.label}</strong>.</span>
-                  </div>
-                ))}
                 {paymentData.amount && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                     <p className="text-sm text-blue-900">
@@ -619,7 +584,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingPayment || Boolean(paymentDayError) || !officeOpen}
+                  disabled={isSubmittingPayment}
                   className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmittingPayment ? 'Saving...' : 'Record Payment'}
