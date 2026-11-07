@@ -237,10 +237,10 @@ export function VendorSaleForm({ goods, inventory, onSaved }: { goods: KadiwaGoo
       {query && (selected ? (
         <>
           {matches.length > 1 && !custom && (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Products found">
+            <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 py-1" role="group" aria-label="Products found">
               {matches.slice(0, 20).map((product) => (
                 <button key={product.id} type="button" onClick={() => setPicked(product.id)} aria-pressed={selected.id === product.id}
-                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-3.5 py-1.5 text-sm font-semibold ring-1 ${selected.id === product.id ? 'bg-green-800 text-white ring-green-800' : 'bg-white text-gray-700 ring-gray-300 hover:bg-green-50'}`}>
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3.5 py-1.5 text-sm font-semibold ${selected.id === product.id ? 'border-green-800 bg-green-800 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-green-50'}`}>
                   {inSale(product) && <Check className="h-3.5 w-3.5" />}{product.kind === 'good' ? titleCase(product.name) : productLabel(product.item)}
                 </button>
               ))}

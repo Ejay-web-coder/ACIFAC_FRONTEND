@@ -62,7 +62,8 @@ export function ActivityLog({ onChangePassword, fetcher = fetchMyActivity, views
   onChangePassword?: () => void;
   fetcher?: (filters: ActivityFilters) => Promise<ActivityResponse>;
   views?: ActivityView[];
-  subtitle?: string;
+  /** null: no heading (the page's name is already in the top bar). */
+  subtitle?: string | null;
 } = {}) {
   const [view, setView] = useState<string>('everything');
   const [range, setRange] = useState<DateRange>('any');
@@ -144,10 +145,12 @@ export function ActivityLog({ onChangePassword, fetcher = fetchMyActivity, views
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">Activity log</h2>
-        <p className="text-sm text-gray-600">{subtitle ?? 'Every sign-in and change on your account, plus what the ACIFAC office recorded for you.'} Newest first.</p>
-      </div>
+      {subtitle !== null && (
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Activity log</h2>
+          <p className="text-sm text-gray-600">{subtitle ?? 'Every sign-in and change on your account, plus what the ACIFAC office recorded for you.'} Newest first.</p>
+        </div>
+      )}
 
       {/* Your last sign-in, and failed sign-ins in the last 30 days. */}
       <div className={`grid grid-cols-1 gap-3 ${failed > 0 ? 'md:grid-cols-2' : ''}`}>

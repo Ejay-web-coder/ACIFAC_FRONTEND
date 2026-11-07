@@ -13,5 +13,5 @@ const VENDOR_VIEWS: ActivityView[] = [
 ];
 
 export function VendorActivity() {
-  return <ActivityLog fetcher={fetchVendorActivity} views={VENDOR_VIEWS} subtitle="Your sign-ins, the sales you sent, and when the office confirmed or rejected them." />;
+  return <ActivityLog fetcher={fetchVendorActivity} views={VENDOR_VIEWS} subtitle={null} />;
 }
