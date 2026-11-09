@@ -1,13 +1,13 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { User, CreditCard, PiggyBank, HandCoins, Wallet, Coins, Receipt, X, IdCard, Sprout, Users } from 'lucide-react';
+import { User, CreditCard, Wallet, Coins, Receipt, X, IdCard, Sprout, Users } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
-import { DividendBreakdown, peso, percent, periodText, useMyDividend, YearSelect } from '../components/MemberDividend';
-import { PatronageBreakdown } from '../components/MemberPatronageRefund';
 import { sumMoney } from '../../utils/money';
 import { formatDate } from '../../utils/dateTime';
 import { useIsMobile } from '../../app/components/ui/use-mobile';
+
+const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 interface MemberProfileProps {
   userRole: UserRole;
@@ -63,8 +63,6 @@ function ageOn(birthDate: string) {
 export function MemberProfile({ userRole }: MemberProfileProps) {
   const { memberData, error } = useMyMemberData();
   const picture = useMyPicture(userRole === 'member');
-  const [dividendYear, setDividendYear] = useState<number | undefined>(undefined);
-  const { dividend, error: dividendError } = useMyDividend(dividendYear, userRole === 'member');
   // Phones: the four records are icons; one opens at a time in a sheet.
   const isMobile = useIsMobile();
   const [openPanel, setOpenPanel] = useState<PanelKey | null>(null);
@@ -126,17 +124,11 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
   const totalLoanBalance = sumMoney(loans.map((loan) => loan.balance));
   const money = (value: number) => `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
-  /* Financial Summary: balances, this year's estimates and how they are computed */
+  /* Financial Summary: share capital and savings (dividends and patronage refunds are confidential: the office only) */
   const financialSummary = (
     <section className="bg-white rounded-2xl p-4 sm:p-6 shadow-[var(--shadow-card)] border border-gray-200" aria-labelledby="financial-summary-title" id="financial-summary">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 id="financial-summary-title" className="text-lg font-bold text-gray-900">Financial Summary</h2>
-          {dividend && <p className="mt-1 text-sm text-gray-600">Dividend and patronage refund estimates for {periodText(dividend)}</p>}
-        </div>
-        <YearSelect dividend={dividend} onYearChange={setDividendYear} />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <h2 id="financial-summary-title" className="mb-4 text-lg font-bold text-gray-900">Financial Summary</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-4 bg-blue-50 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
             <CreditCard className="w-5 h-5 text-blue-600" />
@@ -156,32 +148,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
           </p>
         </div>
 
-        <div className="p-4 bg-purple-50 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <PiggyBank className="w-5 h-5 text-purple-600" />
-            <p className="text-sm text-purple-700">Estimated Dividend</p>
-          </div>
-          <p className="text-2xl font-bold tabular-nums text-purple-900">{dividend ? peso(dividend.dividend) : ''}</p>
-          {dividend && <p className="mt-1 text-xs text-purple-700">{percent(dividend.shareRatio)} of the dividend pool</p>}
-        </div>
-
-        <div className="p-4 bg-teal-50 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <HandCoins className="w-5 h-5 text-teal-600" />
-            <p className="text-sm text-teal-700">Estimated Patronage Refund</p>
-          </div>
-          <p className="text-2xl font-bold tabular-nums text-teal-900">{dividend?.patronage ? peso(dividend.patronage.refund) : ''}</p>
-          {dividend?.patronage && <p className="mt-1 text-xs text-teal-700">{percent(dividend.patronage.poolShare)} of the patronage refund pool</p>}
-        </div>
       </div>
-
-      {dividendError && <p className="mt-4 text-sm text-red-600" role="alert">{dividendError}</p>}
-      {dividend && (
-        <div className="mt-5 space-y-3">
-          <DividendBreakdown dividend={dividend} />
-          {dividend.patronage && <PatronageBreakdown dividend={dividend} patronage={dividend.patronage} />}
-        </div>
-      )}
     </section>
   );
 
@@ -268,7 +235,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
   );
 
   const panels: Array<{ key: PanelKey; title: string; note: string; icon: ComponentType<{ className?: string }>; color: keyof typeof ICON_3D; body: ReactNode }> = [
-    { key: 'financial', title: 'Financial Summary', note: dividend ? `Dividend ${peso(dividend.dividend)}` : 'Dividend & refund', icon: Wallet, color: 'purple', body: financialSummary },
+    { key: 'financial', title: 'Financial Summary', note: `Savings ${money(memberData.savings?.total ?? 0)}`, icon: Wallet, color: 'purple', body: financialSummary },
     { key: 'shares', title: 'Share History', note: money(shareDetails.total), icon: Coins, color: 'green', body: shareContributions },
     { key: 'loans', title: 'Loan Payments', note: `Balance ${money(totalLoanBalance)}`, icon: Receipt, color: 'blue', body: loanPayments },
   ];

@@ -207,7 +207,7 @@ const currentMonth = () => {
 function describeChange(row: LoanRow) {
   const before = monthBefore(row.month);
   if (row.change === 0) return row.amount === 0 ? `none in ${before} either` : `same as ${before}`;
-  const percent = row.changePercent === null ? '' : ` (${row.changePercent > 0 ? '+' : '−'}${Math.abs(row.changePercent)}%)`;
+  const percent = row.changePercent === null ? '' : ` (${row.changePercent > 0 ? '+' : '−'}${Math.min(100, Math.abs(row.changePercent))}%)`;
   return `${row.change > 0 ? 'up' : 'down'} ${formatCurrency(Math.abs(row.change))}${percent} from ${before}`;
 }
 
@@ -290,7 +290,7 @@ function LoanDisbursementChart({ rows, loading }: { rows: LoanRow[]; loading: bo
                 <td className="hidden py-1 pr-3 text-right sm:table-cell">{row.count}</td>
                 <td className="py-1 pr-3 text-right">{formatCurrency(row.amount)}</td>
                 <td className="whitespace-nowrap py-1 pr-3 text-right">{signedPesos(row.change)}</td>
-                <td className="hidden whitespace-nowrap py-1 text-right sm:table-cell">{row.changePercent === null ? '' : `${row.changePercent > 0 ? '+' : row.changePercent < 0 ? '−' : ''}${Math.abs(row.changePercent)}%`}</td>
+                <td className="hidden whitespace-nowrap py-1 text-right sm:table-cell">{row.changePercent === null ? '' : `${row.changePercent > 0 ? '+' : row.changePercent < 0 ? '−' : ''}${Math.min(100, Math.abs(row.changePercent))}%`}</td>
               </tr>)}
             </tbody>
           </table>

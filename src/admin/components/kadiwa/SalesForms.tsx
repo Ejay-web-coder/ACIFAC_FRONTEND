@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Eye, LoaderCircle, Plus, Search, Trash2, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Eye, LoaderCircle, Plus, Printer, ReceiptText, ScanLine, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createKadiwaSale, fetchKadiwaSales,
@@ -7,9 +8,8 @@ import {
 } from '../../../app/services/authApi';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatTime } from '../../../utils/dateTime';
 import { CATEGORIES, peso, productLabel } from './InventoryForms';
-import { KadiwaBlankForm } from './KadiwaBlankForm';
 import { StoreItemsPicker, storeQuantityProblem, storeSelection, type StoreQuantities } from './StoreItemsPicker';
-import { MemberPurchaseList, MemberPurchasesInput, memberPurchaseProblem, memberPurchaseTyped, type MemberPurchaseRow } from './MemberPurchases';
+import { MemberPurchaseList, MemberPurchasesInput, memberPurchaseProblem, memberPurchaseTyped, pointsFor, type MemberPurchaseRow } from './MemberPurchases';
 import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 // Kadiwa sales follow the Kadiwa ng Pangulo daily sales form: the seller, the
@@ -41,6 +41,12 @@ export const saleGross = (sale: Pick<KadiwaSale, 'groceries' | 'vegetables' | 'm
 // ----- New Sale: the daily sales form --------------------------------------------------------------
 
 interface SaleRow { key: number; name: string; unit: string; category: KadiwaInventoryItem['category']; price: string; quantity: string; amount: string; typed: 'quantity' | 'amount' | null; custom: boolean }
+type SaleTab = 'goods' | 'store' | 'members' | 'expenses';
+type GoodsFilter = 'all' | 'entered' | 'empty';
+// Good | Unit | Price | Quantity | Amount | remove
+const GOODS_GRID = 'grid-cols-[minmax(0,1.6fr)_6.5rem_7rem_6rem_7.5rem_2rem]';
+/** "SIBUYAS / BAWANG" -> "Sibuyas / bawang" */
+const sentence = (text: string) => (text ? text.charAt(0).toUpperCase() + text.slice(1).toLowerCase() : text);
 interface ExpenseRow { key: number; description: string; amount: string }
 interface SaleDraft { saleDate: string; rows: SaleRow[]; store: StoreQuantities; expenses: ExpenseRow[]; members?: MemberPurchaseRow[] }
 
@@ -126,6 +132,12 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
   const nextKey = useRef(Math.max(0, ...rows.map((row) => row.key)) + 1);
   const [focusKey, setFocusKey] = useState<number | null>(null);
   const today = dateOnlyToday();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<SaleTab>('goods');
+  const [goodsFilter, setGoodsFilter] = useState<GoodsFilter>('all');
+  // Lines typed in while a filter is on stay in view until the filter changes.
+  const [keepKeys, setKeepKeys] = useState<Set<number>>(() => new Set());
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => { writeSaleDraft({ saleDate, rows, store, expenses, members }); }, [saleDate, rows, store, expenses, members]);
 
@@ -138,7 +150,7 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
   const expenseLines = expenses.filter(expenseTyped);
   const expensesValue = Math.round(expenseLines.reduce((sum, row) => sum + (validMoney(row.amount) ? Number(row.amount) : 0), 0) * 100) / 100;
   const changeExpense = (key: number, field: 'description' | 'amount', value: string) => { setError(''); setExpenses((current) => current.map((row) => (row.key === key ? { ...row, [field]: value } : row))); };
-  const addExpense = () => { const key = expenseKey.current++; setExpenses((current) => [...current, blankExpense(key)]); setExpenseFocus(key); };
+  const addExpense = () => { setTab('expenses'); const key = expenseKey.current++; setExpenses((current) => [...current, blankExpense(key)]); setExpenseFocus(key); };
   const memberLines = members.filter(memberPurchaseTyped);
   const changeMember = (key: number, update: Partial<MemberPurchaseRow>) => { setError(''); setMembers((current) => current.map((row) => (row.key === key ? { ...row, ...update } : row))); };
   const addMember = () => setMembers((current) => [...current, { key: memberKey.current++, member: null, amount: '' }]);
@@ -147,6 +159,7 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
 
   const change = (key: number, field: 'name' | 'unit' | 'category' | 'price' | 'quantity' | 'amount', value: string) => {
     setError('');
+    if (goodsFilter !== 'all' && !keepKeys.has(key)) setKeepKeys((current) => new Set(current).add(key));
     setRows((current) => current.map((row) => {
       if (row.key !== key) return row;
       const next = { ...row, [field]: value } as SaleRow;
@@ -167,9 +180,12 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
   };
   const query = search.trim().toLowerCase();
   // A new line for other goods stays in view until it has a name.
-  const shownRows = query ? rows.filter((row) => (row.custom && !row.name.trim()) || row.name.toLowerCase().includes(query)) : rows;
+  const shownRows = rows.filter((row) => (row.custom && !row.name.trim())
+    || ((!query || row.name.toLowerCase().includes(query))
+      && (goodsFilter === 'all' || keepKeys.has(row.key) || (goodsFilter === 'entered') === isFilled(row))));
   const addGood = () => {
     setSearch('');
+    setTab('goods');
     const key = nextKey.current++;
     setRows((current) => [...current, { key, name: '', unit: 'KILO', category: 'Vegetables', price: '', quantity: '', amount: '', typed: null, custom: true }]);
     setFocusKey(key);
@@ -188,6 +204,9 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
     setShowProblems(false);
     setError('');
     setSearch('');
+    setTab('goods');
+    setGoodsFilter('all');
+    setKeepKeys(new Set());
   };
   const clear = async () => {
     if ((filled.length || storeSelected.length || expenseLines.length || memberLines.length) && !(await confirmAction('Clear every amount on this form?', { confirmLabel: 'Clear', danger: true }))) return;
@@ -222,17 +241,17 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
     setShowProblems(true);
     if (!saleDate || saleDate > today) { setError('Enter the date of the sales (not a future date).'); return; }
     const storeProblem = storeSelected.find(({ item, quantity }) => storeQuantityProblem(item, quantity));
-    if (storeProblem) { setError(`${productLabel(storeProblem.item)}: ${storeQuantityProblem(storeProblem.item, storeProblem.quantity)}`); return; }
-    if (!filled.length && !storeSelected.length) { setError('Enter the amount of at least one good sold, or the quantity of a store item.'); return; }
+    if (storeProblem) { setTab('store'); setError(`${productLabel(storeProblem.item)}: ${storeQuantityProblem(storeProblem.item, storeProblem.quantity)}`); return; }
+    if (!filled.length && !storeSelected.length) { setTab('goods'); setError('Enter the amount of at least one good sold, or the quantity of a store item.'); return; }
     const bad = filled.find((row) => rowProblem(row));
-    if (bad) { setError(`${bad.name.trim() || 'A new good'}: ${rowProblem(bad)}`); return; }
-    if (!expenseLines.length) { setError('Enter the expenses: what each was for and the amount (0 if there were none).'); return; }
+    if (bad) { setTab('goods'); setGoodsFilter('all'); setError(`${bad.name.trim() || 'A new good'}: ${rowProblem(bad)}`); return; }
+    if (!expenseLines.length) { setTab('expenses'); setError('Enter the expenses: what each was for and the amount (0 if there were none).'); return; }
     const badExpense = expenseLines.find((row) => expenseProblem(row));
-    if (badExpense) { setError(`Expense ${expenses.indexOf(badExpense) + 1}: ${expenseProblem(badExpense)}`); return; }
+    if (badExpense) { setTab('expenses'); setError(`Expense ${expenses.indexOf(badExpense) + 1}: ${expenseProblem(badExpense)}`); return; }
     const badMember = memberLines.find((row) => memberPurchaseProblem(row, members));
-    if (badMember) { setError(`Member purchase ${members.indexOf(badMember) + 1}: ${memberPurchaseProblem(badMember, members)}`); return; }
+    if (badMember) { setTab('members'); setError(`Member purchase ${members.indexOf(badMember) + 1}: ${memberPurchaseProblem(badMember, members)}`); return; }
     const membersTotal = memberLines.reduce((sum, row) => sum + Number(row.amount), 0);
-    if (membersTotal > gross + 0.001) { setError(`The member purchases (${peso(membersTotal)}) are more than the day's total sales (${peso(gross)}).`); return; }
+    if (membersTotal > gross + 0.001) { setTab('members'); setError(`The member purchases (${peso(membersTotal)}) are more than the day's total sales (${peso(gross)}).`); return; }
     setSaving(true);
     try {
       const response = await createKadiwaSale({
@@ -258,176 +277,251 @@ export function NewSaleSheet({ goods, inventory: allInventory, branches, default
   };
 
   const groceriesExtra = storeTotal > 0 ? storeTotal : 0;
+  const membersSum = Math.round(memberLines.reduce((sum, row) => sum + (validMoney(row.amount) ? Number(row.amount) : 0), 0) * 100) / 100;
+  const netIncome = Math.round((gross - expensesValue - storeCost) * 100) / 100;
+  const branchName = branches.find((branch) => branch.id === branchId)?.name ?? '';
+  const storeMatches = query ? inventory.filter((item) => `${productLabel(item)} ${item.id} ${item.category}`.toLowerCase().includes(query)).length : inventory.length;
+  const goodsOk = filled.length > 0 || storeSelected.length > 0;
 
-  const searchInput = (
-    <>
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') goToFirstResult(); }} autoComplete="off" placeholder="e.g. pork, tuna" aria-label="Search goods and store items" className={`${INPUT} pl-9`} />
-    </>
-  );
-  const goodsList = (
-    <div>
-    <div className="hidden grid-cols-[minmax(0,2fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_2.25rem] gap-2 px-2 pb-2 text-xs font-medium uppercase text-gray-500 md:grid">
-      <span>Goods Sold</span><span>Unit</span><span>Price</span><span>Quantity</span><span className="text-right">Total Amount</span><span />
-    </div>
-    {!shownRows.length && <p className="rounded-xl border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">{query ? <>No goods match “{search.trim()}”.</> : 'No goods to show.'}</p>}
-    <ol className="space-y-1.5">
-      {shownRows.map((row, index) => {
-        const problem = showProblems && isFilled(row) ? rowProblem(row) : '';
-        const units = row.unit && !GOODS_UNITS.includes(row.unit) ? [row.unit, ...GOODS_UNITS] : GOODS_UNITS;
-        return (
-          <li key={row.key} className={`rounded-xl border md:border-0 md:p-0 p-2 ${problem ? 'border-red-200 bg-red-50/50' : isFilled(row) ? 'border-green-200 bg-green-50/40' : 'border-gray-200'}`}>
-            <div className={`grid md:grid-cols-[minmax(0,2fr)_7.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_2.25rem] md:items-center md:gap-2 md:px-2 md:py-0.5 grid-cols-2 gap-2`}>
-              <div className="col-span-2 min-w-0 md:col-span-1">
-                {row.custom ? (
-                  <div className="flex gap-1">
-                    <input id={`sale-row-${row.key}-name`} autoFocus={row.key === focusKey} value={row.name} onChange={(event) => change(row.key, 'name', event.target.value)} maxLength={120} placeholder="Other goods, e.g. PATOLA" aria-label="Name of the other goods" className={INPUT} />
-                    <select value={row.category} onChange={(event) => change(row.key, 'category', event.target.value)} aria-label={`Category of ${row.name || 'the other goods'}`} className={`${FIELD} w-28 shrink-0 px-1.5`}>
-                      {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
-                    </select>
-                  </div>
-                ) : (
-                  <p className="font-semibold text-gray-900">{row.name}{row.name === 'GROCERIES' && groceriesExtra > 0 && <span className="ml-2 text-xs font-normal text-gray-500">+ {peso(groceriesExtra)} store items below</span>}</p>
-                )}
-              </div>
-              <Cell label="Unit">
-                <select value={row.unit} onChange={(event) => change(row.key, 'unit', event.target.value)} aria-label={`Unit of ${row.name || 'the other goods'}`} className={`${FIELD} w-full px-1.5`}>
-                  <option value=""></option>
-                  {units.map((unit) => <option key={unit}>{unit}</option>)}
-                </select>
-              </Cell>
-              <Cell label="Price">
-                <input data-field="price" data-index={index} inputMode="decimal" value={row.price} onChange={(event) => change(row.key, 'price', event.target.value)} placeholder="" aria-label={`Price of ${row.name || 'the other goods'}`} className={INPUT} />
-              </Cell>
-              <Cell label="Quantity">
-                <input data-field="quantity" data-index={index} inputMode="decimal" value={row.quantity} onChange={(event) => change(row.key, 'quantity', event.target.value)} placeholder="0" aria-label={`Quantity of ${row.name || 'the other goods'}`} className={`${INPUT} ${row.typed === 'amount' ? 'text-gray-500' : ''}`} />
-              </Cell>
-              <Cell label="Total Amount">
-                <input data-field="amount" data-index={index} inputMode="decimal" value={row.amount} onChange={(event) => change(row.key, 'amount', event.target.value)} placeholder="0.00" aria-label={`Total amount of ${row.name || 'the other goods'}`} className={`${INPUT} text-right font-semibold ${row.typed === 'quantity' ? 'text-gray-500' : ''}`} />
-              </Cell>
-              {row.custom
-                ? <button type="button" onClick={() => removeGood(row.key)} className="justify-self-end rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove ${row.name || 'the other goods'}`}><Trash2 className="h-4 w-4" /></button>
-                : <span className="hidden md:block" />}
-            </div>
-            {problem && <p className="px-2 pt-1 text-xs text-red-600">{problem}</p>}
-          </li>
-        );
-      })}
-    </ol>
-    <button type="button" onClick={addGood} className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add other goods</button>
-    </div>
-  );
-  const expensesList = (
-    <>
-    <ul className="mt-2 space-y-2">
-      {expenses.map((row, index) => {
-        const problem = showProblems && (expenseTyped(row) || (!expenseLines.length && index === 0)) ? expenseProblem(row) : '';
-        return (
-          <li key={row.key}>
-            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_2.25rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_2.25rem]">
-              <input value={row.description} onChange={(event) => changeExpense(row.key, 'description', event.target.value)} autoFocus={row.key === expenseFocus} list="kadiwa-expense-kinds" maxLength={120} autoComplete="off" placeholder={index === 0 ? 'e.g. Transportation' : 'Other expense'} aria-label={`Expense ${index + 1}: what it was for`} className={`${INPUT} ${problem && !row.description.trim() ? 'border-red-400' : ''}`} />
-              <input inputMode="decimal" value={row.amount} onChange={(event) => changeExpense(row.key, 'amount', event.target.value)} placeholder="0.00" aria-label={`Expense ${index + 1}: amount`} className={`${INPUT} text-right ${problem && row.description.trim() ? 'border-red-400' : ''}`} />
-              {expenses.length > 1 || expenseTyped(row)
-                ? <button type="button" onClick={() => removeExpense(row.key)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove expense ${index + 1}`}><Trash2 className="h-4 w-4" /></button>
-                : <span />}
-            </div>
-            {problem && <p className="pt-1 text-xs text-red-600">{problem}</p>}
-          </li>
-        );
-      })}
-    </ul>
-    <button type="button" onClick={addExpense} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Other expenses</button>
-    <datalist id="kadiwa-expense-kinds">{EXPENSE_KINDS.map((kind) => <option key={kind} value={kind} />)}</datalist>
-    </>
-  );
-  const totalsAndError = (
-    <>
-    <div className="flex items-end justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-xs text-gray-600 sm:text-sm">Total Amount of Goods Sold</p>
-        <p className="text-xl font-bold tabular-nums text-gray-900 sm:text-2xl">{peso(gross)}</p>
+  const printBlank = async () => {
+    setPrinting(true);
+    try {
+      const pdf = await import('./kadiwaFormPdf');
+      await pdf.downloadSalesFormPdf(goods, inventory);
+    } catch (printError) {
+      toast.error('The form could not be made', { description: printError instanceof Error ? printError.message : 'Please try again.' });
+    } finally {
+      setPrinting(false);
+    }
+  };
+  // The filled paper form is saved through the OCR Scanner. What is typed here stays in this browser.
+  const scanForm = () => { onClose(); navigate('/ocr'); };
+  const noExpenses = () => { setError(''); setExpenses([{ key: expenseKey.current++, description: 'None', amount: '0' }]); };
+  const pickFilter = (filter: GoodsFilter) => { setGoodsFilter(filter); setKeepKeys(new Set()); };
+
+  const tabs: Array<{ id: SaleTab; label: string; note: string; alert?: boolean }> = [
+    { id: 'goods', label: 'Goods sold', note: query ? `${shownRows.length}` : `${filled.length}/${rows.length}` },
+    { id: 'store', label: 'Store inventory', note: query ? `${storeMatches}` : storeSelected.length ? peso(storeTotal) : '' },
+    { id: 'members', label: 'Member purchases', note: memberLines.length ? `${memberLines.length}` : '' },
+    { id: 'expenses', label: 'Expenses', note: expenseLines.length ? peso(expensesValue) : 'Required', alert: !expenseLines.length },
+  ];
+
+  const goodsPanel = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-2.5">
+        <p className="text-xs text-gray-500">Type the quantity or the amount. The other one is worked out from the price.</p>
+        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs font-medium" role="group" aria-label="Show goods">
+          {([['all', `All ${rows.length}`], ['entered', `Entered ${filled.length}`], ['empty', `Not yet ${rows.length - filled.length}`]] as const).map(([id, label]) => (
+            <button key={id} type="button" onClick={() => pickFilter(id)} aria-pressed={goodsFilter === id}
+              className={`rounded-md px-2.5 py-1 ${goodsFilter === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>{label}</button>
+          ))}
+        </div>
       </div>
-      <p className="pb-1 text-right text-xs text-gray-500 sm:text-sm">
-        {filled.length} {filled.length === 1 ? 'good' : 'goods'}{storeTotal > 0 ? ` + store items ${peso(storeTotal)}` : ''}
-        {storeCost > 0 && <span className="block">Cost of store items {peso(storeCost)}</span>}
-        <span className="block">Expenses {peso(expensesValue)}</span>
-        <span className="block">Net income <span className="font-semibold tabular-nums text-green-700">{peso(Math.round((gross - expensesValue - storeCost) * 100) / 100)}</span></span>
-      </p>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={`sticky top-0 z-[1] hidden ${GOODS_GRID} gap-2 border-b border-gray-100 bg-white px-4 py-2 text-xs font-medium text-gray-500 md:grid`}>
+          <span>Good</span><span>Unit</span><span>Price</span><span>Quantity</span><span className="text-right">Amount</span><span />
+        </div>
+        {!shownRows.length && <p className="m-4 rounded-xl border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">{query ? <>No goods match “{search.trim()}”.</> : goodsFilter === 'entered' ? 'No goods entered yet.' : 'Every good has been entered.'}</p>}
+        <ol className="divide-y divide-gray-100">
+          {shownRows.map((row, index) => {
+            const problem = showProblems && isFilled(row) ? rowProblem(row) : '';
+            const units = row.unit && !GOODS_UNITS.includes(row.unit) ? [row.unit, ...GOODS_UNITS] : GOODS_UNITS;
+            const name = row.name || 'the other goods';
+            return (
+              <li key={row.key} className={`px-4 py-1.5 ${problem ? 'bg-red-50/60' : isFilled(row) ? 'bg-green-50/60' : ''}`}>
+                <div className={`grid grid-cols-4 items-center gap-1.5 md:grid-cols-[minmax(0,1.6fr)_6.5rem_7rem_6rem_7.5rem_2rem] md:gap-2`}>
+                  <div className="col-span-4 flex min-w-0 items-center gap-2 md:col-span-1">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${problem ? 'bg-red-500' : isFilled(row) ? 'bg-green-600' : 'bg-gray-300'}`} aria-hidden="true" />
+                    {row.custom ? (
+                      <div className="flex min-w-0 flex-1 gap-1">
+                        <input autoFocus={row.key === focusKey} value={row.name} onChange={(event) => change(row.key, 'name', event.target.value)} maxLength={120} placeholder="Other good, e.g. Patola" aria-label="Name of the other goods" className={`${INPUT} py-1.5`} />
+                        <select value={row.category} onChange={(event) => change(row.key, 'category', event.target.value)} aria-label={`Category of ${name}`} className={`${FIELD} w-24 shrink-0 px-1 py-1.5`}>
+                          {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-900">{sentence(row.name)}</p>
+                        {row.name === 'GROCERIES' && groceriesExtra > 0 && <p className="text-xs text-gray-500">+ {peso(groceriesExtra)} from store inventory</p>}
+                      </div>
+                    )}
+                  </div>
+                  <select value={row.unit} onChange={(event) => change(row.key, 'unit', event.target.value)} aria-label={`Unit of ${name}`} className={`${FIELD} w-full px-1 py-1.5`}>
+                    <option value="">–</option>
+                    {units.map((unit) => <option key={unit} value={unit}>{sentence(unit)}</option>)}
+                  </select>
+                  <span className="relative block min-w-0">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">₱</span>
+                    <input data-field="price" data-index={index} inputMode="decimal" value={row.price} onChange={(event) => change(row.key, 'price', event.target.value)} placeholder="auto" aria-label={`Price of ${name}`} className={`${INPUT} py-1.5 pl-5`} />
+                  </span>
+                  <input data-field="quantity" data-index={index} inputMode="decimal" value={row.quantity} onChange={(event) => change(row.key, 'quantity', event.target.value)} placeholder="0" aria-label={`Quantity of ${name}`} className={`${INPUT} py-1.5 ${row.typed === 'amount' ? 'text-gray-500' : ''}`} />
+                  <input data-field="amount" data-index={index} inputMode="decimal" value={row.amount} onChange={(event) => change(row.key, 'amount', event.target.value)} placeholder="0.00" aria-label={`Total amount of ${name}`} className={`${INPUT} py-1.5 text-right font-semibold tabular-nums ${row.typed === 'quantity' ? 'text-gray-500' : 'text-gray-900'}`} />
+                  {row.custom
+                    ? <button type="button" onClick={() => removeGood(row.key)} className="hidden justify-self-end rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 md:block" aria-label={`Remove ${name}`}><Trash2 className="h-4 w-4" /></button>
+                    : <span className="hidden md:block" />}
+                </div>
+                {row.custom && <button type="button" onClick={() => removeGood(row.key)} className="mt-1 text-xs font-medium text-red-600 md:hidden">Remove</button>}
+                {problem && <p className="pt-1 text-xs text-red-600">{problem}</p>}
+              </li>
+            );
+          })}
+        </ol>
+        <button type="button" onClick={addGood} className="m-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add another good</button>
+      </div>
     </div>
-    {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+  );
+
+  const expensesPanel = (
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <p className="text-xs text-gray-500">What each expense was for and how much. If there were none, say so below.</p>
+      <div className="mt-3 hidden grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2 text-xs font-medium text-gray-500 sm:grid"><span>What it was for</span><span>Amount</span><span /></div>
+      <ul className="mt-1 space-y-2">
+        {expenses.map((row, index) => {
+          const problem = showProblems && (expenseTyped(row) || (!expenseLines.length && index === 0)) ? expenseProblem(row) : '';
+          return (
+            <li key={row.key}>
+              <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_2.25rem] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_2.25rem]">
+                <input value={row.description} onChange={(event) => changeExpense(row.key, 'description', event.target.value)} autoFocus={row.key === expenseFocus} list="kadiwa-expense-kinds" maxLength={120} autoComplete="off" placeholder="Transportation, ice, plastic bags…" aria-label={`Expense ${index + 1}: what it was for`} className={`${INPUT} ${problem && !row.description.trim() ? 'border-red-400' : ''}`} />
+                <input inputMode="decimal" value={row.amount} onChange={(event) => changeExpense(row.key, 'amount', event.target.value)} placeholder="0.00" aria-label={`Expense ${index + 1}: amount`} className={`${INPUT} text-right ${problem && row.description.trim() ? 'border-red-400' : ''}`} />
+                {expenses.length > 1 || expenseTyped(row)
+                  ? <button type="button" onClick={() => removeExpense(row.key)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove expense ${index + 1}`}><Trash2 className="h-4 w-4" /></button>
+                  : <span />}
+              </div>
+              {problem && <p className="pt-1 text-xs text-red-600">{problem}</p>}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={addExpense} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"><Plus className="h-4 w-4" />Add another expense</button>
+        <button type="button" onClick={noExpenses} className="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">No expenses today</button>
+      </div>
+      <p className="mt-3 text-right text-sm text-gray-600">Total <span className="font-semibold tabular-nums text-gray-900">{peso(expensesValue)}</span></p>
+      <datalist id="kadiwa-expense-kinds">{EXPENSE_KINDS.map((kind) => <option key={kind} value={kind} />)}</datalist>
+    </div>
+  );
+
+  const summaryLine = (label: ReactNode, value: string, target: SaleTab, muted = false) => (
+    <button type="button" onClick={() => setTab(target)} className={`flex w-full items-baseline justify-between gap-2 rounded-md px-1 py-1 text-left text-sm hover:bg-gray-50 ${muted ? 'text-gray-500' : 'text-gray-700'}`}>
+      <span className="min-w-0">{label}</span><span className="shrink-0 font-semibold tabular-nums text-gray-900">{value}</span>
+    </button>
+  );
+  const saveButtons = (
+    <>
+      <button type="submit" disabled={saving} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-green-700 px-5 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving…' : 'Save Sale'}</button>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={close} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-white px-3 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
+        <button type="button" onClick={clear} className="inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-100">Clear form</button>
+      </div>
     </>
   );
 
   return (
     <div className="acf-modal fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="new-sale-title">
-      <form onSubmit={(event) => void submit(event)} onKeyDown={onKeyDown} noValidate className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-6">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-600">Kadiwa ng Pangulo</p>
-            <h2 id="new-sale-title" className="text-lg font-bold text-gray-900">New Sale</h2>
-            <p className="hidden text-sm text-gray-600 sm:block">Type the total amount of each good sold; the quantity is worked out from the price. Or type the quantity and the amount is worked out.</p>
+      <form onSubmit={(event) => void submit(event)} onKeyDown={onKeyDown} noValidate className="flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-gray-50 shadow-2xl">
+        <div className="flex items-center gap-3 bg-green-800 px-4 py-3 text-white sm:px-5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/15"><ReceiptText className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-green-100">Kadiwa ng Pangulo</p>
+            <h2 id="new-sale-title" className="text-lg font-bold leading-tight">New Sale</h2>
           </div>
-          <button type="button" onClick={close} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100" aria-label="Close new sale"><X className="h-5 w-5" /></button>
+          <button type="button" onClick={() => void printBlank()} disabled={printing} title="Print the Daily Sales form to fill in at the store" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-sm font-medium ring-1 ring-white/30 hover:bg-white/20 disabled:opacity-60">
+            {printing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}<span className="hidden sm:inline">Print blank form</span>
+          </button>
+          <button type="button" onClick={scanForm} title="Scan the filled form in the OCR Scanner to save it here" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-white/10 px-2.5 text-sm font-medium ring-1 ring-white/30 hover:bg-white/20">
+            <ScanLine className="h-4 w-4" /><span className="hidden sm:inline">Scan filled form</span>
+          </button>
+          <button type="button" onClick={close} className="rounded-lg p-2 text-white/80 hover:bg-white/10 hover:text-white" aria-label="Close new sale"><X className="h-5 w-5" /></button>
         </div>
 
-        {/* The search and the date stay at the top while the goods scroll under them. */}
-        <div className="flex-1 overflow-y-auto">
-        <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_9.5rem] gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-6">
-          {branches.length > 1 ? (
-            <label className="col-span-2 text-sm font-medium text-gray-700">Branch
-              <select value={branchId} onChange={(event) => { setBranchId(Number(event.target.value)); setError(''); }} className={`${INPUT} mt-1`}>
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select>
-            </label>
-          ) : branches[0] && <p className="col-span-2 text-sm text-gray-700">Branch: <span className="font-semibold text-gray-900">{branches[0].name}</span></p>}
-          <label className="text-sm font-medium text-gray-700">Search
-            <span className="relative mt-1 block">
-              {searchInput}
-            </span>
-          </label>
-          <label className="text-sm font-medium text-gray-700">Date
-            <input type="date" value={saleDate} max={today} onChange={(event) => { setSaleDate(event.target.value); setError(''); }} className={`${INPUT} mt-1`} />
-          </label>
-          {query && <p className="col-span-2 text-xs text-gray-600" aria-live="polite">{shownRows.length} of {rows.length} goods match “{search.trim()}”. Amounts typed in other lines are kept. Press Enter to go to the first one.</p>}
-          {draft && !query && <p className="col-span-2 text-xs text-amber-700">Unsaved entries from before were brought back. Use Clear form to start over.</p>}
-        </div>
-
-        <div className="px-2 py-3 sm:px-4">
-          <div className="mb-3 px-2">
-            <KadiwaBlankForm formName="Daily Sales form" onPrint={() => import('./kadiwaFormPdf').then((pdf) => pdf.downloadSalesFormPdf(goods, inventory))} />
-          </div>
-          {goodsList}
-
-          <StoreItemsPicker inventory={inventory} quantities={store} onChange={changeStore} showProblems={showProblems} query={query} />
-          <MemberPurchasesInput rows={members} onChange={changeMember} onAdd={addMember} onRemove={removeMember} showProblems={showProblems} salesTotal={gross} />
-          <div className={`mt-3 rounded-xl border p-3 ${showProblems && !expenseLines.length ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Expenses <span className="text-red-600" aria-hidden="true">*</span></h3>
-                <p className="text-xs text-gray-500">What each expense was for and the amount. Enter 0 if there were none.</p>
-              </div>
-              <p className="text-sm text-gray-600">Total <span className="font-semibold tabular-nums text-gray-900">{peso(expensesValue)}</span></p>
+        {/* Each part of the form is a tab that scrolls on its own; the totals stay in view on the right. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-2 sm:p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_19rem]">
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-3 sm:gap-3 md:grid-cols-[minmax(0,1fr)_10rem_minmax(0,1.4fr)]">
+              <label className="text-xs font-semibold text-gray-700">Branch
+                {branches.length > 1 ? (
+                  <select value={branchId} onChange={(event) => { setBranchId(Number(event.target.value)); setError(''); }} className={`${INPUT} mt-1 font-normal`}>
+                    {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  </select>
+                ) : <span className={`${INPUT} mt-1 block truncate bg-gray-50 font-normal text-gray-900`}>{branchName || '—'}</span>}
+              </label>
+              <label className="text-xs font-semibold text-gray-700">Date
+                <input type="date" value={saleDate} max={today} onChange={(event) => { setSaleDate(event.target.value); setError(''); }} className={`${INPUT} mt-1 font-normal`} />
+              </label>
+              <label className="col-span-2 text-xs font-semibold text-gray-700 md:col-span-1">Find a good
+                <span className="relative mt-1 block font-normal">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') goToFirstResult(); }} autoComplete="off" placeholder="Pork, tuna, saging…" aria-label="Search goods and store items" className={`${INPUT} pl-9`} />
+                </span>
+              </label>
+              {draft && !query && <p className="col-span-2 text-xs text-amber-700 md:col-span-3">Unsaved entries from before were brought back. Use Clear form to start over.</p>}
             </div>
-            {expensesList}
-          </div>
-        </div>
-        </div>
 
-        <div className="space-y-2 border-t border-gray-200 px-4 py-3 sm:px-6">
-          {totalsAndError}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={clear} className="mr-auto inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-100">Clear form</button>
-            <button type="button" onClick={close} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-green-600 px-5 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving…' : 'Save Sale'}</button>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <div className="flex gap-1 overflow-x-auto border-b border-gray-200 px-2 pt-2" role="tablist" aria-label="Parts of the sale">
+                {tabs.map((item) => {
+                  const active = tab === item.id;
+                  const flagged = item.alert && showProblems;
+                  return (
+                    <button key={item.id} type="button" role="tab" aria-selected={active} onClick={() => setTab(item.id)}
+                      className={`-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${active ? 'border-green-700 text-green-800' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+                      {item.label}
+                      {item.note && <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${flagged ? 'bg-red-100 text-red-700' : item.alert ? 'bg-amber-100 text-amber-800' : active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{item.note}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {tab === 'goods' && goodsPanel}
+              {tab === 'store' && <StoreItemsPicker inventory={inventory} quantities={store} onChange={changeStore} showProblems={showProblems} query={query} />}
+              {tab === 'members' && <MemberPurchasesInput rows={members} onChange={changeMember} onAdd={addMember} onRemove={removeMember} showProblems={showProblems} salesTotal={gross} />}
+              {tab === 'expenses' && expensesPanel}
+            </div>
+          </div>
+
+          {/* Totals: a side panel on wide screens, a short bar on phones. */}
+          <aside className="hidden min-h-0 flex-col gap-3 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 lg:flex">
+            <div>
+              <p className="text-xs font-medium text-gray-500">Total amount of goods sold</p>
+              <p className="text-3xl font-bold tabular-nums text-gray-900">{peso(gross)}</p>
+              <p className="text-xs text-gray-500">{branchName}{branchName && saleDate ? ', ' : ''}{saleDate ? formatDate(saleDate) : ''}</p>
+            </div>
+            <div className="border-t border-gray-100 pt-2">
+              {summaryLine(<>Goods sold <span className="text-gray-400">({filled.length} of {rows.length})</span></>, peso(goodsTotal), 'goods')}
+              {summaryLine('Store inventory', peso(storeTotal), 'store')}
+              {storeCost > 0 && summaryLine('Cost of store items', `−${peso(storeCost)}`, 'store', true)}
+              {summaryLine(<>Member purchases <span className="text-gray-400">({pointsFor(membersSum).toLocaleString('en-PH', { maximumFractionDigits: 2 })} points)</span></>, peso(membersSum), 'members', true)}
+              {summaryLine('Expenses', `−${peso(expensesValue)}`, 'expenses')}
+            </div>
+            <div className="flex items-baseline justify-between rounded-lg bg-green-50 px-3 py-3">
+              <span className="text-sm font-semibold text-green-900">Net income</span>
+              <span className={`text-xl font-bold tabular-nums ${netIncome < 0 ? 'text-red-700' : 'text-green-800'}`}>{peso(netIncome)}</span>
+            </div>
+            <ul className="space-y-1.5 text-xs">
+              <li className={`flex gap-1.5 ${goodsOk ? 'text-green-800' : 'text-gray-600'}`}>
+                {goodsOk ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />}
+                {goodsOk ? 'At least one good entered' : 'Enter at least one good sold'}
+              </li>
+              <li className={`flex gap-1.5 ${expenseLines.length ? 'text-green-800' : 'text-gray-600'}`}>
+                {expenseLines.length ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />}
+                {expenseLines.length ? `Expenses entered (${expenseLines.length})` : <span>Expenses still empty. Add them, or tap <button type="button" onClick={noExpenses} className="font-semibold text-green-700 underline">No expenses today</button>.</span>}
+              </li>
+            </ul>
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
+            <div className="mt-auto space-y-2">{saveButtons}</div>
+          </aside>
+
+          <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3 lg:hidden">
+            <div className="flex items-end justify-between gap-3">
+              <div><p className="text-xs text-gray-500">Total sold</p><p className="text-xl font-bold tabular-nums text-gray-900">{peso(gross)}</p></div>
+              <p className="text-right text-xs text-gray-500">Expenses {peso(expensesValue)}<span className="block">Net income <span className={`font-semibold tabular-nums ${netIncome < 0 ? 'text-red-700' : 'text-green-700'}`}>{peso(netIncome)}</span></span></p>
+            </div>
+            {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+            {saveButtons}
           </div>
         </div>
       </form>
     </div>
   );
-}
-
-function Cell({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="min-w-0"><span className="mb-1 block text-xs font-medium text-gray-600 md:sr-only">{label}</span>{children}</div>;
 }
 
 // ----- Sales history: per day, per 15 days, per month, overall ----------------------------------------------

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Modal } from './machinery/shared';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createVendorAccountRequest, fetchKadiwaBranches, setVendorPasswordRequest, updateVendorAccountRequest, type Account, type KadiwaBranch } from '../../app/services/authApi';
@@ -39,9 +40,8 @@ export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => vo
   };
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">Create Kadiwa Vendor Account</h2>
-      <p className="mb-4 text-sm text-gray-600">The vendor signs in with the username and this password, and can only send the store&apos;s daily sales and expenses for you to confirm.</p>
+    <Modal title="Create Kadiwa Vendor Account" description="The vendor signs in with the username and this password, and can only send the store's daily sales and expenses for you to confirm." onClose={() => { if (!saving) onCancel(); }}>
+    <form onSubmit={(event) => void submit(event)}>
       <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-gray-700">Full name
           <input required minLength={3} maxLength={200} value={form.fullName} onChange={set('fullName')} placeholder="e.g. Rosa Santos" className={INPUT} />
@@ -69,6 +69,7 @@ export function VendorAccountForm({ onCreated, onCancel }: { onCreated: () => vo
         <button type="button" disabled={saving} onClick={onCancel} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:opacity-60">Cancel</button>
       </div>
     </form>
+    </Modal>
   );
 }
 

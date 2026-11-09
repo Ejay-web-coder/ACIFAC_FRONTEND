@@ -1,69 +1,145 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { LoaderCircle, Pencil, Save, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Camera, LoaderCircle, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { fetchOrgChart, saveOrgChart, type OrgChart } from '../services/orgChartApi';
-import { useLiveRefresh } from '../../lib/liveUpdates';
+import {
+  deleteOrgChartPhoto, fetchOrgChart, orgChartPhotoPath, saveOrgChart, uploadOrgChartPhoto,
+  type OrgChart, type OrgChartEntry, type OrgChartGroup,
+} from '../services/orgChartApi';
+import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { formatDateTime } from '../../utils/dateTime';
 
 // The cooperative's organizational chart, laid out like the printed chart in
 // the office: the General Assembly, the elected Audit and Election Committees
 // and Board of Directors, the appointed officers and committees, and the
-// management staff. Administrators edit the names; everyone else only reads it.
+// management staff. Each position has a name and a 2x2 picture. Administrators
+// edit the names, add positions and set the pictures; everyone else only reads it.
 
-const THREE: Array<[string, string]> = [['chair', 'Chairperson'], ['vice', 'Vice Chairperson'], ['secretary', 'Secretary']];
-type Slot = { key: string; role: string };
-const slots = (prefix: string, roles: Array<[string, string]>): Slot[] => roles.map(([key, role]) => ({ key: `${prefix}.${key}`, role }));
+/** An entry as shown or edited; key is the id, or a temporary key for one added and not saved yet. */
+interface Draft { key: string; id?: number; group: OrgChartGroup; role: string; name: string; hasPhoto: boolean; custom: boolean; updatedAt: string }
+const toDraft = (entry: OrgChartEntry): Draft => ({ key: String(entry.id), ...entry });
 
-const AUDIT = slots('audit', THREE);
-const ELECTION = slots('election', THREE);
-const BOARD = slots('bod', [['chair', 'Chairperson'], ['vice', 'Vice Chairperson'], ['director1', 'Director'], ['director2', 'Director'], ['director3', 'Director']]);
-const COMMITTEES: Array<{ title: string; slots: Slot[] }> = [
-  { title: 'Ethics Committee', slots: slots('ethics', THREE) },
-  { title: 'Education & Training Committee', slots: slots('education', THREE) },
-  { title: 'GAD Committee', slots: slots('gad', THREE) },
-  { title: 'Mediation & Conciliation Committee', slots: slots('mediation', THREE) },
+const COMMITTEES: Array<{ group: OrgChartGroup; title: string }> = [
+  { group: 'ethics', title: 'Ethics Committee' },
+  { group: 'education', title: 'Education & Training Committee' },
+  { group: 'gad', title: 'GAD Committee' },
+  { group: 'mediation', title: 'Mediation & Conciliation Committee' },
 ];
-const STAFF = slots('staff', [['accountant', 'Accountant'], ['bookkeeper', 'Bookkeeper'], ['collector', 'Collector'], ['cashier', 'Cashier']]);
-
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 
-type Names = Record<string, string>;
-interface SlotProps { names: Names; editing: boolean; onChange: (key: string, value: string) => void }
+interface Editing {
+  editing: boolean;
+  onChange: (key: string, patch: Partial<Draft>) => void;
+  onRemove: (key: string) => void;
+  onAdd: (group: OrgChartGroup, role: string) => void;
+  onPhoto: (entry: Draft, file: File | null) => void;
+  busyPhoto: string | null;
+}
 
-// One position: a picture spot with the initials, the name and the role.
-function Person({ slot, names, editing, onChange, starred = false }: SlotProps & { slot: Slot; starred?: boolean }) {
-  const name = names[slot.key] ?? '';
+// The 2x2 picture (initials until one is set). While editing, it can be clicked to choose one.
+function Picture({ entry, editing, onPhoto, busy }: { entry: Draft; editing: boolean; onPhoto: Editing['onPhoto']; busy: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!entry.hasPhoto || !entry.id) { setUrl(null); return undefined; }
+    let active = true;
+    let made: string | null = null;
+    fetchProtectedImage(orgChartPhotoPath({ id: entry.id, updatedAt: entry.updatedAt })).then((result) => {
+      if (!active) { if (result) URL.revokeObjectURL(result); return; }
+      made = result;
+      setUrl(result);
+    }).catch(() => undefined);
+    return () => { active = false; if (made) URL.revokeObjectURL(made); };
+  }, [entry.hasPhoto, entry.id, entry.updatedAt]);
+
+  const face = url
+    ? <img src={url} alt={entry.name ? `${entry.name}, ${entry.role}` : entry.role} className="h-full w-full object-cover" />
+    : <span className={`text-sm font-bold ${entry.name ? 'text-green-800' : 'text-gray-400'}`}>{entry.name ? initials(entry.name) : ''}</span>;
+  const box = `relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-md border ${entry.name ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`;
+  if (!editing) return <span className={box} aria-hidden={!url}>{face}</span>;
+  const saved = Boolean(entry.id);
+  return (
+    <span className="flex shrink-0 flex-col items-center gap-0.5">
+      <button type="button" onClick={() => input.current?.click()} disabled={!saved || busy} className={`${box} group disabled:cursor-not-allowed`}
+        title={saved ? 'Choose a 2x2 picture' : 'Save the chart first, then add the picture'} aria-label={`2x2 picture of ${entry.role}`}>
+        {face}
+        <span className="absolute inset-0 grid place-items-center bg-black/40 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+          {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+        </span>
+      </button>
+      {entry.hasPhoto && <button type="button" onClick={() => onPhoto(entry, null)} disabled={busy} className="text-[11px] font-semibold text-red-700 hover:underline">Remove</button>}
+      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+        onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onPhoto(entry, file); }} />
+    </span>
+  );
+}
+
+// One position: the picture, the name and the role.
+function Person({ entry, starred = false, ...edit }: Editing & { entry: Draft; starred?: boolean }) {
   return (
     <li className="flex items-center gap-2.5 px-3 py-2">
-      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-bold ${name ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-400'}`} aria-hidden="true">{name ? initials(name) : ''}</span>
-      <span className="min-w-0 flex-1">
-        {editing ? (
-          <input value={name} onChange={(event) => onChange(slot.key, event.target.value)} maxLength={200} placeholder="Name (blank = vacant)"
-            aria-label={`${slot.role}`} className="h-8 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <Picture entry={entry} editing={edit.editing} onPhoto={edit.onPhoto} busy={edit.busyPhoto === entry.key} />
+      <span className="min-w-0 flex-1 space-y-1">
+        {edit.editing ? (
+          <>
+            <input value={entry.name} onChange={(event) => edit.onChange(entry.key, { name: event.target.value })} maxLength={200} placeholder="Name (blank = vacant)"
+              aria-label={`Name of the ${entry.role}`} className="h-8 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+            {entry.custom ? (
+              <span className="flex gap-1">
+                <input value={entry.role} onChange={(event) => edit.onChange(entry.key, { role: event.target.value })} maxLength={120} placeholder="Position, e.g. Director"
+                  aria-label="Position" className="h-7 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <button type="button" onClick={() => edit.onRemove(entry.key)} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-red-700 hover:bg-red-50" aria-label={`Remove ${entry.role || 'this position'}`}><Trash2 className="h-3.5 w-3.5" /></button>
+              </span>
+            ) : <span className="block text-xs font-medium uppercase tracking-wide text-gray-500">{starred && <span className="text-green-700">* </span>}{entry.role}</span>}
+          </>
         ) : (
-          <span className={`block truncate text-sm font-semibold ${name ? 'text-gray-900' : 'italic text-gray-400'}`} title={name || undefined}>{name || 'Vacant'}</span>
+          <>
+            <span className={`block truncate text-sm font-semibold ${entry.name ? 'text-gray-900' : 'italic text-gray-400'}`} title={entry.name || undefined}>{entry.name || 'Vacant'}</span>
+            <span className="block text-xs font-medium uppercase tracking-wide text-gray-500">{starred && <span className="text-green-700">* </span>}{entry.role}</span>
+          </>
         )}
-        <span className="block text-xs font-medium uppercase tracking-wide text-gray-500">{starred && <span className="text-green-700">* </span>}{slot.role}</span>
       </span>
     </li>
   );
 }
 
-function Box({ title, children, tone = 'light', dashed = false }: { title: string; children: ReactNode; tone?: 'light' | 'dark'; dashed?: boolean }) {
+function Box({ title, children, tone = 'light', dashed = false, footer }: { title: string; children: ReactNode; tone?: 'light' | 'dark'; dashed?: boolean; footer?: ReactNode }) {
   return (
     <section className={`overflow-hidden rounded-xl bg-white shadow-sm ${dashed ? 'border-2 border-dashed border-green-600/60' : 'border-2 border-green-700/70'}`} aria-label={title}>
       <h3 className={`px-3 py-1.5 text-center text-xs font-extrabold uppercase tracking-wide ${tone === 'dark' ? 'bg-green-800 text-white' : 'bg-green-100 text-green-900'}`}>{title}</h3>
       <ul className="divide-y divide-gray-100">{children}</ul>
+      {footer}
     </section>
   );
 }
+
+const AddButton = ({ onClick, label = 'Add position' }: { onClick: () => void; label?: string }) => (
+  <button type="button" onClick={onClick} className="flex w-full items-center justify-center gap-1.5 border-t border-dashed border-green-300 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-50"><Plus className="h-3.5 w-3.5" />{label}</button>
+);
 
 const Down = ({ dashed = false, className = '' }: { dashed?: boolean; className?: string }) => (
   <div className={`mx-auto h-6 w-0 border-l-2 ${dashed ? 'border-dashed border-green-600/70' : 'border-green-700'} ${className}`} aria-hidden="true" />
 );
 
-export function OrgChartView({ names, editing = false, onChange = () => undefined }: { names: Names; editing?: boolean; onChange?: (key: string, value: string) => void }) {
-  const p = { names, editing, onChange };
+export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] }) {
+  const of = (group: OrgChartGroup) => entries.filter((entry) => entry.group === group);
+  // A box listing its positions, with Add position while editing.
+  const listBox = (group: OrgChartGroup, title: string, options: { tone?: 'light' | 'dark'; dashed?: boolean; newRole?: string } = {}) => (
+    <Box title={title} tone={options.tone} dashed={options.dashed} footer={edit.editing ? <AddButton onClick={() => edit.onAdd(group, options.newRole ?? '')} /> : undefined}>
+      {of(group).map((entry) => <Person key={entry.key} entry={entry} {...edit} />)}
+    </Box>
+  );
+  // Boxes of one position each (the officers, the staff), with Add while editing.
+  const tiles = (group: OrgChartGroup, starred: boolean) => [
+    ...of(group).map((entry) => (
+      <div key={entry.key}>
+        <Down dashed className="hidden lg:block" />
+        <Box title={`${starred ? '* ' : ''}${entry.role || 'New position'}`} dashed><Person entry={entry} starred={starred} {...edit} /></Box>
+      </div>
+    )),
+    ...(edit.editing ? [<div key="add" className="flex items-end"><button type="button" onClick={() => edit.onAdd(group, '')} className="flex min-h-20 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-green-300 bg-white/60 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add position</button></div>] : []),
+  ];
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-sky-50 via-green-50 to-green-100/60 p-4 sm:p-6">
       {/* Title and legend, as on the printed chart. */}
@@ -89,17 +165,14 @@ export function OrgChartView({ names, editing = false, onChange = () => undefine
       <Down />
       <div className="mx-auto hidden h-0 w-[66%] border-t-2 border-green-700 lg:block" aria-hidden="true" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.3fr_1fr] lg:items-start">
-        <div><Down className="hidden lg:block" /><Box title="Audit Committee">{AUDIT.map((slot) => <Person key={slot.key} slot={slot} {...p} />)}</Box></div>
+        <div><Down className="hidden lg:block" />{listBox('audit', 'Audit Committee', { newRole: 'Member' })}</div>
         <div>
           <Down className="hidden lg:block" />
-          <Box title="Board of Directors" tone="dark">{BOARD.map((slot) => <Person key={slot.key} slot={slot} {...p} />)}</Box>
+          {listBox('bod', 'Board of Directors', { tone: 'dark', newRole: 'Director' })}
           <Down dashed />
-          <div className="grid grid-cols-2 gap-3">
-            <Box title="* Secretary" dashed><Person slot={{ key: 'officer.secretary', role: 'Secretary' }} starred {...p} /></Box>
-            <Box title="* Treasurer" dashed><Person slot={{ key: 'officer.treasurer', role: 'Treasurer' }} starred {...p} /></Box>
-          </div>
+          <div className="grid grid-cols-2 gap-3">{tiles('officers', true)}</div>
         </div>
-        <div><Down className="hidden lg:block" /><Box title="Election Committee">{ELECTION.map((slot) => <Person key={slot.key} slot={slot} {...p} />)}</Box></div>
+        <div><Down className="hidden lg:block" />{listBox('election', 'Election Committee', { newRole: 'Member' })}</div>
       </div>
 
       {/* The committees the board appoints. */}
@@ -107,9 +180,9 @@ export function OrgChartView({ names, editing = false, onChange = () => undefine
       <div className="mx-auto hidden h-0 w-[76%] border-t-2 border-dashed border-green-600/70 lg:block" aria-hidden="true" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {COMMITTEES.map((committee) => (
-          <div key={committee.title}>
+          <div key={committee.group}>
             <Down dashed className="hidden lg:block" />
-            <Box title={committee.title} dashed>{committee.slots.map((slot) => <Person key={slot.key} slot={slot} {...p} />)}</Box>
+            {listBox(committee.group, committee.title, { dashed: true, newRole: 'Member' })}
           </div>
         ))}
       </div>
@@ -120,39 +193,55 @@ export function OrgChartView({ names, editing = false, onChange = () => undefine
         <div className="rounded-xl border-2 border-green-800 bg-white px-5 py-1.5 text-center text-base font-extrabold uppercase tracking-wide text-gray-900 shadow sm:text-xl">Management Staff</div>
       </div>
       <Down />
-      <div className="mx-auto max-w-sm"><Box title="General Manager" tone="dark"><Person slot={{ key: 'staff.manager', role: 'General Manager' }} {...p} /></Box></div>
+      <div className="mx-auto max-w-sm">{listBox('manager', 'General Manager', { tone: 'dark', newRole: 'Assistant Manager' })}</div>
       <Down dashed />
       <div className="mx-auto hidden h-0 w-[76%] border-t-2 border-dashed border-green-600/70 lg:block" aria-hidden="true" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        {STAFF.map((slot) => (
-          <div key={slot.key}>
-            <Down dashed className="hidden lg:block" />
-            <Box title={slot.role} dashed><Person slot={slot} {...p} /></Box>
-          </div>
-        ))}
-      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">{tiles('staff', false)}</div>
     </div>
   );
 }
 
-/** The chart with its data; `editable`: the administrator's Edit / Save. */
+/** The chart with its data; `editable`: the administrator's Edit, Add position, pictures and Save. */
 export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
   const [chart, setChart] = useState<OrgChart | null>(null);
   const [error, setError] = useState('');
-  const [draft, setDraft] = useState<Names | null>(null);
+  const [draft, setDraft] = useState<Draft[] | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyPhoto, setBusyPhoto] = useState<string | null>(null);
+  const newKey = useRef(0);
 
   const load = useCallback(() => {
     fetchOrgChart().then((data) => { setChart(data); setError(''); }).catch((reason: Error) => setError(reason.message || 'Unable to load the chart.'));
   }, []);
   useEffect(() => { load(); }, [load]);
-  useLiveRefresh(['org_chart_positions'], () => { if (!draft) load(); });
+
+  // A picture is saved at once (the names wait for Save chart); the draft keeps what was typed.
+  const applyPhotoResult = (result: OrgChart, key: string) => {
+    setChart(result);
+    const saved = result.entries.find((entry) => String(entry.id) === key);
+    if (saved) setDraft((current) => current?.map((entry) => (entry.key === key ? { ...entry, hasPhoto: saved.hasPhoto, updatedAt: saved.updatedAt } : entry)) ?? null);
+  };
+  const onPhoto = async (entry: Draft, file: File | null) => {
+    if (!entry.id || busyPhoto) return;
+    if (file && file.size > MAX_PHOTO_BYTES) { toast.error('Choose a picture of at most 5 MB.'); return; }
+    setBusyPhoto(entry.key);
+    try {
+      applyPhotoResult(file ? await uploadOrgChartPhoto(entry.id, file) : await deleteOrgChartPhoto(entry.id), entry.key);
+      toast.success(file ? 'Picture saved' : 'Picture removed');
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : 'Unable to save the picture.');
+    } finally {
+      setBusyPhoto(null);
+    }
+  };
 
   const save = async () => {
     if (!draft || saving) return;
+    const unnamed = draft.find((entry) => entry.custom && !entry.role.trim());
+    if (unnamed) { toast.error('Enter the position of every position you added (for example Director), or remove it.'); return; }
     setSaving(true);
     try {
-      const saved = await saveOrgChart(draft);
+      const saved = await saveOrgChart(draft.map((entry) => ({ id: entry.id, group: entry.group, role: entry.role.trim(), name: entry.name.trim() })));
       setChart(saved);
       setDraft(null);
       toast.success('Chart saved');
@@ -166,6 +255,19 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
   if (error && !chart) return <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{error}</p>;
   if (!chart) return <p className="flex items-center justify-center gap-2 p-10 text-sm text-gray-500" role="status"><LoaderCircle className="h-4 w-4 animate-spin" />Loading the chart…</p>;
 
+  const shown = draft ?? chart.entries.map(toDraft);
+  const editing: Editing = {
+    editing: Boolean(draft),
+    busyPhoto,
+    onPhoto: (entry, file) => { void onPhoto(entry, file); },
+    onChange: (key, patch) => setDraft((current) => current?.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry)) ?? null),
+    onRemove: (key) => setDraft((current) => current?.filter((entry) => entry.key !== key) ?? null),
+    onAdd: (group, role) => {
+      newKey.current += 1;
+      setDraft((current) => [...(current ?? []), { key: `new-${newKey.current}`, group, role, name: '', hasPhoto: false, custom: true, updatedAt: '' }]);
+    },
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -176,11 +278,11 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
             <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save chart'}</button>
           </div>
         ) : (
-          <button type="button" onClick={() => setDraft({ ...chart.positions })} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"><Pencil className="h-4 w-4" />Edit chart</button>
+          <button type="button" onClick={() => setDraft(chart.entries.map(toDraft))} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"><Pencil className="h-4 w-4" />Edit chart</button>
         ))}
       </div>
-      {draft && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Type the name of whoever holds each position. Leave a name blank for a vacant position, then Save chart.</p>}
-      <OrgChartView names={draft ?? chart.positions} editing={Boolean(draft)} onChange={(key, value) => setDraft((current) => ({ ...(current ?? {}), [key]: value }))} />
+      {draft && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Type the names (blank = vacant), use Add position for a new one, and click a picture square to choose a 2x2 picture (saved at once). Then Save chart. A new position gets its picture after the chart is saved.</p>}
+      <OrgChartView entries={shown} {...editing} />
     </div>
   );
 }

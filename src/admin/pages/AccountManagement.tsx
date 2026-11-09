@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { History, KeyRound, Mail, Pencil, Phone, Plus, RefreshCw, Search, ShieldCheck, Store, UserCog, UserRound } from 'lucide-react';
+import { History, KeyRound, Mail, Pencil, Phone, Plus, RefreshCw, Search, ShieldCheck, Store, UserCog, UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import {
@@ -18,6 +18,7 @@ import { Pagination } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { AdminAccountForm } from '../components/AdminAccountForm';
 import { VendorAccountEditor, VendorAccountForm } from '../components/VendorAccountForms';
+import { Modal } from '../components/machinery/shared';
 
 /** onViewActivity: opens the audit log on one administrator's actions (given where the audit log is at hand). */
 export function AccountManagement({ onViewActivity: viewActivityProp }: { onViewActivity?: (account: Account) => void } = {}) {
@@ -34,6 +35,10 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
+  // Finding an account: words typed (name, username, email, mobile number, member number,
+  // position or branch) and the kind of account.
+  const [accountSearch, setAccountSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | Account['role']>('ALL');
   const [form, setForm] = useState({ memberId: '', password: '', confirmPassword: '' });
 
   const filteredMembers = availableMembers.filter((member) => {
@@ -107,7 +112,17 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
     }
   };
 
-  const accountPages = usePagination(accounts);
+  const searchWords = accountSearch.toLowerCase().split(/\s+/).filter(Boolean);
+  const shownAccounts = accounts.filter((account) => {
+    if (roleFilter !== 'ALL' && account.role !== roleFilter) return false;
+    if (!searchWords.length) return true;
+    const text = [account.full_name, account.first_name, account.last_name, account.username, account.email, account.phone, account.member_number, account.position, account.kadiwa_branch_name]
+      .filter(Boolean).join(' ').toLowerCase();
+    return searchWords.every((word) => text.includes(word));
+  });
+  const roleCount = (role: Account['role']) => accounts.filter((account) => account.role === role).length;
+  const accountPages = usePagination(shownAccounts, { resetKey: `${accountSearch}|${roleFilter}` });
+  const closeCreateMember = () => { if (isCreating) return; setShowCreate(false); setForm({ memberId: '', password: '', confirmPassword: '' }); setMemberSearch(''); };
 
   // Shared by the table and the phone cards.
   const accountName = (account: Account) => account.role === 'ADMIN' ? (
@@ -139,11 +154,7 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Account Management</h1>
-          <p className="mt-1 text-sm text-gray-600">Administrator, member and Kadiwa vendor login accounts. Administrators share one role; each acts under their own name and position, recorded in the audit log.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap gap-2">
           <button onClick={() => void loadData()} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <RefreshCw className="h-4 w-4" /> Refresh
@@ -166,8 +177,8 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
       {showCreateAdmin && <AdminAccountForm onCreated={() => { setShowCreateAdmin(false); void loadData(); }} onCancel={() => setShowCreateAdmin(false)} />}
 
       {showCreate && (
-        <form onSubmit={createAccount} className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Create Member Account</h2>
+        <Modal title="Create Member Account" description="For a member already on the members list. They sign in with the email or mobile number in their member information." onClose={closeCreateMember}>
+        <form onSubmit={createAccount}>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-gray-700">Select member
               <div className="relative mt-1">
@@ -203,12 +214,29 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
           </div>
           <div className="mt-4 flex gap-2">
             <button type="submit" disabled={isCreating || nothingToSignInWith} className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{isCreating ? 'Creating...' : 'Create account'}</button>
-            <button type="button" disabled={isCreating} onClick={() => setShowCreate(false)} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
+            <button type="button" disabled={isCreating} onClick={closeCreateMember} className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
           </div>
         </form>
+        </Modal>
       )}
 
       <div className="rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-3 border-b border-gray-200 p-4 md:flex-row md:items-center md:justify-between">
+          <label className="relative block w-full md:max-w-md">
+            <span className="sr-only">Search accounts</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input type="search" value={accountSearch} onChange={(event) => setAccountSearch(event.target.value)} placeholder="Search name, username, email, mobile or member no." className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-9 pr-9 text-sm focus:border-transparent focus:ring-2 focus:ring-green-500" />
+            {accountSearch && <button type="button" onClick={() => setAccountSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X className="h-4 w-4" /></button>}
+          </label>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Kind of account">
+            {([['ALL', 'All', accounts.length], ['ADMIN', 'Admins', roleCount('ADMIN')], ['MEMBER', 'Members', roleCount('MEMBER')], ['VENDOR', 'Vendors', roleCount('VENDOR')]] as const).map(([role, label, count]) => (
+              <button key={role} type="button" onClick={() => setRoleFilter(role)} aria-pressed={roleFilter === role}
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium ${roleFilter === role ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                {label}<span className={`text-xs ${roleFilter === role ? 'text-green-100' : 'text-gray-400'}`}>{count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         {/* Phones and tablets: one card per account, so nothing scrolls sideways. */}
         <ul className="divide-y divide-gray-100 lg:hidden">
           {isLoading ? <li className="px-4 py-8 text-center text-sm text-gray-500">Loading accounts...</li> : accountPages.pageItems.map((account) => (
@@ -223,7 +251,7 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
               {accountActions(account)}
             </li>
           ))}
-          {!isLoading && accounts.length === 0 && <li className="px-4 py-8 text-center text-sm text-gray-500">No login accounts found.</li>}
+          {!isLoading && shownAccounts.length === 0 && <li className="px-4 py-8 text-center text-sm text-gray-500">{accounts.length ? 'No account matches the search.' : 'No login accounts found.'}</li>}
         </ul>
         <div className="hidden overflow-x-auto lg:block">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -239,7 +267,7 @@ export function AccountManagement({ onViewActivity: viewActivityProp }: { onView
                 <td className="px-4 py-3">{accountActions(account)}</td>
               </tr>
             ))}
-            {!isLoading && accounts.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No login accounts found.</td></tr>}
+            {!isLoading && shownAccounts.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">{accounts.length ? 'No account matches the search.' : 'No login accounts found.'}</td></tr>}
           </tbody>
         </table>
         </div>

@@ -8,7 +8,6 @@ import { useMyMemberData } from '../../lib/useMyMemberData';
 import { sumMoney } from '../../utils/money';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import { UpcomingActivities } from '../components/UpcomingActivities';
-import { useMyDividend } from '../components/MemberDividend';
 
 interface MemberDashboardProps {
   userRole: UserRole;
@@ -48,8 +47,6 @@ function FigureCard({ icon: Icon, label, value, detail, link }: { icon: LucideIc
 
 export function MemberDashboard({ userRole }: MemberDashboardProps) {
   const { memberData, error } = useMyMemberData();
-  // This year's dividend and patronage refund so far, added to the savings.
-  const { dividend, error: dividendError } = useMyDividend(undefined, userRole === 'member');
   // Phones: the recent transactions and the upcoming activities share one card.
   const [listTab, setListTab] = useState<'transactions' | 'activities'>('transactions');
   const member = memberData?.member;
@@ -79,49 +76,9 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
   const nextAmount = nextLoan ? (isOverdue ? Number(nextLoan.overdueAmount) : Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment)) : 0;
   const daysLeft = nextLoan?.nextPaymentDate ? daysUntil(String(nextLoan.nextPaymentDate)) : null;
 
-  // Your total savings: the savings deposits, plus this year's dividend and patronage refund so far.
-  const savings = memberData.savings?.total ?? 0;
-  const dividendAmount = dividend?.dividend ?? 0;
-  const patronageAmount = dividend?.patronage.refund ?? 0;
-  const total = sumMoney([savings, dividendAmount, patronageAmount]);
-  const ready = Boolean(dividend || dividendError);
-  const year = dividend?.year ?? Number(dateOnlyToday().slice(0, 4));
-  const share = (part: number) => (total > 0 ? `${(part / total) * 100}%` : '0%');
+  // Your total savings: the savings deposits (dividends and patronage refunds are confidential: the office only).
+  const total = memberData.savings?.total ?? 0;
   const loansText = `${activeLoans.length} active ${activeLoans.length === 1 ? 'loan' : 'loans'}`;
-
-  const breakdown = (
-    <div className="rounded-2xl bg-white/[0.07] p-3 ring-1 ring-white/10 lg:p-4">
-      <h2 className="text-sm font-bold">How your savings add up</h2>
-      {/* The parts of the total, as one bar: savings, dividend, patronage refund. */}
-      <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-white/15" aria-hidden="true">
-        <span className="bg-white" style={{ width: share(savings) }} />
-        <span style={{ width: share(dividendAmount), background: GOLD }} />
-        <span className="bg-green-400" style={{ width: share(patronageAmount) }} />
-      </div>
-      <dl className="mt-2.5 space-y-1.5 text-xs lg:space-y-2 lg:text-sm">
-        {([
-          ['', 'bg-white', 'Savings deposits', peso(savings)],
-          ['+', '', `Dividend for ${year}`, dividend ? peso(dividendAmount) : dividendError ? 'n/a' : '…'],
-          ['+', 'bg-green-400', `Patronage refund for ${year}`, dividend ? peso(patronageAmount) : dividendError ? 'n/a' : '…'],
-        ] as const).map(([sign, swatch, label, value]) => (
-          <div key={label} className="flex items-center gap-2">
-            <span className="w-3 text-white/60" aria-hidden="true">{sign}</span>
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-sm ${swatch}`} style={swatch ? undefined : { background: GOLD }} aria-hidden="true" />
-            <dt className="min-w-0 flex-1 text-white/90">{label}</dt>
-            <dd className="shrink-0 font-semibold tabular-nums">{value}</dd>
-          </div>
-        ))}
-        <div className="flex items-center gap-2 border-t border-white/15 pt-2">
-          <span className="w-3 text-white/60" aria-hidden="true">=</span>
-          <dt className="min-w-0 flex-1 font-bold">Total savings</dt>
-          <dd className="shrink-0 text-sm font-extrabold tabular-nums lg:text-base" style={{ color: GOLD }}>{ready ? peso(total) : '…'}</dd>
-        </div>
-      </dl>
-      <p className="mt-2 hidden text-xs text-white/70 lg:block">
-        {dividendError ? 'The dividend and patronage refund could not be loaded, so only your savings deposits are counted.' : `Dividend and patronage refund count what you have earned in ${year}${dividend?.yearComplete ? '' : ' so far'}.`}
-      </p>
-    </div>
-  );
 
   const transactionsList = recentPayments.length ? (
     <ul className="divide-y divide-gray-100">
@@ -147,15 +104,14 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
   return (
     <div className="space-y-3 lg:space-y-4">
       {/* Your total savings */}
-      <Link to="/member/savings" className="grid gap-3 rounded-3xl bg-[#1b3d26] p-4 text-white shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-raised)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-8 lg:p-7">
+      <Link to="/member/savings" className="block rounded-3xl bg-[#1b3d26] p-4 text-white shadow-[var(--shadow-card)] transition hover:shadow-[var(--shadow-raised)] lg:p-7">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white/90 lg:text-lg">Your total savings</p>
           <div className="mt-1 text-[3.25rem] lg:mt-3 lg:text-[5.5rem]">
-            {ready ? <BigMoney value={total} /> : <Skeleton className="h-14 w-60 rounded-xl bg-white/15 lg:h-24 lg:w-96" />}
+            <BigMoney value={total} />
           </div>
           <p className="mt-1.5 text-xs text-white/75 lg:mt-3 lg:text-sm">As of {formatDate(dateOnlyToday())}</p>
         </div>
-        {breakdown}
       </Link>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">

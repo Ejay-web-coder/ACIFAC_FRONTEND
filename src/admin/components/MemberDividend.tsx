@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, Info } from 'lucide-react';
-import { fetchMyDividend, type MemberDividend } from '../../app/services/authApi';
+import { fetchMemberDividend, type MemberDividend } from '../../app/services/authApi';
 import { formatDate } from '../../utils/dateTime';
 
 export const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -8,19 +8,19 @@ export const peso = (value: number) => `₱${value.toLocaleString('en-PH', { min
 export const percent = (ratio: number) => `${(ratio * 100).toLocaleString('en-PH', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}%`;
 const ratioText = (ratio: number) => ratio.toLocaleString('en-PH', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 
-/** The member's dividend for a year; undefined year = this year. */
-export function useMyDividend(year: number | undefined, enabled = true) {
+/** A member's dividend for a year (undefined = this year). Confidential: the office only. */
+export function useMemberDividend(memberId: number, year: number | undefined, enabled = true) {
   const [dividend, setDividend] = useState<MemberDividend | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!enabled) return undefined;
     let cancelled = false;
     setError('');
-    fetchMyDividend(year)
+    fetchMemberDividend(memberId, year)
       .then((data) => { if (!cancelled) setDividend(data); })
       .catch((reason: Error) => { if (!cancelled) setError(reason.message); });
     return () => { cancelled = true; };
-  }, [year, enabled]);
+  }, [memberId, year, enabled]);
   return { dividend, error };
 }
 
@@ -106,10 +106,10 @@ const summaryRows = (dividend: MemberDividend) => [
   ['Net Surplus', 'Net Income − Statutory Funds', peso(dividend.netSurplus)],
   ['Dividend Pool', `Net Surplus × ${dividend.rates.dividendPool}%`, peso(dividend.dividendPool)],
   ['Patronage Refund Pool', `Net Surplus × ${dividend.rates.patronageRefundPool}%`, peso(dividend.patronageRefundPool)],
-  ['Your Share Capital', 'Paid-up share capital', peso(dividend.memberShareCapital)],
+  ["Member's Share Capital", 'Paid-up share capital', peso(dividend.memberShareCapital)],
   ['Total Paid-up Share Capital', 'All members', peso(dividend.totalShareCapital)],
-  ['Share Ratio', 'Your Share Capital ÷ Total', `${ratioText(dividend.shareRatio)} (${percent(dividend.shareRatio)})`],
-  ['Your Dividend', 'Dividend Pool × Share Ratio', peso(dividend.dividend)],
+  ['Share Ratio', "Member's Share Capital ÷ Total", `${ratioText(dividend.shareRatio)} (${percent(dividend.shareRatio)})`],
+  ["Member's Dividend", 'Dividend Pool × Share Ratio', peso(dividend.dividend)],
 ] as const;
 
 /** How the member's dividend is computed, step by step, with their numbers (shown on request). */
@@ -120,7 +120,7 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
         <p className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><Info className="mt-0.5 h-4 w-4 shrink-0" />The cooperative has no net income for {dividend.year} yet, so there is no surplus to share.</p>
       )}
 
-      <ComputationToggle id="my-dividend-steps" label="your dividend">
+      <ComputationToggle id="member-dividend-steps" label="the member's dividend">
         <Step number={1} title="Net Surplus">
           <Formula worked={`= ${peso(Math.max(0, dividend.netIncome))} − ${peso(dividend.statutoryTotal)} = ${peso(dividend.netSurplus)}`}>
             Net Surplus = Net Income − Statutory Funds ({dividend.rates.statutory}% of Net Income)
@@ -144,12 +144,12 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
           </Formula>
         </Step>
 
-        <Step number={3} title="Your Share Ratio & Dividend">
+        <Step number={3} title="Member's Share Ratio & Dividend">
           <Formula worked={`= ${peso(dividend.memberShareCapital)} ÷ ${peso(dividend.totalShareCapital)} = ${ratioText(dividend.shareRatio)} (${percent(dividend.shareRatio)})`}>
-            Share Ratio = Your Share Capital ÷ Total Paid-up Share Capital
+            Share Ratio = Member's Share Capital ÷ Total Paid-up Share Capital
           </Formula>
           <Formula worked={`= ${peso(dividend.dividendPool)} × ${ratioText(dividend.shareRatio)} = ${peso(dividend.dividend)}`}>
-            Your Dividend = Dividend Pool × Share Ratio
+            Member's Dividend = Dividend Pool × Share Ratio
           </Formula>
           <p className="text-xs text-gray-500">Share capital paid up to {formatDate(dividend.asOf)}, of all current members.</p>
         </Step>
@@ -158,7 +158,7 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
           {/* Phones: each item on its own row, the formula under its name. */}
           <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm sm:hidden">
             {summaryRows(dividend).map(([item, formula, amount]) => (
-              <div key={item} className={`flex items-start justify-between gap-3 px-3 py-2 ${item === 'Your Dividend' ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}`}>
+              <div key={item} className={`flex items-start justify-between gap-3 px-3 py-2 ${item === "Member's Dividend" ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}`}>
                 <dt className="min-w-0"><span className="font-medium">{item}</span><span className="block font-mono text-xs font-normal text-gray-500">{formula}</span></dt>
                 <dd className="shrink-0 text-right tabular-nums">{amount}</dd>
               </div>
@@ -171,7 +171,7 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {summaryRows(dividend).map(([item, formula, amount]) => (
-                  <tr key={item} className={item === 'Your Dividend' ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}>
+                  <tr key={item} className={item === "Member's Dividend" ? 'bg-purple-50 font-semibold text-purple-950' : 'text-gray-700'}>
                     <td className="px-3 py-2 font-medium">{item}</td>
                     <td className="px-3 py-2 font-mono text-[13px]">{formula}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{amount}</td>

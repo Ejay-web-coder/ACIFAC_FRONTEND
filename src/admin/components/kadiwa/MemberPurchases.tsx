@@ -90,13 +90,10 @@ export function MemberPurchasesInput({ rows, onChange, onAdd, onRemove, showProb
   const total = Math.round(typed.reduce((sum, row) => sum + (MONEY.test(row.amount.trim()) ? Number(row.amount) : 0), 0) * 100) / 100;
   const over = total > salesTotal + 0.001;
   return (
-    <div className={`mt-3 rounded-xl border p-3 ${over && showProblems ? 'border-red-300 bg-red-50/40' : 'border-gray-200'}`}>
+    <div className={`min-h-0 flex-1 overflow-y-auto px-4 py-3 pb-24 ${over && showProblems ? 'bg-red-50/40' : ''}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Member purchases <span className="font-normal text-gray-500">(optional)</span></h3>
-          <p className="text-xs text-gray-500">Members who bought today, by member ID or name, and how much. Each PHP {PESOS_PER_POINT} earns 1 patronage point.</p>
-        </div>
-        <p className="text-sm text-gray-600">{typed.length} {typed.length === 1 ? 'member' : 'members'} · <span className="font-semibold tabular-nums text-gray-900">{peso(total)}</span> · {pointsText(pointsFor(total))}</p>
+        <p className="text-xs text-gray-500">Members who bought today, by member ID or name, and how much. Every ₱{PESOS_PER_POINT} a member spends earns 1 patronage point.</p>
+        <p className="text-xs text-gray-600">{typed.length} {typed.length === 1 ? 'member' : 'members'} · <span className="font-semibold tabular-nums text-gray-900">{peso(total)}</span> · {pointsText(pointsFor(total))}</p>
       </div>
       <ul className="mt-2 space-y-2">
         {rows.map((row, index) => {
@@ -118,7 +115,7 @@ export function MemberPurchasesInput({ rows, onChange, onAdd, onRemove, showProb
           );
         })}
       </ul>
-      <button type="button" onClick={onAdd} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Another member</button>
+      <button type="button" onClick={onAdd} className="mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add another member</button>
       {over && <p className="mt-1 text-xs text-red-600">The member purchases ({peso(total)}) are more than the day's total sales ({peso(salesTotal)}).</p>}
     </div>
   );

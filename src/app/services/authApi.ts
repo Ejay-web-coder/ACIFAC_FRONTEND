@@ -613,8 +613,9 @@ export interface MemberPatronageRefund {
   refund: number;
 }
 
-export async function fetchMyDividend(year?: number) {
-  return (await apiGet<{ data: MemberDividend }>(`/api/members/me/dividend${year ? `?year=${year}` : ''}`)).data;
+/** A member's dividend and patronage refund: confidential, the office only (shown under Savings). */
+export async function fetchMemberDividend(memberId: number, year?: number) {
+  return (await apiGet<{ data: MemberDividend }>(`/api/members/${memberId}/dividend${year ? `?year=${year}` : ''}`)).data;
 }
 
 export function createMyLoanRequest(payload: { loanType: string; amount?: string | number; cashAmount?: string; term: string | number; purpose: string; [key: string]: unknown }, ids: LoanApplicationIds) {
@@ -1264,15 +1265,27 @@ export const createAnnouncementRequest = (payload: { title: string; message: str
 export const deleteAnnouncementRequest = (id: number) => apiDelete<{ success: boolean }>(`/api/announcements/${id}`);
 export const markAnnouncementDoneRequest = (id: number) => apiPatch<{ success: boolean }>(`/api/announcements/${id}/done`, {});
 
-// ----- Legal documents (admin settings) --------------------------------------------------------
+// ----- Legal documents (About page) ----------------------------------------------
+// Administrators get every document; members only those shown to them (without uploadedBy).
 
-export interface LegalDocumentRecord { id: number; name: string; category: string; fileName: string; mimeType: string; fileSize: number; uploadedAt: string; uploadedBy?: string | null }
+export const LEGAL_DOCUMENT_CATEGORIES = ['Registration', 'Compliance', 'Governance', 'Financial', 'Other'] as const;
+/** How a category is written on screen ('Other' is shown as 'Others'). */
+export const legalCategoryLabel = (category: string) => (category === 'Other' ? 'Others' : category);
+/** Which About tab a file is on. */
+export type DocumentSection = 'legal' | 'others';
+export interface LegalDocumentRecord { id: number; name: string; category: string; section: DocumentSection; fileName: string; mimeType: string; fileSize: number; shownToMembers: boolean; uploadedAt: string; uploadedBy?: string | null }
 
-export const fetchLegalDocuments = () => apiGet<{ data: LegalDocumentRecord[] }>('/api/legal-documents');
-export function uploadLegalDocumentRequest(file: File, category: string) {
+export const fetchLegalDocuments = (section: DocumentSection = 'legal') => apiGet<{ data: LegalDocumentRecord[] }>(`/api/legal-documents?section=${section}`);
+/** name: the title shown (the file name without its extension when left out). */
+export function uploadLegalDocumentRequest(file: File, category: string, shownToMembers = false, section: DocumentSection = 'legal', name?: string) {
   const form = new FormData();
   form.append('document', file);
   form.append('category', category);
+  form.append('shownToMembers', String(shownToMembers));
+  form.append('section', section);
+  if (name) form.append('name', name);
   return apiFetch<{ data: LegalDocumentRecord }>('/api/legal-documents', { method: 'POST', body: form });
 }
+export const updateLegalDocumentRequest = (id: number, patch: Partial<Pick<LegalDocumentRecord, 'name' | 'category' | 'shownToMembers'>>) =>
+  apiPatch<{ data: LegalDocumentRecord }>(`/api/legal-documents/${id}`, patch);
 export const deleteLegalDocumentRequest = (id: number) => apiDelete<{ success: boolean }>(`/api/legal-documents/${id}`);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Download, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw, Tags } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw, Tags } from 'lucide-react';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import { FarmInputPricesModal } from '../components/FarmInputPricesModal';
 import { LoanPaymentsList } from '../components/LoanPaymentsList';
 import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
+import { LoanReceiptModal } from '../components/LoanReceiptModal';
 import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
 
@@ -95,7 +96,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const requestPages = usePagination(shownRequests, { resetKey: `${requestStatus}|${requestOrder}|${requestSearch}` });
   const [showAddLoanModal, setShowAddLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<Loan | null>(null);
   // The open loan being given a new schedule.
   const [restructuringLoan, setRestructuringLoan] = useState<Loan | null>(null);
@@ -111,7 +111,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
   const memberLink = (id: number | null | undefined, name: string, className: string) => id
     ? <button type="button" onClick={() => setHistoryMember({ id, name })} className={`${className} text-left hover:text-green-700 hover:underline`} title="Loan summary and payment history">{name}</button>
     : <span className={className}>{name}</span>;
-  const [selectedPaymentForReceipt, setSelectedPaymentForReceipt] = useState<Payment | null>(null);
+  // The fully paid loan whose receipt is open.
+  const [receiptLoan, setReceiptLoan] = useState<Loan | null>(null);
   const [paymentData, setPaymentData] = useState({
     amount: '',
     paymentDate: dateOnlyToday()
@@ -220,21 +221,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       toast.error('Unable to record payment', { description: (error as Error).message });
     } finally {
       setIsSubmittingPayment(false);
-    }
-  };
-
-  const handleViewReceipt = (payment: Payment) => {
-    setSelectedPaymentForReceipt(payment);
-    setShowReceiptModal(true);
-  };
-
-  const handleDownloadReceipt = async (payment: Payment) => {
-    try {
-      const { downloadLoanReceiptPdf } = await import('../components/loanReceiptPdf');
-      await downloadLoanReceiptPdf(payment);
-      toast.success('Receipt downloaded!', { description: `Receipt for payment ${payment.id} was saved as a PDF.` });
-    } catch (error) {
-      toast.error('The receipt could not be made', { description: error instanceof Error ? error.message : 'Please try again.' });
     }
   };
 
@@ -376,6 +362,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <div key={loan.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:border-green-200 hover:bg-green-50/20 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <h3>{memberLink(loan.memberDatabaseId, loan.memberName, 'break-words font-bold text-gray-900')}</h3>
+                    <p className="mt-0.5 font-mono text-xs text-gray-500">{loan.id}</p>
                     {loan.dateApproved && <p className="mt-0.5 text-sm text-gray-500">Approved {formatDate(loan.dateApproved)}</p>}
                     {/* Paid and overdue loans say so; no next-payment reminder for the others. */}
                     {(loan.status === 'paid' || !loan.nextPaymentDate || loan.status === 'overdue') && (
@@ -387,10 +374,18 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     </p>
                     )}
                   </div>
-                  <button type="button" onClick={() => setViewingLoanId(loan.databaseId)}
-                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">
-                    <Eye className="h-4 w-4" />View
-                  </button>
+                  <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+                    {loan.status === 'paid' && (
+                      <button type="button" onClick={() => setReceiptLoan(loan)}
+                        className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 sm:flex-none">
+                        <Receipt className="h-4 w-4" />Receipt
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setViewingLoanId(loan.databaseId)}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:flex-none">
+                      <Eye className="h-4 w-4" />View
+                    </button>
+                  </div>
                 </div>
               ))}
               {filteredLoans.length === 0 && <EmptyState icon={PhilippinePeso} title={searchTerm || filterStatus !== 'all' ? 'No loans match your filters' : 'No loans yet'} message={searchTerm || filterStatus !== 'all' ? 'Try a different search or status.' : 'Loans will appear here once they are released to members.'} />}
@@ -413,15 +408,11 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <div><dt className="text-gray-500">Interest</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.interestPaid.toLocaleString()}</dd></div>
                       <div><dt className="text-gray-500">Balance</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
                     </dl>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <button type="button" onClick={() => handleViewReceipt(payment)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"><Eye className="h-4 w-4" />View</button>
-                      <button type="button" onClick={() => handleDownloadReceipt(payment)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 text-sm font-semibold text-white hover:bg-green-700"><Download className="h-4 w-4" />Download</button>
-                    </div>
                   </li>
                 ))}
               </ul>
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[680px] text-sm">
                 <thead className="bg-gray-50/80">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Payment ID</th>
@@ -431,7 +422,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Principal</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Interest</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Balance</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -444,24 +434,6 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.principalPaid.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.interestPaid.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">₱{payment.remainingBalance.toLocaleString()}</td>
-                      <td className="flex gap-2 px-4 py-3 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => handleViewReceipt(payment)}
-                          className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          <Eye className="w-4 h-4" />
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadReceipt(payment)}
-                          className="inline-flex min-h-9 items-center gap-1 rounded-xl bg-green-600 px-3 text-xs font-semibold text-white hover:bg-green-700"
-                        >
-                          <Download className="w-4 h-4" />
-                          Download
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -693,99 +665,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       })()}
       {showFarmInputs && <FarmInputPricesModal onClose={() => setShowFarmInputs(false)} />}
       {historyMember && <LoanHistoryModal memberId={historyMember.id} memberName={historyMember.name} onClose={() => setHistoryMember(null)} />}
-
-      {/* Receipt View Modal */}
-      {showReceiptModal && selectedPaymentForReceipt && (
-        <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-              <h2 className="text-xl font-bold text-gray-900">Payment Receipt</h2>
-              <button
-                onClick={() => {
-                  setShowReceiptModal(false);
-                  setSelectedPaymentForReceipt(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-8">
-              <div className="border-b-2 border-gray-300 pb-6 mb-6 text-center">
-                <h1 className="text-3xl font-bold text-gray-900">PAYMENT RECEIPT</h1>
-                <p className="text-gray-600 mt-2">ACIFAC Cooperative</p>
-              </div>
-
-              <div className="space-y-4 mb-6">
-                <div className="flex justify-between py-2 border-b border-gray-200">
-                  <span className="font-semibold text-gray-700">Receipt Number:</span>
-                  <span className="text-gray-900">{selectedPaymentForReceipt.id}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-200">
-                  <span className="font-semibold text-gray-700">Date:</span>
-                  <span className="text-gray-900">{formatDate(selectedPaymentForReceipt.paymentDate)}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-200">
-                  <span className="font-semibold text-gray-700">Member Name:</span>
-                  <span className="text-gray-900">{selectedPaymentForReceipt.memberName}</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-200">
-                  <span className="font-semibold text-gray-700">Loan ID:</span>
-                  <span className="text-gray-900">{selectedPaymentForReceipt.loanId}</span>
-                </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-6 mb-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Payment Details</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-700">Principal Paid:</span>
-                    <span className="font-medium text-gray-900">₱{selectedPaymentForReceipt.principalPaid.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-700">Interest Paid:</span>
-                    <span className="font-medium text-gray-900">₱{selectedPaymentForReceipt.interestPaid.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-t-2 border-b-2 border-gray-300 my-3">
-                    <span className="text-lg font-bold text-gray-900">Total Payment:</span>
-                    <span className="text-2xl font-bold text-green-600">₱{selectedPaymentForReceipt.amount.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-700">Remaining Balance:</span>
-                    <span className="font-medium text-gray-900">₱{selectedPaymentForReceipt.remainingBalance.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-center text-sm text-gray-600 space-y-2 py-6 border-t border-gray-200">
-                <p>Thank you for your payment!</p>
-                <p>This is a computer-generated receipt. No signature is required.</p>
-                <p className="text-xs text-gray-500 mt-4">Printed on {formatDateTime(new Date())}</p>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
-              <button
-                onClick={() => handleDownloadReceipt(selectedPaymentForReceipt)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 font-medium"
-              >
-                <Download className="w-5 h-5" />
-                Download
-              </button>
-              <button
-                onClick={() => {
-                  setShowReceiptModal(false);
-                  setSelectedPaymentForReceipt(null);
-                }}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {receiptLoan && <LoanReceiptModal loan={receiptLoan} onClose={() => setReceiptLoan(null)} />}
     </div>
   );
 }

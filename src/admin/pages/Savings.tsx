@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock, Eye, Filter, LoaderCircle, Plus, Search, Users, Wallet, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, Clock, Eye, Filter, HandCoins, LoaderCircle, Lock, PiggyBank, Plus, Search, Users, Wallet, X } from 'lucide-react';
 import { EmptyState, Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { toast } from 'sonner';
@@ -9,6 +9,8 @@ import {
   type MemberSavingsEntry, type MemberSavingsSummary, type SavingsMember,
 } from '../services/membersApi';
 import { useLiveRefresh } from '../../lib/liveUpdates';
+import { DividendBreakdown, percent, periodText, useMemberDividend, YearSelect } from '../components/MemberDividend';
+import { PatronageBreakdown } from '../components/MemberPatronageRefund';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 
 type SavingsView = 'total' | 'add' | 'history';
@@ -358,6 +360,8 @@ function MemberSavingsModal({ member, refreshKey, onChanged, onClose }: { member
             </div>
           )}
 
+          <MemberDividendSection memberId={member.id} />
+
           <div className="rounded-xl border border-gray-200">
             <h3 className="border-b border-gray-200 px-4 py-3 font-bold text-gray-900">Savings History</h3>
             {error ? <p className="p-6 text-sm text-red-600">{error}</p>
@@ -406,6 +410,41 @@ function MemberSavingsModal({ member, refreshKey, onChanged, onClose }: { member
         </div>
       </div>
     </div>
+  );
+}
+
+/** The member's estimated dividend and patronage refund for a year. Confidential: only the office sees it (not shown to members). */
+function MemberDividendSection({ memberId }: { memberId: number }) {
+  const [year, setYear] = useState<number | undefined>(undefined);
+  const { dividend, error } = useMemberDividend(memberId, year);
+  return (
+    <section className="rounded-xl border border-gray-200" aria-labelledby="member-dividend-title">
+      <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 id="member-dividend-title" className="font-bold text-gray-900">Dividend &amp; Patronage Refund</h3>
+          <p className="flex items-center gap-1 text-xs text-gray-500"><Lock className="h-3 w-3" aria-hidden="true" />Confidential: the office only, not shown to members.{dividend ? ` Estimates for ${periodText(dividend)}.` : ''}</p>
+        </div>
+        <YearSelect dividend={dividend} onYearChange={setYear} />
+      </div>
+      <div className="space-y-4 p-4">
+        {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : !dividend ? <p className="flex items-center gap-2 text-sm text-gray-500"><LoaderCircle className="h-4 w-4 animate-spin" />Loading…</p> : <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-lg bg-purple-50 p-4">
+              <p className="flex items-center gap-1.5 text-sm text-purple-700"><PiggyBank className="h-4 w-4" />Estimated Dividend</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-purple-900">{peso(dividend.dividend)}</p>
+              <p className="mt-1 text-xs text-purple-700">{percent(dividend.shareRatio)} of the dividend pool</p>
+            </div>
+            <div className="rounded-lg bg-teal-50 p-4">
+              <p className="flex items-center gap-1.5 text-sm text-teal-700"><HandCoins className="h-4 w-4" />Estimated Patronage Refund</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-teal-900">{peso(dividend.patronage.refund)}</p>
+              <p className="mt-1 text-xs text-teal-700">{percent(dividend.patronage.poolShare)} of the patronage refund pool</p>
+            </div>
+          </div>
+          <DividendBreakdown dividend={dividend} />
+          <PatronageBreakdown dividend={dividend} patronage={dividend.patronage} />
+        </>}
+      </div>
+    </section>
   );
 }
 

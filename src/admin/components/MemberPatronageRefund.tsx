@@ -30,21 +30,21 @@ export function PatronageBreakdown({ dividend, patronage }: { dividend: MemberDi
         <p className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><Info className="mt-0.5 h-4 w-4 shrink-0" />{onePart}</p>
       )}
 
-      <ComputationToggle id="my-patronage-steps" label="your patronage refund">
-        <Step number={1} title="Your Business Points">
+      <ComputationToggle id="member-patronage-steps" label="the member's patronage refund">
+        <Step number={1} title="Member's Business Points">
           <Rows rows={[
             ['Machinery rental and service fees', patronage.business.machinery],
             ['Loan interest paid', patronage.business.loans],
             ['Kadiwa Store purchases', patronage.business.kadiwa ?? 0],
-            ['Your Total Business', patronage.business.total, 'total'],
+            ["Member's Total Business", patronage.business.total, 'total'],
           ]} />
           <Formula worked={`= ${peso(patronage.business.total)} ÷ ₱${rules.pesosPerBusinessPoint} = ${businessPoints(patronage.businessPoints)} points`}>
-            Business Points = Your Total Business ÷ ₱{rules.pesosPerBusinessPoint}
+            Business Points = Member's Total Business ÷ ₱{rules.pesosPerBusinessPoint}
           </Formula>
-          <p className="text-xs text-gray-500">Kadiwa Store purchases count when the store writes your member ID or name on the day's sale. Ask for it when you buy.</p>
+          <p className="text-xs text-gray-500">Kadiwa Store purchases count when the store writes the member's ID or name on the day's sale.</p>
         </Step>
 
-        <Step number={2} title="Your Participation Points">
+        <Step number={2} title="Member's Participation Points">
           <div className="overflow-hidden rounded-lg border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -65,10 +65,10 @@ export function PatronageBreakdown({ dividend, patronage }: { dividend: MemberDi
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-gray-500">Activities you attended (present or late) once the office has finalized their attendance.</p>
+          <p className="text-xs text-gray-500">Activities the member attended (present or late) once their attendance is finalized.</p>
         </Step>
 
-        <Step number={3} title="Your Patronage Refund">
+        <Step number={3} title="Member's Patronage Refund">
           <Formula worked={`= ${peso(pool)} × ${weights.business}% = ${peso(patronage.businessPool)}`}>
             Business Part = Patronage Refund Pool × {weights.business}%
           </Formula>
@@ -78,15 +78,15 @@ export function PatronageBreakdown({ dividend, patronage }: { dividend: MemberDi
           <Formula worked={patronage.totalBusinessPoints > 0
             ? `= ${peso(patronage.businessPool)} × ${businessPoints(patronage.businessPoints)} ÷ ${businessPoints(patronage.totalBusinessPoints)} = ${peso(patronage.businessRefund)}`
             : `= ${peso(0)} (no member has business points yet)`}>
-            From Business = Business Part × Your Business Points ÷ All Members&apos; Business Points
+            From Business = Business Part × Member's Business Points ÷ All Members&apos; Business Points
           </Formula>
           <Formula worked={patronage.totalParticipationPoints > 0
             ? `= ${peso(patronage.participationPool)} × ${points(patronage.participationPoints)} ÷ ${points(patronage.totalParticipationPoints)} = ${peso(patronage.participationRefund)}`
             : `= ${peso(0)} (no member has participation points yet)`}>
-            From Participation = Participation Part × Your Participation Points ÷ All Members&apos; Participation Points
+            From Participation = Participation Part × Member's Participation Points ÷ All Members&apos; Participation Points
           </Formula>
           <Formula worked={`= ${peso(patronage.businessRefund)} + ${peso(patronage.participationRefund)} = ${peso(patronage.refund)}`}>
-            Your Patronage Refund = From Business + From Participation
+            Member's Patronage Refund = From Business + From Participation
           </Formula>
           <p className="text-xs text-gray-500">All members&apos; points are the points of every current member for the same period.</p>
         </Step>

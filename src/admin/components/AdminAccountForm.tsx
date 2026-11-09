@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Modal } from './machinery/shared';
 import { CheckCircle2, LoaderCircle, Mail, Phone, Send, ShieldCheck, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { checkAdminContact, confirmAdminContactCode, createAdminAccountRequest, sendAdminContactCode, type AdminContactCheck } from '../../app/services/authApi';
@@ -157,10 +158,9 @@ export function AdminAccountForm({ onCreated, onCancel }: { onCreated: () => voi
   };
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="rounded-lg border border-green-200 bg-green-50/60 p-5 shadow-sm" noValidate>
-      <h2 className="text-lg font-semibold text-gray-900">Create Administrator Account</h2>
-      <p className="mt-1 text-sm text-gray-600">All administrators have the same access. Each one acts under their own name and position, and everything they do is recorded in the audit log.</p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+    <Modal title="Create Administrator Account" description="All administrators have the same access. Each one acts under their own name and position, and everything they do is recorded in the audit log." onClose={() => { if (!creating) onCancel(); }}>
+    <form onSubmit={(event) => void submit(event)} noValidate>
+      <div className="grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-gray-700">Full name <span className="text-red-600">*</span>
           <input required value={form.fullName} onChange={(event) => update('fullName', event.target.value)} placeholder="e.g. Liza M. Ramos" className={`${INPUT} border-gray-300`} />
         </label>
@@ -197,5 +197,6 @@ export function AdminAccountForm({ onCreated, onCancel }: { onCreated: () => voi
         {problems.length > 0 && <span className="text-xs text-gray-600">Still needed: {problems.join(', ')}.</span>}
       </div>
     </form>
+    </Modal>
   );
 }

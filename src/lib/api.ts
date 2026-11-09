@@ -73,6 +73,16 @@ export const apiPut = <T>(path: string, body?: unknown) => apiFetch<T>(path, { m
 export const apiPatch = <T>(path: string, body?: unknown) => apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body ?? {}) });
 export const apiDelete = <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' });
 
+// Downloads a protected file (sent with the session cookie) to show it in the page.
+export async function fetchProtectedBlob(path: string) {
+  const response = await fetch(`${API_URL}${path}`, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new ApiError(data.message || 'Unable to load the file.', response.status);
+  }
+  return response.blob();
+}
+
 // Downloads a protected file (sent with the session cookie) and opens it.
 export async function openProtectedFile(path: string) {
   const response = await fetch(`${API_URL}${path}`, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } });

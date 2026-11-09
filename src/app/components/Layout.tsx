@@ -30,7 +30,7 @@ import {
   CircleCheck,
   Trash2,
   UserCog,
-  Network,
+  Info,
   History,
   type LucideIcon,
 } from 'lucide-react';
@@ -125,13 +125,13 @@ const navigation: NavItem[] = [
   { name: 'Kadiwa Store', href: '/kadiwa', icon: Store, roles: ['admin'], group: 'Operations', aliases: ['/admin/kadiwa'], short: 'Kadiwa' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin'], group: 'Overview', aliases: ['/admin/analytics'], short: 'Analytics' },
   { name: 'Report', href: '/reports', icon: FileBarChart, roles: ['admin'], group: 'Overview', aliases: ['/admin/reports'], short: 'Report' },
-  { name: 'Chart', href: '/admin/chart', icon: Network, roles: ['admin'], group: 'Members', short: 'Chart' },
   { name: 'Manage Users', href: '/admin/accounts', icon: UserCog, roles: ['admin'], group: 'System', short: 'Users' },
   { name: 'OCR Scanner', href: '/ocr', icon: ScanLine, roles: ['admin'], group: 'System', aliases: ['/admin/ocr'], short: 'OCR' },
   { name: 'Kadiwa Store', href: '/vendor', icon: Store, roles: ['vendor'], group: 'Overview', short: 'Store' },
   { name: 'Sales History', href: '/vendor/history', icon: History, roles: ['vendor'], group: 'Overview', short: 'History' },
   { name: 'Analytics', href: '/vendor/analytics', icon: BarChart3, roles: ['vendor'], group: 'Overview', short: 'Analytics' },
   { name: 'Activity Log', href: '/vendor/activity', icon: FileText, roles: ['vendor'], group: 'System', short: 'Activity' },
+  { name: 'About', href: '/about', icon: Info, roles: ['admin', 'member'], group: 'System', short: 'About' },
   { name: 'Settings', href: '/settings', icon: SettingsIcon, roles: ['admin', 'member'], group: 'System', aliases: ['/admin/settings', '/member/settings'], short: 'Settings' },
 ];
 

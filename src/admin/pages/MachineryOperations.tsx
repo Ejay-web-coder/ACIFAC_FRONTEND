@@ -53,7 +53,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     clientName: '',
     purpose: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    areaHa: ''
   });
 
   const machineryPages = usePagination(machinery, { pageSize: 8 });
@@ -188,7 +189,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       return;
     }
     try {
-      const rental = { machineryId: formData.machineryId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: '' };
+      // The area is kept in the booking's notes ("Area: 2 ha"), shown with the request.
+      const area = formData.areaHa.trim();
+      const rental = { machineryId: formData.machineryId, purpose: formData.purpose, startDate: formData.startDate, endDate: formData.endDate, notes: area ? `Area: ${Number(area)} ha` : '' };
       await createRentalRequest(renterType === 'member' ? { ...rental, memberDatabaseId: selectedMemberId! } : { ...rental, clientCategory: 'non_member', clientName });
       void loadData();
       toast.success('Booking created');
@@ -203,7 +206,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       clientName: '',
       purpose: '',
       startDate: '',
-      endDate: ''
+      endDate: '',
+      areaHa: ''
     });
     setRenterType('member');
     setSelectedMemberId(null);
@@ -581,6 +585,27 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="rental-area" className="block text-sm font-medium text-gray-700 mb-1">
+                    Area <span className="font-normal text-gray-500">(hectares, optional)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="rental-area"
+                      type="text"
+                      inputMode="decimal"
+                      name="areaHa"
+                      value={formData.areaHa}
+                      onChange={handleFormChange}
+                      pattern="\d{1,6}(\.\d{1,4})?"
+                      title="A number of hectares, e.g. 2 or 1.5"
+                      className="w-full py-2 pl-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
+                      placeholder="e.g., 2"
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-gray-500">ha</span>
+                  </div>
                 </div>
               </div>
 

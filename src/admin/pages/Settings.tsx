@@ -1,28 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { User, Bell, Shield, Database, Save, FileText, Upload, Eye, Trash2 } from 'lucide-react';
+import { User, Bell, Shield, Database, Save } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import {
-  deleteLegalDocumentRequest, fetchCurrentUser, fetchLegalDocuments, updateNotificationPreferencesRequest,
-  checkAdminContact, updateProfileRequest, uploadLegalDocumentRequest, type AuthUser, type LegalDocumentRecord,
+  fetchCurrentUser, updateNotificationPreferencesRequest, checkAdminContact, updateProfileRequest, type AuthUser,
 } from '../../app/services/authApi';
-import { openProtectedFile } from '../../lib/api';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
-import { formatDate, formatDateTime } from '../../utils/dateTime';
+import { formatDateTime } from '../../utils/dateTime';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
-import { confirmAction } from '../../app/components/common/ConfirmDialog';
 
 interface SettingsProps {
   userRole: UserRole;
   mustChangePassword?: boolean;
 }
 
-const formatSize = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-
 export function Settings({ userRole, mustChangePassword = false }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'system' | 'legal'>(mustChangePassword ? 'security' : 'profile');
-  const [legalDocuments, setLegalDocuments] = useState<LegalDocumentRecord[]>([]);
-  const [documentCategory, setDocumentCategory] = useState('Registration');
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'system'>(mustChangePassword ? 'security' : 'profile');
   const [account, setAccount] = useState<AuthUser | null>(null);
   const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
   // The cooperative's positions, suggested for the Position field.
@@ -31,7 +24,6 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
   const [notificationSettings, setNotificationSettings] = useState({ emailNotifications: true, smsNotifications: true, loanReminders: true });
   // A temporary password opens the change straight away.
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(mustChangePassword);
-  const [isUploading, setIsUploading] = useState(false);
 
   const loadAccount = useCallback(() => {
     fetchCurrentUser()
@@ -44,16 +36,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
       .catch((error: Error) => toast.error('Unable to load your profile', { description: error.message }));
   }, []);
 
-  const loadDocuments = useCallback(() => {
-    fetchLegalDocuments()
-      .then(({ data }) => setLegalDocuments(data))
-      .catch(() => { /* the legal tab shows an empty state */ });
-  }, []);
-
-  useEffect(() => {
-    loadAccount();
-    if (!mustChangePassword) loadDocuments();
-  }, [loadAccount, loadDocuments, mustChangePassword]);
+  useEffect(() => { loadAccount(); }, [loadAccount]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,37 +62,6 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
     toast.info('Backups are managed by Supabase', {
       description: 'The database is backed up automatically by the Supabase project (see Supabase dashboard → Database → Backups). This app does not create backup files.'
     });
-  };
-
-  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      await uploadLegalDocumentRequest(file, documentCategory);
-      toast.success('Legal document uploaded', { description: `${file.name} is stored privately.` });
-      loadDocuments();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to upload document.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDocumentView = (document: LegalDocumentRecord) => {
-    openProtectedFile(`/api/legal-documents/${document.id}/file`).catch((error: Error) => toast.error(error.message));
-  };
-
-  const handleDocumentDelete = async (document: LegalDocumentRecord) => {
-    if (!(await confirmAction(`Delete "${document.name}"? This cannot be undone.`, { confirmLabel: 'Delete', danger: true }))) return;
-    try {
-      await deleteLegalDocumentRequest(document.id);
-      toast.success('Document deleted');
-      loadDocuments();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to delete document.');
-    }
   };
 
   // Only show admin settings
@@ -141,17 +93,6 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
             >
               <User className="w-5 h-5" />
               Profile
-            </button>
-            <button
-              onClick={() => setActiveTab('legal')}
-              className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === 'legal'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <FileText className="w-5 h-5" />
-              Legal Documents
             </button>
             <button
               onClick={() => setActiveTab('notifications')}
@@ -398,51 +339,6 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
             </div>
           )}
 
-          {/* Legal Documents Tab */}
-          {activeTab === 'legal' && (
-            <div className="space-y-6">
-              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Cooperative Legal Documents</h2>
-                  <p className="mt-1 text-sm text-gray-600">Keep registration, governance, and compliance documents available to administrators.</p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <select value={documentCategory} onChange={(e) => setDocumentCategory(e.target.value)} className="rounded-xl border border-gray-300 px-3 py-2 text-sm">
-                    <option>Registration</option>
-                    <option>Governance</option>
-                    <option>Compliance</option>
-                    <option>Financial</option>
-                    <option>Other</option>
-                  </select>
-                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">
-                    <Upload className="h-4 w-4" />
-                    {isUploading ? 'Uploading...' : 'Upload Document'}
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" disabled={isUploading} onChange={handleDocumentUpload} className="sr-only" />
-                  </label>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {legalDocuments.map((document) => (
-                  <div key={document.id} className="rounded-lg border border-gray-200 p-4 transition-shadow hover:shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className="rounded-lg bg-blue-50 p-3"><FileText className="h-5 w-5 text-blue-600" /></div>
-                        <div className="min-w-0"><h3 className="truncate font-medium text-gray-900">{document.name}</h3><p className="mt-1 text-xs text-gray-500">{document.category} · {formatSize(document.fileSize)}</p></div>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Available</span>
-                    </div>
-                    <p className="mt-4 text-xs text-gray-500">Uploaded {formatDate(document.uploadedAt)}{document.uploadedBy ? ` by ${document.uploadedBy}` : ''}</p>
-                    <div className="mt-4 flex items-center gap-3 border-t border-gray-100 pt-3">
-                      <button type="button" onClick={() => handleDocumentView(document)} className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"><Eye className="h-4 w-4" />View</button>
-                      <button type="button" onClick={() => void handleDocumentDelete(document)} className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-800"><Trash2 className="h-4 w-4" />Remove</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {!legalDocuments.length && <div className="rounded-lg border border-dashed border-gray-300 px-6 py-12 text-center"><FileText className="mx-auto h-10 w-10 text-gray-400" /><p className="mt-3 text-sm font-medium text-gray-700">No legal documents uploaded</p><p className="mt-1 text-sm text-gray-500">Upload a cooperative document to see it here.</p></div>}
-            </div>
-          )}
         </div>
       </div>
 
