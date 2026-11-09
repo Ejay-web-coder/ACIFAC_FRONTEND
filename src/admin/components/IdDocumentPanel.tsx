@@ -1,5 +1,5 @@
 import type { ChangeEvent, ReactNode } from 'react';
-import { AlertTriangle, Camera, CheckCircle2, Eye, FileUp, IdCard, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, Check, CheckCircle2, Eye, FileUp, IdCard, ImagePlus, RefreshCw, XCircle } from 'lucide-react';
 import type { OcrIdDocument, OcrIdRequirement, VerificationCheck } from '../services/ocrApi';
 
 // A valid ID a scanned form needs before it can be saved.
@@ -30,6 +30,26 @@ interface IdDocumentPanelProps {
   onUpload: (file: File) => void;
   onCapture: () => void;
   onView: () => void;
+  /** "form": the plain bordered box of the paper-style member form (like the RSBSA copy). */
+  look?: 'card' | 'form';
+}
+
+// The member form's buttons, as in its RSBSA Enrollment Client's Copy box.
+const FORM_PRIMARY = 'inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700';
+const FORM_SECONDARY = 'inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
+
+function FormUploadButton({ label, disabled, onUpload }: { label: string; disabled: boolean; onUpload: (file: File) => void }) {
+  const onChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) onUpload(file);
+  };
+  return (
+    <label className={`${FORM_PRIMARY} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+      <ImagePlus className="h-4 w-4" /> {label}
+      <input type="file" accept={ACCEPT} className="hidden" disabled={disabled} onChange={onChange} />
+    </label>
+  );
 }
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
@@ -41,7 +61,7 @@ function UploadButton({ label, disabled, onUpload, compact = false }: { label: s
     if (file) onUpload(file);
   };
   return (
-    <label className={`inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'bg-slate-800 px-4 py-2 text-white hover:bg-slate-700'} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+    <label className={`inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold ${compact ? 'border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50' : 'bg-green-700 px-4 py-2.5 text-white hover:bg-green-800'} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
       <FileUp className="h-4 w-4" /> {label}
       <input type="file" accept={ACCEPT} className="hidden" disabled={disabled} onChange={onChange} />
     </label>
@@ -51,9 +71,9 @@ function UploadButton({ label, disabled, onUpload, compact = false }: { label: s
 // One way to submit (upload, live camera), as a card; also used by the 2x2 picture panel.
 export function Option({ icon, title, text, children }: { icon: ReactNode; title: string; text: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-white p-4">
+    <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-white p-4">
       <div className="flex items-start gap-3">
-        <div className="rounded-lg bg-amber-100 p-2 text-amber-800">{icon}</div>
+        <div className="rounded-xl bg-amber-100 p-2 text-amber-800">{icon}</div>
         <div><p className="font-semibold text-gray-900">{title}</p><p className="text-sm text-gray-600">{text}</p></div>
       </div>
       <div>{children}</div>
@@ -74,27 +94,80 @@ const MATCH_STYLE = {
   fail: { icon: XCircle, className: 'border-red-200 bg-red-50 text-red-800' },
 };
 
-export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView }: IdDocumentPanelProps) {
+export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView, look = 'card' }: IdDocumentPanelProps) {
   const busy = disabled || submitting;
   const { person, label, cardCapture } = requirement;
   const copyText = `A photocopy of the front and back of the ID on one page, with the ${person}'s ${requiredSignatures} specimen signatures.`;
 
+  if (look === 'form' && (id || editable)) {
+    const reading = id?.reading || {};
+    const signatures = reading.signatureCount;
+    const rows: Array<[string, ReactNode]> = id ? [
+      ['ID type', reading.idType || ''],
+      ['ID No.', reading.idNumber || ''],
+      ['Name on the ID', reading.name || ''],
+      ['Birthday on the ID', reading.dateOfBirth || ''],
+      ['Sides shown', sidesShown(reading.frontVisible, reading.backVisible)],
+      ['Specimen signatures', typeof signatures === 'number'
+        ? <span className={signatures < requiredSignatures ? 'font-semibold text-red-700' : 'font-semibold text-emerald-700'}>{signatures} of {requiredSignatures}</span>
+        : 'Could not be counted'],
+    ] : [];
+    return (
+      <section className={`rounded-md border p-3 ${error ? 'border-red-400' : 'border-slate-400'}`} aria-label={label}>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{label}{editable && <span className="text-red-500"> *</span>}</p>
+        {id ? (
+          <>
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+              <span className="flex min-w-0 items-center gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-600" /><span className="truncate">{id.fileName}</span></span>
+              <button type="button" onClick={onView} className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">View</button>
+            </div>
+            {Object.keys(reading).length === 0 ? null : reading.error
+              ? <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">AI could not read the ID ({reading.error}). Open it and check it yourself, or submit it again.</p>
+              : <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">{rows.map(([rowLabel, value]) => (
+                <div key={rowLabel} className="flex justify-between gap-3 border-b border-slate-100 pb-1"><dt className="shrink-0 text-slate-500">{rowLabel}</dt><dd className="min-w-0 break-words text-right font-medium text-slate-900">{value}</dd></div>
+              ))}</dl>}
+            {(reading.issues?.length ?? 0) > 0 && <ul className="mt-2 list-disc pl-5 text-sm text-amber-800">{reading.issues!.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
+            {checks.map((check) => {
+              const style = MATCH_STYLE[check.status];
+              return (
+                <div key={check.id} className={`mt-2 flex gap-2 rounded-md border px-3 py-2 text-sm ${style.className}`}>
+                  <style.icon className="mt-0.5 h-4 w-4 shrink-0" aria-label={check.status} />
+                  <p><span className="font-semibold">{check.label}:</span> {check.message}</p>
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the front and back of the {person}&apos;s valid ID on one page, with the {person}&apos;s {requiredSignatures} specimen signatures (JPG, PNG, WEBP or PDF, max 5 MB).</p>
+        )}
+        {editable && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <FormUploadButton label={id ? 'Upload a new picture' : 'Upload picture'} disabled={busy} onUpload={onUpload} />
+            <button type="button" onClick={onCapture} disabled={busy} className={FORM_SECONDARY}><Camera className="h-4 w-4" /> {id ? 'Take a new picture' : 'Take a picture'}</button>
+            {submitting && <span className="inline-flex items-center gap-1 text-sm text-blue-700"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> AI is checking the ID...</span>}
+          </div>
+        )}
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </section>
+    );
+  }
+
   if (!id) {
     if (!editable) return null;
     return (
-      <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4" aria-label={label}>
-        <div className="flex items-center gap-2"><IdCard className="h-5 w-5 text-amber-700" /><h3 className="font-semibold text-gray-900">{label} <span className="text-red-600">*</span></h3></div>
+      <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 sm:p-5" aria-label={label}>
+        <div className="flex items-center gap-2"><IdCard className="h-5 w-5 text-amber-700" /><h3 className="text-lg font-bold text-gray-900">{label} <span className="text-red-600">*</span></h3></div>
         <p className="mt-1 text-sm text-amber-900">
           {cardCapture
             ? `The ${formName} is saved only with the ${person}'s valid ID. Submit one of these:`
             : `The ${formName} is saved only with the ${person}'s valid ID: the front and back of the ID on one page, with the ${person}'s ${requiredSignatures} specimen signatures. Submit it one of these ways:`}
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
           <Option icon={<FileUp className="h-5 w-5" />} title={cardCapture ? 'Back-to-back copy' : 'Upload the signed copy'} text={cardCapture ? copyText : 'A scan or picture (PNG, JPG, WEBP or PDF) of the signed back-to-back copy.'}>
             <UploadButton label={cardCapture ? 'Upload copy' : 'Upload picture'} disabled={busy} onUpload={onUpload} />
           </Option>
           <Option icon={<Camera className="h-5 w-5" />} title={cardCapture ? 'Live camera' : 'Take a picture'} text={cardCapture ? 'The ID card itself, captured now with the camera: the front, then the back.' : 'Photograph the signed back-to-back copy now with the camera.'}>
-            <button type="button" onClick={onCapture} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"><Camera className="h-4 w-4" /> Open camera</button>
+            <button type="button" onClick={onCapture} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"><Camera className="h-4 w-4" /> Open camera</button>
           </Option>
         </div>
         {submitting && <p className="mt-3 animate-pulse text-sm text-blue-700">AI is checking the ID and comparing it with the {person} on the form...</p>}
@@ -121,7 +194,7 @@ export function IdDocumentPanel({ requirement, id, formName, requiredSignatures,
   ];
 
   return (
-    <section className="rounded-xl border border-gray-200 p-4" aria-label={label}>
+    <section className="rounded-2xl border border-gray-200 p-4 sm:p-5" aria-label={label}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <IdCard className="h-5 w-5 text-gray-700" />

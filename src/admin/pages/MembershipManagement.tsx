@@ -32,6 +32,9 @@ export interface Member {
   idDocumentType?: string | null;
   idDocumentSize?: number | null;
   hasIdDocument?: boolean;
+  /** The RSBSA Enrollment Client's Copy, if one was uploaded or photographed. */
+  rsbsaDocumentName?: string | null;
+  hasRsbsaDocument?: boolean;
   /** Specimen signatures taken with Add Member (0 to 3). */
   signatureCount?: number;
   createdAt?: string;
@@ -141,6 +144,10 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     idDocumentName: member?.idDocumentName || (member?.hasIdDocument ? 'Valid ID on file' : null),
     onOpenIdDocument: member?.hasIdDocument
       ? () => { void openProtectedFile(memberDocumentPath(member.id, 'id-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.'))); }
+      : undefined,
+    rsbsaDocumentName: member?.rsbsaDocumentName || (member?.hasRsbsaDocument ? 'RSBSA enrollment copy on file' : null),
+    onOpenRsbsaDocument: member?.hasRsbsaDocument
+      ? () => { void openProtectedFile(memberDocumentPath(member.id, 'rsbsa-document')).catch((error) => toast.error(errorMessage(error, 'Unable to open document.'))); }
       : undefined,
   });
   const viewFiles = savedFilesOf(selectedMember, viewSaved);
@@ -255,7 +262,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     const payload = buildDraftPayload(draft);
     setSavingDraft(true);
     try {
-      const { data: newMember } = await createMemberRequest(payload, files.idDocument, files.photo);
+      const { data: newMember } = await createMemberRequest(payload, files.idDocument, files.photo, files.rsbsaDocument);
       setMembers((current) => [newMember, ...current]);
       void loadMembers();
       setShowAddModal(false);
@@ -305,7 +312,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
         palay_area_ha: profile.palayArea || null,
         emergency_contact: profile.emergencyContact || null,
       });
-      if (files.photo || files.idDocument) {
+      if (files.photo || files.idDocument || files.rsbsaDocument) {
         await replaceMemberDocumentsRequest(editingMember.id, files);
       }
       void loadMembers();

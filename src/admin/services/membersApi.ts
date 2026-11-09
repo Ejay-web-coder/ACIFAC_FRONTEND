@@ -1,7 +1,6 @@
 import type { Member } from '../pages/MembershipManagement';
 import { apiFetch, apiGet, apiPatch, apiPost, apiPut } from '../../lib/api';
 import type { Pagination } from '../../app/services/authApi';
-import type { OcrIdReading, VerificationCheck } from './ocrApi';
 
 // Children were first saved as text: "Ana (7); Ben (Age not provided)".
 function parseChildrenText(text: string) {
@@ -84,6 +83,8 @@ function mapMember(record: Record<string, unknown>): Member {
     idDocumentType: record.id_document_type ? String(record.id_document_type) : null,
     idDocumentSize: record.id_document_size ? Number(record.id_document_size) : null,
     hasIdDocument: Boolean(record.has_id_document ?? record.id_document_name),
+    rsbsaDocumentName: record.rsbsa_document_name ? String(record.rsbsa_document_name) : null,
+    hasRsbsaDocument: Boolean(record.has_rsbsa_document ?? record.rsbsa_document_name),
     signatureCount: Number(record.signature_count || 0),
     createdAt: String(record.created_at || ''),
     updatedAt: String(record.updated_at || ''),
@@ -191,47 +192,32 @@ export function importMembersRequest(rows: MemberImportRow[]) {
 }
 
 /** The applicant's valid ID file (a back-to-back copy with 3 specimen signatures) and AI's reading of it in the form. */
+/** The applicant's valid ID picked in Add Member or Edit Member (AI does not read it). */
 export interface MemberIdUpload {
   file: File;
-  readingId: number;
-  /** The admin compared the flagged ID details with the applicant. */
-  acknowledgeIdWarnings: boolean;
 }
 
 function appendMemberId(form: FormData, id: MemberIdUpload) {
-  form.append('id_document_reading', String(id.readingId));
   form.append('idDocument', id.file);
-  if (id.acknowledgeIdWarnings) form.append('acknowledge_id_warnings', 'true');
 }
 
-/** AI reads the applicant's valid ID picked in Add Member or Edit Member. */
-export function readMemberId(file: File, source: 'upload' | 'camera') {
-  const form = new FormData();
-  form.append('source', source);
-  form.append('idDocument', file);
-  return apiPost<{ readingId: number; reading: OcrIdReading; message: string }>('/api/members/id-reading', form);
-}
-
-/** How the ID read so far compares with the applicant on the form. */
-export function previewMemberIdChecks(payload: { idReading: number; firstName: string; middleName: string; lastName: string; dateOfBirth: string; idNumber: string }) {
-  return apiPost<{ checks: VerificationCheck[] }>('/api/members/id-checks', payload);
-}
-
-export function createMemberRequest(payload: Record<string, unknown>, idDocument: MemberIdUpload, profilePhoto: File | null = null) {
+export function createMemberRequest(payload: Record<string, unknown>, idDocument: MemberIdUpload, profilePhoto: File | null = null, rsbsaDocument: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
   });
   appendMemberId(form, idDocument);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
+  if (rsbsaDocument) form.append('rsbsaDocument', rsbsaDocument);
   return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
-/** Edit Member: replaces the 2x2 photo and/or the valid ID; null keeps the file on record. */
-export function replaceMemberDocumentsRequest(id: number, files: { photo: File | null; idDocument: MemberIdUpload | null }) {
+/** Edit Member: replaces the 2x2 photo, the valid ID and/or the RSBSA enrollment copy; null keeps the file on record. */
+export function replaceMemberDocumentsRequest(id: number, files: { photo: File | null; idDocument: MemberIdUpload | null; rsbsaDocument?: File | null }) {
   const form = new FormData();
   if (files.idDocument) appendMemberId(form, files.idDocument);
   if (files.photo) form.append('profilePhoto', files.photo);
+  if (files.rsbsaDocument) form.append('rsbsaDocument', files.rsbsaDocument);
   return apiFetch<ApiResponse<Record<string, unknown>>>(`/api/members/${id}/documents`, { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));
 }
 
@@ -342,4 +328,4 @@ export function fetchMemberSavings(id: number, params: { page?: number; limit?: 
   return apiGet<ApiResponse<MemberSavingsEntry[]> & { member: { id: number; memberNumber: string; memberName: string; status: string }; summary: MemberSavingsSummary; pagination: Pagination }>(`/api/members/${id}/savings${search.toString() ? `?${search}` : ''}`);
 }
 
-export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'photo' | `signature-${1 | 2 | 3}`) => `/api/members/${memberId}/documents/${kind}`;
+export const memberDocumentPath = (memberId: number, kind: 'id-document' | 'rsbsa-document' | 'photo' | `signature-${1 | 2 | 3}`) => `/api/members/${memberId}/documents/${kind}`;

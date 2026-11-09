@@ -149,7 +149,7 @@ function fieldFlags(checks: VerificationCheck[]) {
 const FLAG_INPUT: Record<CheckStatus, string> = { fail: 'border-red-300 bg-red-50/70', warn: 'border-amber-300 bg-amber-50/70', pass: 'border-gray-300 bg-white' };
 
 // The forms the scanner reads, shown under the upload area.
-const READS = ['Membership', 'Loan', 'Savings', 'Machinery', 'Kadiwa Add Inventory', 'Kadiwa Daily Sales'];
+const READS = ['Membership', 'Loan', 'Kadiwa Add Inventory', 'Kadiwa Daily Sales'];
 // Recent scans shown before "Show older scans".
 const RECENT_SHOWN = 4;
 

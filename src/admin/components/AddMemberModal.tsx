@@ -5,8 +5,8 @@ import { toast } from 'sonner';
 import { DocumentScannerModal } from './DocumentScannerModal';
 import { IdDocumentPanel } from './IdDocumentPanel';
 import { SignaturePad } from './SignaturePad';
-import { previewMemberIdChecks, readMemberId, type MemberIdUpload } from '../services/membersApi';
-import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../services/ocrApi';
+import type { MemberIdUpload } from '../services/membersApi';
+import type { OcrIdRequirement } from '../services/ocrApi';
 import type { Member } from '../pages/MembershipManagement';
 
 export interface MemberDraftChild {
@@ -143,10 +143,10 @@ export const SIGNATURE_COUNT = 3;
 
 // The applicant's valid ID, like a loan co-maker's: the front and back of the
 // ID on one page with the applicant's 3 specimen signatures, uploaded or
-// photographed. AI reads it as it is picked; the server checks it again.
+// photographed. AI does not read it: the office checks it against the applicant.
 const REQUIRED_ID_SIGNATURES = 3;
 const APPLICANT_ID: OcrIdRequirement = { slot: 'holder', person: 'applicant', label: 'Applicant\'s valid ID', cardCapture: false };
-type PickedId = { file: File; source: 'upload' | 'camera'; readingId: number | null; reading: OcrIdReading | null; pending: boolean; error: string };
+type PickedId = { file: File; source: 'upload' | 'camera' };
 
 function calculateAgeFromBirthday(birthday: string) {
   if (!birthday) return '';
@@ -170,6 +170,14 @@ function sanitizeFile(file: File | null) {
   if (file.size > 2 * 1024 * 1024) {
     throw new Error('The photo must be 2 MB or smaller.');
   }
+  return file;
+}
+
+// The RSBSA Enrollment Client's Copy: a picture or scan, optional.
+function sanitizeRsbsaDocument(file: File) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowed.includes(file.type)) throw new Error('Upload a JPG, PNG, WEBP, or PDF of the RSBSA enrollment copy.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('The RSBSA enrollment copy must be 5 MB or smaller.');
   return file;
 }
 
@@ -226,6 +234,8 @@ export interface MemberFormFiles {
   photo: File | null;
   /** The signed back-to-back ID copy AI read. */
   idDocument: MemberIdUpload | null;
+  /** The RSBSA Enrollment Client's Copy (optional). */
+  rsbsaDocument: File | null;
 }
 
 /** The member's files already on record, shown in Edit and View. */
@@ -233,6 +243,8 @@ export interface SavedMemberFiles {
   photoUrl: string | null;
   idDocumentName: string | null;
   onOpenIdDocument?: () => void;
+  rsbsaDocumentName?: string | null;
+  onOpenRsbsaDocument?: () => void;
   /** Signatures drawn on screen by members added before the signed ID copy was required. */
   signatureUrls: Array<string | null>;
 }
@@ -357,10 +369,12 @@ export function MemberForm({
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   // The signed ID copy picked in the form, and how it compares with the applicant.
   const [pickedId, setPickedId] = useState<PickedId | null>(null);
-  const [idChecks, setIdChecks] = useState<VerificationCheck[]>([]);
-  const [idChecksReading, setIdChecksReading] = useState<number | null>(null);
-  const [acknowledgeId, setAcknowledgeId] = useState(false);
   const [idCamera, setIdCamera] = useState(false);
+  // The RSBSA Enrollment Client's Copy picked in the form (optional).
+  const [rsbsaFile, setRsbsaFile] = useState<File | null>(null);
+  const [rsbsaPreview, setRsbsaPreview] = useState<string | null>(null);
+  const [rsbsaCamera, setRsbsaCamera] = useState(false);
+  const rsbsaInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLFormElement>(null);
 
@@ -438,8 +452,36 @@ export function MemberForm({
     }
   };
 
-  // AI reads the ID as soon as it is picked.
-  const pickId = async (file: File, source: 'upload' | 'camera') => {
+  const pickRsbsa = (file: File | null) => {
+    if (!file) {
+      setRsbsaFile(null);
+      setRsbsaPreview(null);
+      clearError('rsbsaDocument');
+      return;
+    }
+    try {
+      sanitizeRsbsaDocument(file);
+    } catch (error) {
+      setErrors((current) => ({ ...current, rsbsaDocument: error instanceof Error ? error.message : 'Invalid file.' }));
+      return;
+    }
+    clearError('rsbsaDocument');
+    setRsbsaFile(file);
+    setRsbsaPreview(URL.createObjectURL(file));
+  };
+
+  const handleRsbsaFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    if (file) pickRsbsa(file);
+  };
+
+  // The old preview is released when a new one is picked, and when the form closes.
+  useEffect(() => () => {
+    if (rsbsaPreview) URL.revokeObjectURL(rsbsaPreview);
+  }, [rsbsaPreview]);
+
+  const pickId = (file: File, source: 'upload' | 'camera') => {
     try {
       sanitizeIdDocument(file);
     } catch (error) {
@@ -447,22 +489,13 @@ export function MemberForm({
       return;
     }
     clearError('idDocument');
-    clearError('idAck');
-    setAcknowledgeId(false);
-    setPickedId({ file, source, readingId: null, reading: null, pending: true, error: '' });
-    const settle = (change: Partial<PickedId>) => setPickedId((current) => (current?.file === file ? { ...current, pending: false, ...change } : current));
-    try {
-      const { readingId, reading } = await readMemberId(file, source);
-      settle({ readingId, reading });
-    } catch (error) {
-      settle({ error: `The ID was not read: ${error instanceof Error ? error.message : 'please try again.'}` });
-    }
+    setPickedId({ file, source });
   };
 
   const handleIdFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (file) void pickId(file, 'upload');
+    if (file) pickId(file, 'upload');
   };
 
   const viewPickedId = () => {
@@ -475,24 +508,8 @@ export function MemberForm({
   // Edit: keep the ID on file instead.
   const clearPickedId = () => {
     setPickedId(null);
-    setAcknowledgeId(false);
     clearError('idDocument');
-    clearError('idAck');
   };
-
-  // How the ID read compares with the name, birthday and ID No. on the form.
-  const idReadingId = pickedId?.readingId ?? null;
-  useEffect(() => {
-    if (!idReadingId) { setIdChecks([]); setIdChecksReading(null); return undefined; }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      previewMemberIdChecks({ idReading: idReadingId, firstName: form.firstName, middleName: form.middleName, lastName: form.lastName, dateOfBirth: form.birthday, idNumber: form.idNumber })
-        .then(({ checks }) => { if (!cancelled) { setIdChecks(checks); setIdChecksReading(idReadingId); } })
-        .catch(() => { if (!cancelled) setIdChecks([]); });
-    }, 400);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [idReadingId, form.firstName, form.middleName, form.lastName, form.birthday, form.idNumber]);
-  const idWarnings = idReadingId ? idChecks.filter((check) => check.status === 'warn') : [];
 
   useEffect(() => () => {
     if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview);
@@ -529,18 +546,12 @@ export function MemberForm({
       if (form.shareCapital !== '' && !(Number(form.shareCapital) >= 0)) next.shareCapital = 'Share capital must be zero or more.';
       if (form.membershipFee === '') next.membershipFee = 'Membership fee is required.';
       if (!photoFile) next.idPhoto = 'A 2×2 ID photo is required.';
+      if (!rsbsaFile) next.rsbsaDocument = 'Upload or take a picture of the RSBSA Enrollment Client\'s Copy.';
     } else if (![form.permanentAddress, form.barangay, form.municipality, form.province].some((part) => part.trim())) {
       next.barangay = 'Enter the address.';
     }
-    // Add needs the signed ID copy; Edit checks one only when it is replaced.
-    if (isAdd || pickedId) {
-      if (!pickedId?.readingId) next.idDocument = pickedId?.pending ? 'Wait until AI has read the ID.' : `Submit the applicant's valid ID: the front and back on one page with ${REQUIRED_ID_SIGNATURES} specimen signatures.`;
-      else if (idChecksReading === pickedId.readingId) {
-        // Only checks made for the ID now on the form; the server checks it again on save.
-        if (idChecks.some((check) => check.status === 'fail')) next.idDocument = 'This ID did not pass the check above. Submit another.';
-        else if (idWarnings.length && !acknowledgeId) next.idAck = 'Confirm that you compared the flagged ID details with the applicant.';
-      }
-    }
+    // Add needs the signed ID copy.
+    if (isAdd && !pickedId) next.idDocument = `Submit the applicant's valid ID: the front and back on one page with ${REQUIRED_ID_SIGNATURES} specimen signatures.`;
     return next;
   };
 
@@ -574,8 +585,8 @@ export function MemberForm({
       preMembershipSeminar: certified(form.seminarOrNumber, form.seminarCertifiedBy, form.preMembershipSeminar),
       paymentOfMembershipFee: certified(form.orNumber, form.feeCertifiedBy, form.paymentOfMembershipFee),
     };
-    const idDocument = pickedId?.readingId ? { file: pickedId.file, readingId: pickedId.readingId, acknowledgeIdWarnings: acknowledgeId } : null;
-    await onSubmit(payload, { photo: photoFile, idDocument });
+    const idDocument = pickedId ? { file: pickedId.file } : null;
+    await onSubmit(payload, { photo: photoFile, idDocument, rsbsaDocument: rsbsaFile });
   };
 
   // Field helpers: an input while editing, the saved value as text in View.
@@ -713,6 +724,46 @@ export function MemberForm({
           <Cell label="RSBSA No.">{input('rsbsaNumber')}</Cell>
           <Cell label="Farm Area (hectares)" error={errors.farmArea}>{readOnly ? view(form.farmArea ? `${form.farmArea} ha` : '') : input('farmArea', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}</Cell>
         </FormTable>
+        {/* The RSBSA Enrollment Client's Copy: uploaded or photographed. Required in Add. */}
+        <div className={`mt-2 rounded-md border p-3 ${errors.rsbsaDocument ? 'border-red-400' : 'border-slate-400'}`} {...errorProps('rsbsaDocument')}>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">RSBSA Enrollment Client&apos;s Copy{isAdd && <span className="text-red-500"> *</span>}</p>
+          {rsbsaFile && rsbsaPreview ? (
+            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
+              {rsbsaFile.type.startsWith('image/') && (
+                <button type="button" onClick={() => window.open(rsbsaPreview, '_blank')} className="block w-full overflow-hidden rounded-md border border-slate-300 bg-slate-50 sm:w-56" aria-label="Open the RSBSA enrollment copy">
+                  <img src={rsbsaPreview} alt="RSBSA enrollment copy" className="max-h-48 w-full object-contain" />
+                </button>
+              )}
+              <div className="flex min-w-0 flex-col gap-1 text-sm">
+                <span className="flex items-center gap-2 text-slate-700"><Check className="h-4 w-4 shrink-0 text-emerald-600" /><span className="break-all">{rsbsaFile.name}</span></span>
+                <span className="text-xs text-slate-500">{saved.rsbsaDocumentName ? 'Replaces the copy on file when saved.' : 'Saved with the member.'}</span>
+                <div className="mt-1 flex flex-wrap gap-3 text-xs">
+                  <button type="button" onClick={() => window.open(rsbsaPreview, '_blank')} className="font-semibold text-blue-600 hover:underline">View</button>
+                  <button type="button" onClick={() => rsbsaInputRef.current?.click()} className="font-semibold text-emerald-700 hover:underline">Replace</button>
+                  <button type="button" onClick={() => setRsbsaCamera(true)} className="font-semibold text-emerald-700 hover:underline">Retake</button>
+                  <button type="button" onClick={() => pickRsbsa(null)} className="font-semibold text-red-600 hover:underline">{saved.rsbsaDocumentName ? 'Keep the copy on file' : 'Remove'}</button>
+                </div>
+              </div>
+            </div>
+          ) : saved.rsbsaDocumentName ? (
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
+              <span className="flex min-w-0 items-center gap-2"><Check className="h-4 w-4 shrink-0" /><span className="truncate">{saved.rsbsaDocumentName}</span></span>
+              {saved.onOpenRsbsaDocument && <button type="button" onClick={saved.onOpenRsbsaDocument} className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">View</button>}
+            </div>
+          ) : readOnly ? (
+            <p className="mt-2 text-sm text-slate-400">No RSBSA enrollment copy on file</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the member&apos;s RSBSA Enrollment Client&apos;s Copy (JPG, PNG, WEBP or PDF, max 5 MB).</p>
+          )}
+          {!readOnly && !rsbsaFile && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => rsbsaInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700"><ImagePlus className="h-4 w-4" /> {saved.rsbsaDocumentName ? 'Upload a new picture' : 'Upload picture'}</button>
+              <button type="button" onClick={() => setRsbsaCamera(true)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Camera className="h-4 w-4" /> {saved.rsbsaDocumentName ? 'Take a new picture' : 'Take a picture'}</button>
+            </div>
+          )}
+          {!readOnly && <input ref={rsbsaInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleRsbsaFile} />}
+          {errors.rsbsaDocument && <p className="mt-1 text-xs text-red-600">{errors.rsbsaDocument}</p>}
+        </div>
         <FormTable cols="grid-cols-1 sm:grid-cols-4" className="mt-2">
           <Cell label="Permanent Address">{input('permanentAddress', { placeholder: 'House no. / Sitio / Purok' })}</Cell>
           <Cell label="Barangay" required={isAdd} error={errors.barangay}>{input('barangay')}</Cell>
@@ -836,23 +887,23 @@ export function MemberForm({
             {isAdd || pickedId ? (
               <IdDocumentPanel
                 requirement={APPLICANT_ID}
-                id={pickedId?.readingId && pickedId.reading ? { fileName: pickedId.file.name, mimeType: pickedId.file.type, size: pickedId.file.size, source: pickedId.source, reading: pickedId.reading } : null}
+                id={pickedId ? { fileName: pickedId.file.name, mimeType: pickedId.file.type, size: pickedId.file.size, source: pickedId.source, reading: {} } : null}
                 formName="membership form"
                 requiredSignatures={REQUIRED_ID_SIGNATURES}
-                checks={idReadingId && idChecksReading === idReadingId ? idChecks : []}
-                error={pickedId?.error || errors.idDocument}
+                error={errors.idDocument}
                 editable
-                submitting={Boolean(pickedId?.pending)}
-                disabled={Boolean(pickedId?.pending)}
-                onUpload={(file) => void pickId(file, 'upload')}
+                submitting={false}
+                disabled={false}
+                onUpload={(file) => pickId(file, 'upload')}
                 onCapture={() => setIdCamera(true)}
                 onView={viewPickedId}
+                look="form"
               />
             ) : (
               <div className="rounded-md border border-slate-400 p-3">
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">Valid ID</p>
                 {savedIdRow}
-                <p className="mt-2 text-xs text-slate-500">To replace it, submit a picture of the front and back of the ID on one page with the applicant&apos;s {REQUIRED_ID_SIGNATURES} specimen signatures. AI checks it before it is saved.</p>
+                <p className="mt-2 text-xs text-slate-500">To replace it, submit a picture of the front and back of the ID on one page with the applicant&apos;s {REQUIRED_ID_SIGNATURES} specimen signatures.</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700">
                     <ImagePlus className="h-4 w-4" /> Upload picture
@@ -863,13 +914,6 @@ export function MemberForm({
               </div>
             )}
             {!isAdd && pickedId && <button type="button" onClick={clearPickedId} className="text-xs font-semibold text-red-600 hover:underline">Keep the ID on file instead</button>}
-            {idWarnings.length > 0 && (
-              <label className={`flex items-start gap-2 rounded-md border p-3 text-sm ${errors.idAck ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`} {...errorProps('idAck')}>
-                <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" checked={acknowledgeId} onChange={(event) => { setAcknowledgeId(event.target.checked); clearError('idAck'); }} />
-                <span>I compared the flagged ID details with the applicant, and the ID is theirs. <span className="text-red-500">*</span></span>
-              </label>
-            )}
-            {errors.idAck && <p className="text-xs text-red-600">{errors.idAck}</p>}
           </div>
         )}
 
@@ -897,13 +941,20 @@ export function MemberForm({
           </FormTable>
         </div>
       </form>
+      {rsbsaCamera && (
+        <DocumentScannerModal
+          variant="document"
+          onClose={() => setRsbsaCamera(false)}
+          onScanned={(file) => { setRsbsaCamera(false); pickRsbsa(file); }}
+        />
+      )}
       {idCamera && (
         <DocumentScannerModal
           variant="idCopy"
           person="applicant"
           requiredSignatures={REQUIRED_ID_SIGNATURES}
           onClose={() => setIdCamera(false)}
-          onScanned={(file) => { setIdCamera(false); void pickId(file, 'camera'); }}
+          onScanned={(file) => { setIdCamera(false); pickId(file, 'camera'); }}
         />
       )}
     </ReadOnlyContext.Provider>
