@@ -544,12 +544,9 @@ export function MemberForm({
       if (!form.municipality.trim()) next.municipality = 'Required.';
       if (!form.province.trim()) next.province = 'Required.';
       if (form.shareCapital !== '' && !(Number(form.shareCapital) >= 0)) next.shareCapital = 'Share capital must be zero or more.';
-      if (!rsbsaFile) next.rsbsaDocument = 'Upload or take a picture of the RSBSA Enrollment Client\'s Copy.';
     } else if (![form.permanentAddress, form.barangay, form.municipality, form.province].some((part) => part.trim())) {
       next.barangay = 'Enter the address.';
     }
-    // Add needs the signed ID copy.
-    if (isAdd && !pickedId) next.idDocument = `Submit the applicant's valid ID: the front and back on one page with ${REQUIRED_ID_SIGNATURES} specimen signatures.`;
     return next;
   };
 
@@ -722,9 +719,9 @@ export function MemberForm({
           <Cell label="RSBSA No.">{input('rsbsaNumber')}</Cell>
           <Cell label="Farm Area (hectares)" error={errors.farmArea}>{readOnly ? view(form.farmArea ? `${form.farmArea} ha` : '') : input('farmArea', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}</Cell>
         </FormTable>
-        {/* The RSBSA Enrollment Client's Copy: uploaded or photographed. Required in Add. */}
+        {/* The RSBSA Enrollment Client's Copy: uploaded or photographed. Optional. */}
         <div className={`mt-2 rounded-md border p-3 ${errors.rsbsaDocument ? 'border-red-400' : 'border-slate-400'}`} {...errorProps('rsbsaDocument')}>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">RSBSA Enrollment Client&apos;s Copy{isAdd && <span className="text-red-500"> *</span>}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">RSBSA Enrollment Client&apos;s Copy{isAdd && <span className="font-normal normal-case text-slate-500"> (optional)</span>}</p>
           {rsbsaFile && rsbsaPreview ? (
             <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
               {rsbsaFile.type.startsWith('image/') && (
@@ -890,6 +887,7 @@ export function MemberForm({
                 requiredSignatures={REQUIRED_ID_SIGNATURES}
                 error={errors.idDocument}
                 editable
+                optional
                 submitting={false}
                 disabled={false}
                 onUpload={(file) => pickId(file, 'upload')}

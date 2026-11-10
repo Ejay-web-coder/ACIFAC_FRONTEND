@@ -32,6 +32,8 @@ interface IdDocumentPanelProps {
   onView: () => void;
   /** "form": the plain bordered box of the paper-style member form (like the RSBSA copy). */
   look?: 'card' | 'form';
+  /** The ID may be left out (Add Member): no asterisk. */
+  optional?: boolean;
 }
 
 // The member form's buttons, as in its RSBSA Enrollment Client's Copy box.
@@ -94,7 +96,7 @@ const MATCH_STYLE = {
   fail: { icon: XCircle, className: 'border-red-200 bg-red-50 text-red-800' },
 };
 
-export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView, look = 'card' }: IdDocumentPanelProps) {
+export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView, look = 'card', optional = false }: IdDocumentPanelProps) {
   const busy = disabled || submitting;
   const { person, label, cardCapture } = requirement;
   const copyText = `A photocopy of the front and back of the ID on one page, with the ${person}'s ${requiredSignatures} specimen signatures.`;
@@ -114,7 +116,7 @@ export function IdDocumentPanel({ requirement, id, formName, requiredSignatures,
     ] : [];
     return (
       <section className={`rounded-md border p-3 ${error ? 'border-red-400' : 'border-slate-400'}`} aria-label={label}>
-        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{label}{editable && <span className="text-red-500"> *</span>}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{label}{editable && !optional && <span className="text-red-500"> *</span>}{optional && <span className="font-normal normal-case text-slate-500"> (optional)</span>}</p>
         {id ? (
           <>
             <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700">
