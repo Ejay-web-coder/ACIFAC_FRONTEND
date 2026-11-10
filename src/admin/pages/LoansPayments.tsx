@@ -17,6 +17,7 @@ import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
 import { LoanReceiptModal } from '../components/LoanReceiptModal';
 import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
+import { interestRateLabel } from '../../lib/loanPolicy';
 
 type Loan = AdminLoan;
 type Payment = AdminPayment;
@@ -627,7 +628,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Interest Rate</p>
-                    <p className="text-sm font-medium text-gray-900">{loan.interestRate}%</p>
+                    <p className="text-sm font-medium text-gray-900">{interestRateLabel(loan.interestRate, loan.term)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">{loan.repayment === 'single' ? 'Due at end of term' : 'Monthly Payment'}</p>

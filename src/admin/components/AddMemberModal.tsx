@@ -544,8 +544,6 @@ export function MemberForm({
       if (!form.municipality.trim()) next.municipality = 'Required.';
       if (!form.province.trim()) next.province = 'Required.';
       if (form.shareCapital !== '' && !(Number(form.shareCapital) >= 0)) next.shareCapital = 'Share capital must be zero or more.';
-      if (form.membershipFee === '') next.membershipFee = 'Membership fee is required.';
-      if (!photoFile) next.idPhoto = 'A 2×2 ID photo is required.';
       if (!rsbsaFile) next.rsbsaDocument = 'Upload or take a picture of the RSBSA Enrollment Client\'s Copy.';
     } else if (![form.permanentAddress, form.barangay, form.municipality, form.province].some((part) => part.trim())) {
       next.barangay = 'Enter the address.';
@@ -662,7 +660,7 @@ export function MemberForm({
                     <span className="flex flex-col items-center gap-1 px-2 text-slate-500">
                       <Camera className="h-7 w-7" />
                       <span className="text-xs font-bold">2 × 2 ID PHOTO</span>
-                      <span className="text-[10px]">Click to upload</span>
+                      <span className="text-[10px]">Optional · click to upload</span>
                     </span>
                   )}
                 </button>
@@ -921,7 +919,7 @@ export function MemberForm({
         <div className="overflow-x-auto">
           <FormTable cols="min-w-[40rem] grid-cols-[1.4fr_1fr_1fr]">
             <div className="flex items-center bg-white p-2 text-xs font-semibold uppercase text-slate-700">Certification of Member</div>
-            <Cell label="Membership Fee" required={isAdd} error={errors.membershipFee}>{input('membershipFee', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}</Cell>
+            <Cell label="Membership Fee" error={errors.membershipFee}>{input('membershipFee', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}</Cell>
             <Cell label="Date Received">{input('dateReceived', { type: 'date', max: today() })}</Cell>
 
             <div className="flex items-center bg-white p-2 text-xs font-semibold uppercase text-slate-700">Certification of Pre-Membership Education Seminar</div>

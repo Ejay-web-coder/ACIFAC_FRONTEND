@@ -9,6 +9,7 @@ import { SignaturePad } from '../../admin/components/SignaturePad';
 import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../../admin/services/ocrApi';
 import { fetchFarmInputs, fetchLoanQuote, previewLoanIdChecks, readLoanId, type FarmInput, type LoanApplicationIds, type LoanIdHolder, type LoanQuote } from '../services/authApi';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
+import { interestRateLabel, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import type { Member } from '../../admin/pages/MembershipManagement';
 
@@ -17,7 +18,7 @@ import type { Member } from '../../admin/pages/MembershipManagement';
 // (POST /api/loans/quote) with the same code that saves the loan; the server
 // also adds up the cash and the farm inputs itself when the application is submitted.
 export const MAX_LOAN_PER_HECTARE = 50000;
-export const DEFAULT_INTEREST_RATE = 2.5;
+export const DEFAULT_INTEREST_RATE = POLICY_INTEREST_RATE;
 
 export type LoanMode = 'cash' | 'in-kind' | 'combination';
 
@@ -564,7 +565,7 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
             <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
               <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                 <div className="flex justify-between gap-3"><dt>Maximum eligible ({area.toFixed(2)} ha × {money(MAX_LOAN_PER_HECTARE)})</dt><dd className="font-semibold">{money(maximum)}</dd></div>
-                <div className="flex justify-between gap-3"><dt>Interest ({DEFAULT_INTEREST_RATE}% flat per term)</dt><dd className="font-semibold">{money(quote?.calculatedInterest ?? 0)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Interest ({interestRateLabel(DEFAULT_INTEREST_RATE)})</dt><dd className="font-semibold">{money(quote?.calculatedInterest ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Total repayment</dt><dd className="font-bold">{money(quote?.totalRepayment ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>One payment, due 6 months after approval</dt><dd className="font-semibold">{money(quote?.totalRepayment ?? 0)}</dd></div>
               </dl>

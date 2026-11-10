@@ -11,6 +11,7 @@ import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import type { Member } from '../../admin/pages/MembershipManagement';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { sumMoney } from '../../utils/money';
+import { interestRateLabel } from '../../lib/loanPolicy';
 
 interface LoanStatusProps {
   userRole: UserRole;
@@ -254,7 +255,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Interest Rate</p>
-                    <p className="text-sm font-medium text-gray-900">{loan.interestRate}% flat (whole term)</p>
+                    <p className="text-sm font-medium text-gray-900">{interestRateLabel(loan.interestRate, loan.term)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">{loan.repayment === 'single' ? 'Due at end of term' : 'Monthly Payment'}</p>

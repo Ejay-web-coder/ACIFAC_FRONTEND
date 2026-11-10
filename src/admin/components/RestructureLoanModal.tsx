@@ -4,14 +4,15 @@ import { toast } from 'sonner';
 import { restructureAdminLoan, type AdminLoan } from '../../app/services/authApi';
 import { errorMessage } from '../../lib/api';
 import { formatDate } from '../../utils/dateTime';
+import { interestRateLabel, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const cents = (value: number) => Math.round(value * 100);
 // The loan policy: restructuring once 80% is paid; a new loan of at most
-// ₱50,000 a hectare at 2.5% interest, charged once.
+// ₱50,000 a hectare at 2.5% interest a month for 6 months (15%).
 const MIN_PAID_PERCENT = 80;
 const MAX_PER_HECTARE = 50000;
-const POLICY_RATE = 2.5;
+const POLICY_RATE = POLICY_INTEREST_RATE;
 
 /**
  * Restructures a loan the borrower has paid at least 80% of into a new loan:
@@ -119,7 +120,7 @@ export function RestructureLoanModal({ loan, onClose, onDone }: { loan: AdminLoa
                       <dt>Loan amount</dt><dd className="text-right tabular-nums">{peso(amountCents / 100)}</dd>
                       <dt>Less still owed on {loan.id}</dt><dd className="text-right tabular-nums">− {peso(loan.balance)}</dd>
                       <dt className="font-semibold">Released to the member</dt><dd className="text-right font-semibold tabular-nums">{peso((amountCents - balanceCents) / 100)}</dd>
-                      <dt className="pt-1">Interest ({POLICY_RATE}%)</dt><dd className="pt-1 text-right tabular-nums">{peso(interestCents / 100)}</dd>
+                      <dt className="pt-1">Interest ({interestRateLabel(POLICY_RATE)})</dt><dd className="pt-1 text-right tabular-nums">{peso(interestCents / 100)}</dd>
                       <dt>To repay</dt><dd className="text-right tabular-nums">{peso((amountCents + interestCents) / 100)}</dd>
                     </dl>
                     <p className="mt-2 flex items-start gap-1.5 text-xs text-green-800"><CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Due in full about 6 months from today, on a day the office receives payments.</p>

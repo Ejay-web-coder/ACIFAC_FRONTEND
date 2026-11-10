@@ -4,6 +4,7 @@ import { fetchMemberLoanHistory, fetchMyLoanHistory, type MemberLoanHistory } fr
 import { errorMessage } from '../../lib/api';
 import { formatDate } from '../../utils/dateTime';
 import { StatusBadge } from './common/UiKit';
+import { interestRateLabel } from '../../lib/loanPolicy';
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -95,7 +96,7 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                               <div><dt className="text-xs text-gray-500">Approved</dt><dd>{formatDate(loan.dateApproved)}</dd></div>
                               <div><dt className="text-xs text-gray-500">Due</dt><dd>{formatDate(loan.dueDate)}</dd></div>
                               <div><dt className="text-xs text-gray-500">Amount</dt><dd className="tabular-nums">{peso(loan.amount)}</dd></div>
-                              <div><dt className="text-xs text-gray-500">With interest ({loan.interestRate}%)</dt><dd className="tabular-nums">{peso(loan.totalAmount)}</dd></div>
+                              <div><dt className="text-xs text-gray-500">With interest ({interestRateLabel(loan.interestRate, loan.term)})</dt><dd className="tabular-nums">{peso(loan.totalAmount)}</dd></div>
                               <div><dt className="text-xs text-gray-500">Paid</dt><dd className="tabular-nums text-green-700">{peso(loan.totalPaid)}</dd></div>
                               <div><dt className="text-xs text-gray-500">Balance</dt><dd className="font-semibold tabular-nums">{peso(loan.balance)}</dd></div>
                             </dl>

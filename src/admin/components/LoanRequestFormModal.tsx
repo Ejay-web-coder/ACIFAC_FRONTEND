@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle, Clock, Eye, PenLine, RefreshCcw, X, XCircle
 import { toast } from 'sonner';
 import type { AdminLoanRequest } from '../../app/services/authApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
+import { interestRateLabel } from '../../lib/loanPolicy';
 
 const peso = (value: number | string | null | undefined) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const text = (value: unknown) => (value === null || value === undefined || String(value).trim() === '' ? '' : String(value));
@@ -161,7 +162,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                 {request.loanMode !== 'in-kind' && <div><dt className="text-xs text-slate-500">Cash requested</dt><dd className="font-medium tabular-nums">{peso(cashAmount)}</dd></div>}
                 <div><dt className="text-xs text-slate-500">Amount applied for</dt><dd className="font-semibold tabular-nums">{peso(request.amount)}</dd></div>
                 <div><dt className="text-xs text-slate-500">Maximum eligible</dt><dd className="tabular-nums">{peso(request.maximumEligibleAmount)}</dd></div>
-                <div><dt className="text-xs text-slate-500">Interest{request.interestRate !== null && request.interestRate !== undefined ? ` (${request.interestRate}%)` : ''}</dt><dd className="tabular-nums">{peso(request.calculatedInterest)}</dd></div>
+                <div><dt className="text-xs text-slate-500">Interest{request.interestRate !== null && request.interestRate !== undefined ? ` (${interestRateLabel(request.interestRate, request.term)})` : ''}</dt><dd className="tabular-nums">{peso(request.calculatedInterest)}</dd></div>
                 <div><dt className="text-xs text-slate-500">Total repayment</dt><dd className="font-semibold tabular-nums text-green-700">{peso(request.totalRepayment)}</dd></div>
                 <div><dt className="text-xs text-slate-500">Term</dt><dd>{request.term} months, due at end of term</dd></div>
               </dl>

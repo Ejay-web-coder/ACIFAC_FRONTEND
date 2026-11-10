@@ -4,6 +4,7 @@
 // the paper form (TIN, address, SC/PWD ID, discount, BIR and printer details) is left blank.
 import type { AdminLoan, AdminPayment } from '../../app/services/authApi';
 import { dateOnlyToday } from '../../utils/dateTime';
+import { interestRateLabel } from '../../lib/loanPolicy';
 
 export const INVOICE_HEADER = {
   name: 'Amnay Cabagan Irrigators and Farmers Agriculture Cooperative',
@@ -59,7 +60,7 @@ export function buildLoanInvoice(loan: AdminLoan, payments: AdminPayment[]): Loa
   const interest = Math.max(0, cents(loan.totalAmount) - cents(loan.amount)) / 100;
   const lines: LoanInvoiceLine[] = [
     { description: `${capitalize(loan.loanType)} loan principal (Loan ${loan.id})`, qty: 1, unitPrice: loan.amount, amount: loan.amount },
-    { description: `Interest, ${loan.interestRate}% flat`, qty: 1, unitPrice: interest, amount: interest },
+    { description: `Interest, ${interestRateLabel(loan.interestRate, loan.term)}`, qty: 1, unitPrice: interest, amount: interest },
   ];
   const totalSales = loan.totalAmount;
   const amountReceived = loan.totalPaid > 0 ? loan.totalPaid : totalSales;
