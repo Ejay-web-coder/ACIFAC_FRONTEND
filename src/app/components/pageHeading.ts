@@ -6,6 +6,19 @@ export interface PageHeading { title: string; subtitle?: string }
 
 export const PageHeadingContext = createContext<(heading: PageHeading | null) => void>(() => undefined);
 
+// Lets a page fill the content area exactly on computers (no page scroll; its own
+// panels scroll inside), like Manage Users' list and details side by side.
+export const FillScreenContext = createContext<(fill: boolean) => void>(() => undefined);
+
+/** While the page is open, the content area gives it exactly the height below the top bar (lg and up). */
+export function useFillScreen() {
+  const setFill = useContext(FillScreenContext);
+  useEffect(() => {
+    setFill(true);
+    return () => setFill(false);
+  }, [setFill]);
+}
+
 /** Shows `heading` in the top bar while the page is open; null keeps the page name. */
 export function usePageHeading(heading: PageHeading | null) {
   const setHeading = useContext(PageHeadingContext);

@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { PageHeadingContext, type PageHeading } from './pageHeading';
+import { FillScreenContext, PageHeadingContext, type PageHeading } from './pageHeading';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -32,8 +32,17 @@ import {
   UserCog,
   Info,
   History,
+  Copy,
   type LucideIcon,
 } from 'lucide-react';
+
+// A new member's temporary password, at the end of the admin's "Temporary password for ..." notification.
+const temporaryPasswordIn = (notification: AppNotification) =>
+  notification.type === 'temporary_password' ? notification.message.match(/Temporary password: (\S+)\s*$/)?.[1] ?? null : null;
+const copyTemporaryPassword = async (password: string) => {
+  if (await copyText(password)) toast.success('Temporary password copied');
+  else toast.error('Could not copy the password. Select it and copy it instead.');
+};
 import { UserRole } from '../App';
 import {
   createAnnouncementRequest, deleteAnnouncementRequest, fetchAdminAccounts, fetchAdminAuditLogs, fetchAnnouncements, fetchNotifications, logoutRequest, markAllNotificationsRead,
@@ -43,6 +52,7 @@ import { closeLiveUpdates, useLiveRefresh } from '../../lib/liveUpdates';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from './ui/sheet';
 import { useIsMobile } from './ui/use-mobile';
 import { formatDateTime } from '../../utils/dateTime';
+import { copyText } from '../../utils/clipboard';
 import { EmptyState, ListSkeleton } from './common/UiKit';
 import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
 import { confirmAction } from './common/ConfirmDialog';
@@ -279,6 +289,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   const current = currentItem?.name || 'Dashboard';
   // A page may put its own heading in the top bar (the member dashboard's welcome).
   const [pageHeading, setPageHeading] = useState<PageHeading | null>(null);
+  // A page that fills the content area exactly (see useFillScreen).
+  const [fillScreen, setFillScreen] = useState(false);
   const bottomNav = bottomNavHrefs[userRole].map((href) => filteredNavigation.find((item) => item.href === href)).filter((item): item is NavItem => Boolean(item));
   const moreIsActive = !bottomNav.some((item) => isActive(item, location.pathname));
   const groupedNavigation = groupOrder
@@ -480,7 +492,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+        <header className="sticky top-0 z-30 flex-none border-b border-gray-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
           <div className="flex h-14 items-center justify-between gap-2 px-3 sm:px-4 md:h-16 md:px-6 lg:px-8">
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               {isMobile && <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 rounded-full border border-green-100 object-cover" />}
@@ -541,13 +553,20 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                         <ul className="divide-y divide-gray-100">
                           {visibleNotifications.map((notification) => {
                             const dot = notification.severity === 'error' ? 'bg-red-500' : notification.severity === 'warning' ? 'bg-amber-500' : 'bg-green-500';
+                            const tempPassword = temporaryPasswordIn(notification);
                             return (
                               <li key={notification.id}>
                                 <div role="button" tabIndex={0} onClick={() => void openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void openNotification(notification); } }} className={`flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-gray-50 ${notification.readAt ? '' : 'bg-green-50/50'}`}>
                                   <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.readAt ? 'bg-gray-300' : dot}`} aria-hidden="true" />
                                   <div className="min-w-0 flex-1">
                                     <p className={`truncate text-sm ${notification.readAt ? 'font-medium text-gray-700' : 'font-semibold text-gray-900'}`}>{notification.title}</p>
-                                    <p className="mt-0.5 line-clamp-2 text-sm text-gray-600">{notification.message}</p>
+                                    <p className="mt-0.5 line-clamp-2 text-sm text-gray-600">{tempPassword ? notification.message.replace(/\s*Temporary password: \S+\s*$/, '') : notification.message}</p>
+                                    {tempPassword && (
+                                      <div className="mt-2 flex items-center gap-2" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                                        <code className="select-all rounded-lg border border-gray-200 bg-white px-2.5 py-1 font-mono text-sm font-semibold tracking-wide text-gray-900">{tempPassword}</code>
+                                        <button type="button" onClick={() => void copyTemporaryPassword(tempPassword)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-green-700 px-3 text-xs font-semibold text-white hover:bg-green-800"><Copy className="h-3.5 w-3.5" />Copy</button>
+                                      </div>
+                                    )}
                                     <p className="mt-1 text-xs text-gray-400">{formatDateTime(notification.createdAt)}</p>
                                   </div>
                                   {!notification.readAt && <span className="sr-only">Unread</span>}
@@ -635,8 +654,11 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
 
         {/* Main content */}
         <main className="acf-bottom-safe flex-1 bg-gray-50/60 md:min-h-0 md:overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 lg:px-8">
-            <PageHeadingContext.Provider value={setPageHeading}><Outlet context={outletContext} /></PageHeadingContext.Provider>
+          {/* A fill-screen page gets exactly main's height (padding included), so nothing spills over. */}
+          <div className={`mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-4 sm:py-5 md:px-6 md:py-6 lg:px-8 ${fillScreen ? 'lg:flex lg:h-full lg:flex-col' : ''}`}>
+            <FillScreenContext.Provider value={setFillScreen}>
+              <PageHeadingContext.Provider value={setPageHeading}><Outlet context={outletContext} /></PageHeadingContext.Provider>
+            </FillScreenContext.Provider>
           </div>
         </main>
       </div>

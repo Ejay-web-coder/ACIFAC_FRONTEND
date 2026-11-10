@@ -697,9 +697,9 @@ export interface AvailableMember {
 export const fetchAdminAccounts = () => apiGet<{ accounts: Account[] }>('/api/admin/accounts');
 export const fetchAvailableMembers = () => apiGet<{ members: AvailableMember[] }>('/api/admin/members/available');
 // No username: the member signs in with the email and mobile number in their member information.
-export const createMemberAccountRequest = (payload: { memberId: number; password: string; confirmPassword: string }) => apiPost<{ message: string; user: AuthUser; warnings: string[] }>('/api/admin/accounts', payload);
+export const createMemberAccountRequest = (payload: { memberId: number }) => apiPost<{ message: string; user: AuthUser; warnings: string[]; temporaryPassword?: string }>('/api/admin/accounts', payload);
 export const updateAccountStatusRequest = (id: number, status: Account['account_status']) => apiPatch<{ message: string }>(`/api/admin/accounts/${id}/status`, { status });
-export const resetMemberPasswordRequest = (id: number) => apiPost<{ message: string }>(`/api/admin/accounts/${id}/reset-password`);
+export const resetMemberPasswordRequest = (id: number) => apiPost<{ message: string; temporaryPassword?: string }>(`/api/admin/accounts/${id}/reset-password`);
 
 // Kadiwa store vendors: a name, a username and a password the administrator gives; both name and password can be changed.
 export const createVendorAccountRequest = (payload: { fullName: string; username: string; password: string; confirmPassword: string; branchId?: number }) =>

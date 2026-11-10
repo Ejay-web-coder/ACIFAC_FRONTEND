@@ -725,12 +725,7 @@ export function OCRScanner({ userRole }: OCRScannerProps) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-4">
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 max-w-2xl">
-          <p className="text-sm font-semibold text-green-700">Cooperative forms</p>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">OCR Scanner</h2>
-          <p className="mt-2 text-base text-gray-600 sm:text-lg">Add a cooperative form and it gets identified, checked for authenticity, matched against your records, then saved to the right module.</p>
-        </div>
+      <header className="flex flex-col lg:flex-row lg:justify-end">
         <dl className="grid shrink-0 grid-cols-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[var(--shadow-card)] sm:grid-cols-4">
           {statTiles.map(({ label, value, tone }, index) => (
             <div key={label} className={`px-5 py-3 sm:px-6 ${index % 2 ? 'border-l border-gray-200' : ''} ${index >= 2 ? 'border-t border-gray-200 sm:border-t-0' : ''} ${index === 2 ? 'sm:border-l' : ''}`}>

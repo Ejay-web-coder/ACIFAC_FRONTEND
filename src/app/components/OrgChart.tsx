@@ -3,7 +3,7 @@ import { Camera, LoaderCircle, Pencil, Plus, Save, Trash2, X } from 'lucide-reac
 import { toast } from 'sonner';
 import {
   deleteOrgChartPhoto, fetchOrgChart, orgChartPhotoPath, saveOrgChart, uploadOrgChartPhoto,
-  type OrgChart, type OrgChartEntry, type OrgChartGroup,
+  type OrgChart, type OrgChartCommittee, type OrgChartEntry, type OrgChartGroup,
 } from '../services/orgChartApi';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { formatDateTime } from '../../utils/dateTime';
@@ -12,7 +12,8 @@ import { formatDateTime } from '../../utils/dateTime';
 // the office: the General Assembly, the elected Audit and Election Committees
 // and Board of Directors, the appointed officers and committees, and the
 // management staff. Each position has a name and a 2x2 picture. Administrators
-// edit the names, add positions and set the pictures; everyone else only reads it.
+// edit the names, add positions and committees and set the pictures; everyone
+// else only reads it.
 
 /** An entry as shown or edited; key is the id, or a temporary key for one added and not saved yet. */
 interface Draft { key: string; id?: number; group: OrgChartGroup; role: string; name: string; hasPhoto: boolean; custom: boolean; updatedAt: string }
@@ -25,6 +26,9 @@ const COMMITTEES: Array<{ group: OrgChartGroup; title: string }> = [
   { group: 'mediation', title: 'Mediation & Conciliation Committee' },
 ];
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_COMMITTEES = 20;
+// A key for a committee added while editing; the server keeps it ('c-' + letters and digits).
+const newCommitteeKey = (): OrgChartCommittee['key'] => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 
 interface Editing {
@@ -34,6 +38,9 @@ interface Editing {
   onAdd: (group: OrgChartGroup, role: string) => void;
   onPhoto: (entry: Draft, file: File | null) => void;
   busyPhoto: string | null;
+  onAddCommittee: () => void;
+  onRenameCommittee: (key: OrgChartCommittee['key'], title: string) => void;
+  onRemoveCommittee: (key: OrgChartCommittee['key']) => void;
 }
 
 // The 2x2 picture (initials until one is set). While editing, it can be clicked to choose one.
@@ -94,7 +101,7 @@ function Person({ entry, starred = false, ...edit }: Editing & { entry: Draft; s
           </>
         ) : (
           <>
-            <span className={`block truncate text-sm font-semibold ${entry.name ? 'text-gray-900' : 'italic text-gray-400'}`} title={entry.name || undefined}>{entry.name || 'Vacant'}</span>
+            <span className={`block break-words text-sm font-semibold leading-snug ${entry.name ? 'text-gray-900' : 'italic text-gray-400'}`} title={entry.name || undefined}>{entry.name || 'Vacant'}</span>
             <span className="block text-xs font-medium uppercase tracking-wide text-gray-500">{starred && <span className="text-green-700">* </span>}{entry.role}</span>
           </>
         )}
@@ -103,10 +110,10 @@ function Person({ entry, starred = false, ...edit }: Editing & { entry: Draft; s
   );
 }
 
-function Box({ title, children, tone = 'light', dashed = false, footer }: { title: string; children: ReactNode; tone?: 'light' | 'dark'; dashed?: boolean; footer?: ReactNode }) {
+function Box({ title, heading, children, tone = 'light', dashed = false, footer }: { title: string; heading?: ReactNode; children: ReactNode; tone?: 'light' | 'dark'; dashed?: boolean; footer?: ReactNode }) {
   return (
     <section className={`overflow-hidden rounded-xl bg-white shadow-sm ${dashed ? 'border-2 border-dashed border-green-600/60' : 'border-2 border-green-700/70'}`} aria-label={title}>
-      <h3 className={`px-3 py-1.5 text-center text-xs font-extrabold uppercase tracking-wide ${tone === 'dark' ? 'bg-green-800 text-white' : 'bg-green-100 text-green-900'}`}>{title}</h3>
+      {heading ?? <h3 className={`px-3 py-1.5 text-center text-xs font-extrabold uppercase tracking-wide ${tone === 'dark' ? 'bg-green-800 text-white' : 'bg-green-100 text-green-900'}`}>{title}</h3>}
       <ul className="divide-y divide-gray-100">{children}</ul>
       {footer}
     </section>
@@ -121,11 +128,11 @@ const Down = ({ dashed = false, className = '' }: { dashed?: boolean; className?
   <div className={`mx-auto h-6 w-0 border-l-2 ${dashed ? 'border-dashed border-green-600/70' : 'border-green-700'} ${className}`} aria-hidden="true" />
 );
 
-export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] }) {
+export function OrgChartView({ entries, committees, ...edit }: Editing & { entries: Draft[]; committees: OrgChartCommittee[] }) {
   const of = (group: OrgChartGroup) => entries.filter((entry) => entry.group === group);
   // A box listing its positions, with Add position while editing.
-  const listBox = (group: OrgChartGroup, title: string, options: { tone?: 'light' | 'dark'; dashed?: boolean; newRole?: string } = {}) => (
-    <Box title={title} tone={options.tone} dashed={options.dashed} footer={edit.editing ? <AddButton onClick={() => edit.onAdd(group, options.newRole ?? '')} /> : undefined}>
+  const listBox = (group: OrgChartGroup, title: string, options: { tone?: 'light' | 'dark'; dashed?: boolean; newRole?: string; heading?: ReactNode } = {}) => (
+    <Box title={title} heading={options.heading} tone={options.tone} dashed={options.dashed} footer={edit.editing ? <AddButton onClick={() => edit.onAdd(group, options.newRole ?? '')} /> : undefined}>
       {of(group).map((entry) => <Person key={entry.key} entry={entry} {...edit} />)}
     </Box>
   );
@@ -139,6 +146,16 @@ export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] 
     )),
     ...(edit.editing ? [<div key="add" className="flex items-end"><button type="button" onClick={() => edit.onAdd(group, '')} className="flex min-h-20 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-green-300 bg-white/60 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add position</button></div>] : []),
   ];
+
+  // While editing, an added committee's name is typed in its heading, beside Remove committee.
+  const committeeHeading = (committee: OrgChartCommittee) => (edit.editing ? (
+    <div className="flex items-center gap-1 bg-green-100 px-2 py-1">
+      <input value={committee.title} onChange={(event) => edit.onRenameCommittee(committee.key, event.target.value)} maxLength={120} placeholder="Committee name"
+        aria-label="Committee name" className="h-7 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-2 text-center text-xs font-bold uppercase focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <button type="button" onClick={() => edit.onRemoveCommittee(committee.key)} className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-red-700 hover:bg-red-50"
+        aria-label={`Remove the committee ${committee.title}`.trim()} title="Remove this committee and its positions"><Trash2 className="h-3.5 w-3.5" /></button>
+    </div>
+  ) : undefined);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gradient-to-b from-sky-50 via-green-50 to-green-100/60 p-4 sm:p-6">
@@ -170,7 +187,7 @@ export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] 
           <Down className="hidden lg:block" />
           {listBox('bod', 'Board of Directors', { tone: 'dark', newRole: 'Director' })}
           <Down dashed />
-          <div className="grid grid-cols-2 gap-3">{tiles('officers', true)}</div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3">{tiles('officers', true)}</div>
         </div>
         <div><Down className="hidden lg:block" />{listBox('election', 'Election Committee', { newRole: 'Member' })}</div>
       </div>
@@ -178,13 +195,24 @@ export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] 
       {/* The committees the board appoints. */}
       <Down dashed />
       <div className="mx-auto hidden h-0 w-[76%] border-t-2 border-dashed border-green-600/70 lg:block" aria-hidden="true" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
         {COMMITTEES.map((committee) => (
           <div key={committee.group}>
             <Down dashed className="hidden lg:block" />
             {listBox(committee.group, committee.title, { dashed: true, newRole: 'Member' })}
           </div>
         ))}
+        {committees.map((committee) => (
+          <div key={committee.key}>
+            <Down dashed className="hidden lg:block" />
+            {listBox(committee.key, committee.title || 'New committee', { dashed: true, newRole: 'Member', heading: committeeHeading(committee) })}
+          </div>
+        ))}
+        {edit.editing && committees.length < MAX_COMMITTEES && (
+          <div className="flex lg:pt-6">
+            <button type="button" onClick={edit.onAddCommittee} className="flex min-h-32 w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-green-300 bg-white/60 text-sm font-semibold text-green-700 hover:bg-green-50"><Plus className="h-4 w-4" />Add committee</button>
+          </div>
+        )}
       </div>
 
       {/* Management staff. */}
@@ -196,7 +224,7 @@ export function OrgChartView({ entries, ...edit }: Editing & { entries: Draft[] 
       <div className="mx-auto max-w-sm">{listBox('manager', 'General Manager', { tone: 'dark', newRole: 'Assistant Manager' })}</div>
       <Down dashed />
       <div className="mx-auto hidden h-0 w-[76%] border-t-2 border-dashed border-green-600/70 lg:block" aria-hidden="true" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">{tiles('staff', false)}</div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3 lg:gap-4">{tiles('staff', false)}</div>
     </div>
   );
 }
@@ -206,6 +234,7 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
   const [chart, setChart] = useState<OrgChart | null>(null);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<Draft[] | null>(null);
+  const [draftCommittees, setDraftCommittees] = useState<OrgChartCommittee[]>([]);
   const [saving, setSaving] = useState(false);
   const [busyPhoto, setBusyPhoto] = useState<string | null>(null);
   const newKey = useRef(0);
@@ -239,11 +268,16 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
     if (!draft || saving) return;
     const unnamed = draft.find((entry) => entry.custom && !entry.role.trim());
     if (unnamed) { toast.error('Enter the position of every position you added (for example Director), or remove it.'); return; }
+    if (draftCommittees.some((committee) => !committee.title.trim())) { toast.error('Enter the name of every committee you added, or remove it.'); return; }
     setSaving(true);
     try {
-      const saved = await saveOrgChart(draft.map((entry) => ({ id: entry.id, group: entry.group, role: entry.role.trim(), name: entry.name.trim() })));
+      const saved = await saveOrgChart(
+        draft.map((entry) => ({ id: entry.id, group: entry.group, role: entry.role.trim(), name: entry.name.trim() })),
+        draftCommittees.map((committee) => ({ key: committee.key, title: committee.title.trim() })),
+      );
       setChart(saved);
       setDraft(null);
+      setDraftCommittees([]);
       toast.success('Chart saved');
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'Unable to save the chart.');
@@ -256,6 +290,7 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
   if (!chart) return <p className="flex items-center justify-center gap-2 p-10 text-sm text-gray-500" role="status"><LoaderCircle className="h-4 w-4 animate-spin" />Loading the chart…</p>;
 
   const shown = draft ?? chart.entries.map(toDraft);
+  const shownCommittees = draft ? draftCommittees : chart.committees ?? [];
   const editing: Editing = {
     editing: Boolean(draft),
     busyPhoto,
@@ -266,6 +301,24 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
       newKey.current += 1;
       setDraft((current) => [...(current ?? []), { key: `new-${newKey.current}`, group, role, name: '', hasPhoto: false, custom: true, updatedAt: '' }]);
     },
+    // A new committee starts with a chairperson, a vice chairperson and a secretary (each can be removed).
+    onAddCommittee: () => {
+      const key = newCommitteeKey();
+      setDraftCommittees((current) => [...current, { key, title: '' }]);
+      const roles = ['Chairperson', 'Vice Chairperson', 'Secretary'].map((role) => {
+        newKey.current += 1;
+        return { key: `new-${newKey.current}`, group: key, role, name: '', hasPhoto: false, custom: true, updatedAt: '' };
+      });
+      setDraft((current) => [...(current ?? []), ...roles]);
+    },
+    onRenameCommittee: (key, title) => setDraftCommittees((current) => current.map((committee) => (committee.key === key ? { ...committee, title } : committee))),
+    onRemoveCommittee: (key) => {
+      const committee = draftCommittees.find((item) => item.key === key);
+      const filled = (draft ?? []).some((entry) => entry.group === key && (entry.name.trim() || entry.hasPhoto));
+      if (filled && !window.confirm(`Remove the committee${committee?.title ? ` ${committee.title}` : ''} and all its positions? Their names and pictures are deleted when you save the chart.`)) return;
+      setDraftCommittees((current) => current.filter((item) => item.key !== key));
+      setDraft((current) => current?.filter((entry) => entry.group !== key) ?? null);
+    },
   };
 
   return (
@@ -274,15 +327,15 @@ export function OrgChartPanel({ editable = false }: { editable?: boolean }) {
         <p className="text-sm text-gray-600">{chart.updatedAt ? `Last updated ${formatDateTime(chart.updatedAt)}${editable && chart.updatedBy ? ` by ${chart.updatedBy}` : ''}` : 'The names will show here once the office fills in the chart.'}</p>
         {editable && (draft ? (
           <div className="flex gap-2">
-            <button type="button" onClick={() => setDraft(null)} disabled={saving} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-gray-100 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-200"><X className="h-4 w-4" />Cancel</button>
+            <button type="button" onClick={() => { setDraft(null); setDraftCommittees([]); }} disabled={saving} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-gray-100 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-200"><X className="h-4 w-4" />Cancel</button>
             <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"><Save className="h-4 w-4" />{saving ? 'Saving…' : 'Save chart'}</button>
           </div>
         ) : (
-          <button type="button" onClick={() => setDraft(chart.entries.map(toDraft))} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"><Pencil className="h-4 w-4" />Edit chart</button>
+          <button type="button" onClick={() => { setDraft(chart.entries.map(toDraft)); setDraftCommittees(chart.committees ?? []); }} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50"><Pencil className="h-4 w-4" />Edit chart</button>
         ))}
       </div>
-      {draft && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Type the names (blank = vacant), use Add position for a new one, and click a picture square to choose a 2x2 picture (saved at once). Then Save chart. A new position gets its picture after the chart is saved.</p>}
-      <OrgChartView entries={shown} {...editing} />
+      {draft && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Type the names (blank = vacant), use Add position for a new one or Add committee for a new committee box, and click a picture square to choose a 2x2 picture (saved at once). Then Save chart. A new position gets its picture after the chart is saved.</p>}
+      <OrgChartView entries={shown} committees={shownCommittees} {...editing} />
     </div>
   );
 }
