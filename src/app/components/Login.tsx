@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { homePath, roleFromServer, type UserRole } from '../App';
 import { ApiError } from '../../lib/api';
 import { loginRequest, resetPasswordRequest } from '../services/authApi';
+import { InstallAppButton } from './common/InstallAppButton';
 import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 interface LoginProps {
@@ -159,6 +160,7 @@ export function Login({ onLogin, notice }: LoginProps) {
           <p className="text-sm text-gray-600 sm:text-base">
             Cooperative Administration & Information System
           </p>
+          <div className="mt-4 flex justify-center"><InstallAppButton variant="full" /></div>
         </div>
 
         {notice && (

@@ -173,19 +173,26 @@ function sanitizeFile(file: File | null) {
   return file;
 }
 
-// The RSBSA Enrollment Client's Copy: a picture or scan, optional.
+// The RSBSA Enrollment Client's Copy and the valid ID: a picture, a scan (PDF)
+// or a Word document (.docx). Some browsers give a .docx no type, so the name counts too.
+const DOCX_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const MEMBER_FILE_ACCEPT = `image/jpeg,image/png,image/webp,application/pdf,.docx,${DOCX_TYPE}`;
+const isDocx = (file: File) => file.type === DOCX_TYPE || (!file.type && /\.docx$/i.test(file.name));
+const memberFileAllowed = (file: File) => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type) || isDocx(file);
+// The server checks the type it is sent, so a .docx without one is labelled.
+const withDocxType = (file: File) => (isDocx(file) && file.type !== DOCX_TYPE ? new File([file], file.name, { type: DOCX_TYPE, lastModified: file.lastModified }) : file);
+
+// The RSBSA Enrollment Client's Copy: optional.
 function sanitizeRsbsaDocument(file: File) {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!allowed.includes(file.type)) throw new Error('Upload a JPG, PNG, WEBP, or PDF of the RSBSA enrollment copy.');
+  if (!memberFileAllowed(file)) throw new Error('Upload a JPG, PNG, WEBP, PDF or Word (.docx) file of the RSBSA enrollment copy.');
   if (file.size > 5 * 1024 * 1024) throw new Error('The RSBSA enrollment copy must be 5 MB or smaller.');
   return file;
 }
 
 function sanitizeIdDocument(file: File | null) {
   if (!file) return null;
-  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!allowed.includes(file.type)) {
-    throw new Error('Upload a JPG, PNG, WEBP, or PDF ID document.');
+  if (!memberFileAllowed(file)) {
+    throw new Error('Upload a JPG, PNG, WEBP, PDF or Word (.docx) ID document.');
   }
   if (file.size > 5 * 1024 * 1024) {
     throw new Error('The ID document must be 5 MB or smaller.');
@@ -466,8 +473,9 @@ export function MemberForm({
       return;
     }
     clearError('rsbsaDocument');
-    setRsbsaFile(file);
-    setRsbsaPreview(URL.createObjectURL(file));
+    const typed = withDocxType(file);
+    setRsbsaFile(typed);
+    setRsbsaPreview(URL.createObjectURL(typed));
   };
 
   const handleRsbsaFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -489,7 +497,7 @@ export function MemberForm({
       return;
     }
     clearError('idDocument');
-    setPickedId({ file, source });
+    setPickedId({ file: withDocxType(file), source });
   };
 
   const handleIdFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -748,7 +756,7 @@ export function MemberForm({
           ) : readOnly ? (
             <p className="mt-2 text-sm text-slate-400">No RSBSA enrollment copy on file</p>
           ) : (
-            <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the member&apos;s RSBSA Enrollment Client&apos;s Copy (JPG, PNG, WEBP or PDF, max 5 MB).</p>
+            <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the member&apos;s RSBSA Enrollment Client&apos;s Copy (JPG, PNG, WEBP, PDF or Word .docx, max 5 MB).</p>
           )}
           {!readOnly && !rsbsaFile && (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -756,7 +764,7 @@ export function MemberForm({
               <button type="button" onClick={() => setRsbsaCamera(true)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Camera className="h-4 w-4" /> {saved.rsbsaDocumentName ? 'Take a new picture' : 'Take a picture'}</button>
             </div>
           )}
-          {!readOnly && <input ref={rsbsaInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleRsbsaFile} />}
+          {!readOnly && <input ref={rsbsaInputRef} type="file" accept={MEMBER_FILE_ACCEPT} className="hidden" onChange={handleRsbsaFile} />}
           {errors.rsbsaDocument && <p className="mt-1 text-xs text-red-600">{errors.rsbsaDocument}</p>}
         </div>
         <FormTable cols="grid-cols-1 sm:grid-cols-4" className="mt-2">
@@ -888,6 +896,7 @@ export function MemberForm({
                 error={errors.idDocument}
                 editable
                 optional
+                allowDocx
                 submitting={false}
                 disabled={false}
                 onUpload={(file) => pickId(file, 'upload')}
@@ -903,7 +912,7 @@ export function MemberForm({
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700">
                     <ImagePlus className="h-4 w-4" /> Upload picture
-                    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleIdFile} />
+                    <input type="file" accept={MEMBER_FILE_ACCEPT} className="hidden" onChange={handleIdFile} />
                   </label>
                   <button type="button" onClick={() => setIdCamera(true)} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Camera className="h-4 w-4" /> Take a picture</button>
                 </div>

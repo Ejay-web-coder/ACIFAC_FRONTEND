@@ -34,13 +34,15 @@ interface IdDocumentPanelProps {
   look?: 'card' | 'form';
   /** The ID may be left out (Add Member): no asterisk. */
   optional?: boolean;
+  /** A Word document (.docx) is accepted too (Add Member). */
+  allowDocx?: boolean;
 }
 
 // The member form's buttons, as in its RSBSA Enrollment Client's Copy box.
 const FORM_PRIMARY = 'inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-700';
 const FORM_SECONDARY = 'inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 
-function FormUploadButton({ label, disabled, onUpload }: { label: string; disabled: boolean; onUpload: (file: File) => void }) {
+function FormUploadButton({ label, disabled, onUpload, accept = ACCEPT }: { label: string; disabled: boolean; onUpload: (file: File) => void; accept?: string }) {
   const onChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -49,12 +51,13 @@ function FormUploadButton({ label, disabled, onUpload }: { label: string; disabl
   return (
     <label className={`${FORM_PRIMARY} ${disabled ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
       <ImagePlus className="h-4 w-4" /> {label}
-      <input type="file" accept={ACCEPT} className="hidden" disabled={disabled} onChange={onChange} />
+      <input type="file" accept={accept} className="hidden" disabled={disabled} onChange={onChange} />
     </label>
   );
 }
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+const ACCEPT_WITH_DOCX = `${ACCEPT},.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document`;
 
 function UploadButton({ label, disabled, onUpload, compact = false }: { label: string; disabled: boolean; onUpload: (file: File) => void; compact?: boolean }) {
   const onChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -96,7 +99,7 @@ const MATCH_STYLE = {
   fail: { icon: XCircle, className: 'border-red-200 bg-red-50 text-red-800' },
 };
 
-export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView, look = 'card', optional = false }: IdDocumentPanelProps) {
+export function IdDocumentPanel({ requirement, id, formName, requiredSignatures, checks = [], error, editable, submitting, disabled, onUpload, onCapture, onView, look = 'card', optional = false, allowDocx = false }: IdDocumentPanelProps) {
   const busy = disabled || submitting;
   const { person, label, cardCapture } = requirement;
   const copyText = `A photocopy of the front and back of the ID on one page, with the ${person}'s ${requiredSignatures} specimen signatures.`;
@@ -140,11 +143,11 @@ export function IdDocumentPanel({ requirement, id, formName, requiredSignatures,
             })}
           </>
         ) : (
-          <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the front and back of the {person}&apos;s valid ID on one page, with the {person}&apos;s {requiredSignatures} specimen signatures (JPG, PNG, WEBP or PDF, max 5 MB).</p>
+          <p className="mt-1 text-xs text-slate-500">Upload or take a picture of the front and back of the {person}&apos;s valid ID on one page, with the {person}&apos;s {requiredSignatures} specimen signatures (JPG, PNG, WEBP{allowDocx ? ', PDF or Word .docx' : ' or PDF'}, max 5 MB).</p>
         )}
         {editable && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <FormUploadButton label={id ? 'Upload a new picture' : 'Upload picture'} disabled={busy} onUpload={onUpload} />
+            <FormUploadButton accept={allowDocx ? ACCEPT_WITH_DOCX : ACCEPT} label={id ? 'Upload a new picture' : 'Upload picture'} disabled={busy} onUpload={onUpload} />
             <button type="button" onClick={onCapture} disabled={busy} className={FORM_SECONDARY}><Camera className="h-4 w-4" /> {id ? 'Take a new picture' : 'Take a picture'}</button>
             {submitting && <span className="inline-flex items-center gap-1 text-sm text-blue-700"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> AI is checking the ID...</span>}
           </div>

@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './app/App.tsx'
 import './styles/index.css'
 import './styles/mobile.css'
-import { registerServiceWorker } from './lib/serviceWorker'
+import { registerServiceWorker } from './lib/installPrompt'
 import { installEnterToNextField } from './lib/enterToNextField'
 
 registerServiceWorker()
