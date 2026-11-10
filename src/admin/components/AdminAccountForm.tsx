@@ -32,7 +32,8 @@ export function AdminAccountForm({ onCreated, onCancel }: { onCreated: () => voi
 
   const position = form.positionChoice === OTHER ? form.positionOther.trim() : form.positionChoice;
   const username = usernameTouched ? form.username : suggestUsername(form.fullName);
-  const smsAvailable = checks?.smsAvailable ?? true;
+  // The mobile number is not verified by text, only checked against other accounts and members.
+  const smsAvailable = false;
 
   // Conflicts are checked as the details are typed (after a short pause).
   useEffect(() => {
@@ -141,7 +142,7 @@ export function AdminAccountForm({ onCreated, onCancel }: { onCreated: () => voi
         </div>
         {problem ? <span className="mt-1 flex items-start gap-1 text-xs font-normal text-red-600"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{problem}</span>
           : state.verified ? <span className="mt-1 flex items-center gap-1 text-xs font-normal text-green-700"><CheckCircle2 className="h-3.5 w-3.5" />Verified and not used by any other account or member.</span>
-            : !isEmail && !smsAvailable ? <span className="mt-1 block text-xs font-normal text-gray-500">Text messages are not set up, so the number is only checked against other accounts and members.</span>
+            : !isEmail && !smsAvailable ? <span className="mt-1 block text-xs font-normal text-gray-500">{value.trim() && !checking && checks && !problem ? 'Free to use. ' : ''}No text code needed: the number is only checked against other accounts and members.</span>
               : <span className="mt-1 block text-xs font-normal text-gray-500">{value.trim() && !checking && checks ? 'Free to use. ' : ''}Send a code and ask the new administrator to read it to you.</span>}
         {state.verificationId && !state.verified && (
           <div className="mt-2 flex gap-2">
