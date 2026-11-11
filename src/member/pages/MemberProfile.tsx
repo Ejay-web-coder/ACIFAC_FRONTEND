@@ -164,7 +164,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-green-100"><div className="h-full rounded-full bg-green-600" style={{ width: `${sharePercent}%` }} /></div>
         <p className="mt-1.5 text-xs text-gray-500">{Math.round(sharePercent)}% of the maximum</p>
         <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-gray-100 pt-3">
-          <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Maximum</dt><dd className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">{money(shareDetails.maximum)}</dd></div>
+          <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Maximum (10% of total)</dt><dd className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">{money(shareDetails.maximum)}</dd></div>
           <div><dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Remaining</dt><dd className="mt-0.5 text-lg font-bold tabular-nums text-blue-700">{money(shareDetails.remaining)}</dd></div>
         </dl>
       </div>

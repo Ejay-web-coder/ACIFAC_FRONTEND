@@ -43,14 +43,14 @@ export function MemberAccountsCard({ registered, unregistered, loading }: { regi
 }
 
 export type ShareCapitalLevel = AdminDashboardData['shareCapitalLevels'][number];
-// From red (little share capital) to green (the PHP 20,000 maximum); each bar
+// From red (little share capital) to green (PHP 20,000 and more); each bar
 // is also named on the axis, so the color is not the only way to tell them apart.
 const SHARE_CAPITAL_BANDS: Record<ShareCapitalLevel['key'], { label: string; color: string }> = {
   below1k: { label: 'Below ₱1,000', color: '#dc2626' },
   from1kTo5k: { label: '₱1,000–₱4,999', color: '#f97316' },
   from5kTo15k: { label: '₱5,000–₱14,999', color: '#eab308' },
   from15kTo20k: { label: '₱15,000–₱19,999', color: '#84cc16' },
-  maximum: { label: '₱20,000 (max)', color: '#16a34a' },
+  maximum: { label: '₱20,000 and up', color: '#16a34a' },
 };
 const formatPercent = (value: number) => `${value.toLocaleString('en-PH', { maximumFractionDigits: 1 })}%`;
 

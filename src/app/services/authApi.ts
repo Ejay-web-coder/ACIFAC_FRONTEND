@@ -761,7 +761,7 @@ export interface AdminDashboardData {
     /** What is shared out to the members: Dividends 35% and Patronage Refund 35% of the net income. */
     netIncomeShares?: Array<{ key: string; label: string; percent: number; amount: number }>;
   };
-  /** Members (terminated ones left out) by their share capital now, lowest band first; max is exclusive, null for the PHP 20,000 maximum. */
+  /** Members (terminated ones left out) by their share capital now, lowest band first; max is exclusive, null for the top band (PHP 20,000 and up). */
   shareCapitalLevels: Array<{ key: 'below1k' | 'from1kTo5k' | 'from5kTo15k' | 'from15kTo20k' | 'maximum'; min: number; max: number | null; members: number }>;
   recentActivities: Array<{ id: string; type: string; action: string; at: string }>;
 }

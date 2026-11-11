@@ -597,7 +597,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-green-200 pb-3">
                   <div>
                     <h3 className="text-lg font-bold text-green-900">Share Details</h3>
-                    <p className="mt-1 text-sm text-green-800">Installment contributions toward the ₱20,000 maximum.</p>
+                    <p className="mt-1 text-sm text-green-800">Installment contributions. A member may hold at most 10% of the cooperative's total share capital.</p>
                   </div>
                   {canEdit && <button type="button" onClick={() => setShowShareContributionModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Plus className="h-4 w-4" />Add Contribution</button>}
                 </div>
@@ -605,7 +605,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                   <>
                     <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                       <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Share Capital</p><p className="mt-1 text-lg font-bold text-green-700">₱{selectedMember.shareDetails.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p></div>
-                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Maximum Share Limit</p><p className="mt-1 text-lg font-bold text-gray-900">₱{selectedMember.shareDetails.maximum.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p></div>
+                      <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Maximum (10% of total)</p><p className="mt-1 text-lg font-bold text-gray-900">₱{selectedMember.shareDetails.maximum.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p></div>
                       <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Remaining</p><p className="mt-1 text-lg font-bold text-blue-700">₱{selectedMember.shareDetails.remaining.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p></div>
                       <div className="rounded-lg bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Contributions</p><p className="mt-1 text-lg font-bold text-gray-900">{selectedMember.shareDetails.contributions.length}</p></div>
                     </div>
