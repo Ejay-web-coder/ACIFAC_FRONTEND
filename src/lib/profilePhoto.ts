@@ -18,10 +18,10 @@ function setPicture(url: string | null) {
 }
 
 // Downloads a protected image (sent with the session cookie) as an object URL;
-// null when there is none.
+// null when there is none (an error, or 204 No Content).
 export async function fetchProtectedImage(path: string) {
   const response = await fetch(`${API_URL}${path}`, { credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-  if (!response.ok) return null;
+  if (!response.ok || response.status === 204) return null;
   return URL.createObjectURL(await response.blob());
 }
 

@@ -42,7 +42,9 @@ export function loginRequest(payload: { usernameOrEmail: string; password: strin
   return apiPost<{ message: string; user?: AuthUser; role?: UserRole; mustChangePassword?: boolean }>('/api/auth/login', payload);
 }
 export const logoutRequest = () => apiPost<{ message: string }>('/api/auth/logout');
-export const fetchCurrentUser = () => apiGet<{ user?: AuthUser }>('/api/auth/me');
+// Signed out is not an error here: user is null, with the reason in code and
+// message (e.g. SESSION_IDLE_TIMEOUT), so the browser console stays clean.
+export const fetchCurrentUser = () => apiGet<{ user?: AuthUser | null; code?: string; message?: string }>('/api/auth/me');
 // Forgot password: the code is emailed or texted, to whichever the person
 // typed, and checked on the server only. After a correct code the server sets
 // an httpOnly cookie that authorises the reset, so the page never holds the

@@ -72,17 +72,20 @@ export default function App() {
 
   useEffect(() => {
     fetchCurrentUser()
-      .then(({ user }) => {
+      .then(({ user, code, message }) => {
         const role = roleFromServer(user?.role);
         if (role) {
           setUserRole(role);
           setMustChangePassword(Boolean(user?.must_change_password));
           setIsAuthenticated(true);
+        } else if (code === 'SESSION_IDLE_TIMEOUT' && message) {
+          // Reopened or refreshed after the server timed the session out.
+          setLoginNotice(message);
         }
       })
       .catch((error) => {
         setIsAuthenticated(false);
-        // Reopened or refreshed after the server timed the session out.
+        // A server that still answers 401 when signed out (before this change was deployed).
         if (error instanceof ApiError && error.code === 'SESSION_IDLE_TIMEOUT') setLoginNotice(error.message);
       })
       .finally(() => setIsAuthReady(true));
