@@ -201,12 +201,12 @@ function appendMemberId(form: FormData, id: MemberIdUpload) {
   form.append('idDocument', id.file);
 }
 
-export function createMemberRequest(payload: Record<string, unknown>, idDocument: MemberIdUpload, profilePhoto: File | null = null, rsbsaDocument: File | null = null) {
+export function createMemberRequest(payload: Record<string, unknown>, idDocument: MemberIdUpload | null, profilePhoto: File | null = null, rsbsaDocument: File | null = null) {
   const form = new FormData();
   Object.entries(payload).forEach(([key, value]) => {
     if (value !== null && value !== undefined) form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
   });
-  appendMemberId(form, idDocument);
+  if (idDocument) appendMemberId(form, idDocument);
   if (profilePhoto) form.append('profilePhoto', profilePhoto);
   if (rsbsaDocument) form.append('rsbsaDocument', rsbsaDocument);
   return apiFetch<ApiResponse<Record<string, unknown>>>('/api/members', { method: 'POST', body: form }).then((response) => ({ ...response, data: mapMember(response.data) }));

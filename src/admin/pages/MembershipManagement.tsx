@@ -257,8 +257,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
 
   const [savingDraft, setSavingDraft] = useState(false);
   const handleDraftSubmit = async (draft: MemberDraftData, files: MemberFormFiles) => {
-    // The form is saved only with the signed ID copy AI read.
-    if (!files.idDocument) return;
+    // The valid ID, the 2x2 photo and the RSBSA copy are optional.
     const payload = buildDraftPayload(draft);
     setSavingDraft(true);
     try {

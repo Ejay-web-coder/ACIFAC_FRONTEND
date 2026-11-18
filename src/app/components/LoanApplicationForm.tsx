@@ -9,7 +9,7 @@ import { SignaturePad } from '../../admin/components/SignaturePad';
 import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../../admin/services/ocrApi';
 import { fetchFarmInputs, fetchLoanQuote, previewLoanIdChecks, readLoanId, type FarmInput, type LoanApplicationIds, type LoanIdHolder, type LoanQuote } from '../services/authApi';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
-import { interestRateLabel, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
+import { interestRateLabel, LATE_PENALTY_RULE, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import type { Member } from '../../admin/pages/MembershipManagement';
 
@@ -569,6 +569,7 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
                 <div className="flex justify-between gap-3"><dt>Total repayment</dt><dd className="font-bold">{money(quote?.totalRepayment ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>One payment, due 6 months after approval</dt><dd className="font-semibold">{money(quote?.totalRepayment ?? 0)}</dd></div>
               </dl>
+              <p className="mt-2 text-xs text-emerald-900"><span className="font-semibold">Late payment:</span> {LATE_PENALTY_RULE}</p>
               {errors.total ? <p className="mt-2 font-semibold text-red-700">{errors.total}</p>
                 : totalCents > maximum * 100 && quote ? <p className="mt-2 font-semibold text-red-700">The amount applied for is more than the maximum eligible amount.</p>
                   : <p className="mt-2 text-xs text-emerald-800">{quoteError || 'Calculated by ACIFAC’s server, the same way the loan is saved.'}</p>}

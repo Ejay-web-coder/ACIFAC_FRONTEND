@@ -36,8 +36,8 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
   const cards = summary ? [
     ['Loans', `${summary.loans}`, `${summary.openLoans} open · ${summary.paidLoans} paid${summary.overdueLoans ? ` · ${summary.overdueLoans} overdue` : ''}`],
     ['Total borrowed', peso(summary.totalBorrowed), `${peso(summary.totalInterest)} interest`],
-    ['Total paid', peso(summary.totalPaid), `${summary.payments} payment${summary.payments === 1 ? '' : 's'}`],
-    ['Balance', peso(summary.outstandingBalance), summary.openLoans ? 'still owed on open loans' : 'nothing owed'],
+    ['Total paid', peso(summary.totalPaid), `${summary.payments} payment${summary.payments === 1 ? '' : 's'}${summary.penaltyPaid > 0 ? ` · ${peso(summary.penaltyPaid)} late penalties apart` : ''}`],
+    ['Balance', peso(summary.outstandingBalance), summary.penaltyDue > 0 ? `+ ${peso(summary.penaltyDue)} late penalty due` : summary.openLoans ? 'still owed on open loans' : 'nothing owed'],
   ] : [];
 
   return (
@@ -101,6 +101,9 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                               <div><dt className="text-xs text-gray-500">Balance</dt><dd className="font-semibold tabular-nums">{peso(loan.balance)}</dd></div>
                             </dl>
                             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200" aria-hidden="true"><div className="h-full bg-green-600" style={{ width: `${paidPercent}%` }} /></div>
+                            {loan.status !== 'paid' && loan.penaltyDays > 0 && <p className="mt-2 text-xs font-medium text-red-700">Late penalty: {peso(loan.penaltyDue)} due ({loan.penaltyDays} day{loan.penaltyDays === 1 ? '' : 's'} past the grace period) · due now {peso(loan.amountDueNow)}</p>}
+                            {loan.status === 'overdue' && loan.penaltyPerDay > 0 && loan.penaltyDays === 0 && loan.graceEndsOn && <p className="mt-2 text-xs text-amber-800">Grace period until {formatDate(loan.graceEndsOn)}; then {peso(loan.penaltyPerDay)} a day until paid in full.</p>}
+                            {loan.status === 'paid' && loan.penaltyPaid > 0 && <p className="mt-2 text-xs text-gray-600">Late penalty paid: {peso(loan.penaltyPaid)}</p>}
                             {loan.renewedFromLoan && <p className="mt-2 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted; {peso(loan.netProceeds ?? 0)} released.</p>}
                           </li>
                         );
@@ -125,13 +128,14 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                           <div><dt className="text-gray-500">Interest</dt><dd className="tabular-nums text-gray-900">{peso(payment.interestPaid)}</dd></div>
                           <div className="text-right"><dt className="text-gray-500">Balance after</dt><dd className="tabular-nums text-gray-900">{peso(payment.remainingBalance)}</dd></div>
                         </dl>
+                        {payment.penaltyPaid > 0 && <p className="mt-1 text-xs text-red-700">Late penalty: {peso(payment.penaltyPaid)} of this payment</p>}
                       </li>
                     ))}
                   </ul>
                   <div className="mt-3 hidden overflow-x-auto sm:block">
-                    <table className="w-full min-w-[560px] text-sm">
+                    <table className="w-full min-w-[640px] text-sm">
                       <thead className="text-left text-xs text-gray-500">
-                        <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 font-medium">Loan</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 text-right font-medium">Balance after</th></tr>
+                        <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 font-medium">Loan</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 pr-3 text-right font-medium">Penalty</th><th className="py-2 text-right font-medium">Balance after</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {history.payments.map((payment) => (
@@ -141,6 +145,7 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                             <td className="py-2 pr-3 text-right font-semibold tabular-nums">{peso(payment.amount)}</td>
                             <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.principalPaid)}</td>
                             <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.interestPaid)}</td>
+                            <td className={`py-2 pr-3 text-right tabular-nums ${payment.penaltyPaid > 0 ? 'text-red-700' : 'text-gray-400'}`}>{peso(payment.penaltyPaid)}</td>
                             <td className="py-2 text-right tabular-nums">{peso(payment.remainingBalance)}</td>
                           </tr>
                         ))}

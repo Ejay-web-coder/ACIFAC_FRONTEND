@@ -17,7 +17,8 @@ import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
 import { LoanReceiptModal } from '../components/LoanReceiptModal';
 import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
-import { interestRateLabel } from '../../lib/loanPolicy';
+import { interestRateLabel, penaltyOn, splitPayment } from '../../lib/loanPolicy';
+import { LatePenaltyNotice } from '../../app/components/LatePenaltyNotice';
 
 type Loan = AdminLoan;
 type Payment = AdminPayment;
@@ -194,9 +195,10 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
   const handleRecordPayment = (loan: Loan) => {
     setSelectedLoanForPayment(loan);
-    // A single-payment loan defaults to the whole balance (a part may be paid);
-    // otherwise to what is due on the next installment (never more than the balance).
-    const suggested = loan.repayment === 'single' ? loan.balance : Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
+    // A single-payment loan defaults to what settles it today, the balance and any
+    // late penalty (a part may be paid); otherwise to what is due on the next
+    // installment (never more than the balance).
+    const suggested = loan.repayment === 'single' ? loan.amountDueNow : Math.min(loan.nextAmountDue ?? loan.monthlyPayment, loan.balance);
     setPaymentData({
       amount: suggested.toFixed(2),
       // Payments are recorded any day and time; dated today unless changed.
@@ -217,7 +219,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       setShowPaymentModal(false);
       setSelectedLoanForPayment(null);
       setPaymentData({ amount: '', paymentDate: '' });
-      toast.success('Payment recorded successfully!', { description: `${peso(payment.amount)} applied to ${selectedLoanForPayment.memberName}'s loan. Remaining balance: ${peso(payment.remainingBalance)}.` });
+      toast.success('Payment recorded successfully!', { description: `${peso(payment.amount)} applied to ${selectedLoanForPayment.memberName}'s loan${payment.penaltyPaid > 0 ? ` (${peso(payment.penaltyPaid)} to the late penalty)` : ''}. Remaining balance: ${peso(payment.remainingBalance)}.` });
     } catch (error) {
       toast.error('Unable to record payment', { description: (error as Error).message });
     } finally {
@@ -374,6 +376,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                         : `Overdue: ${peso(loan.overdueAmount)} since ${formatDate(loan.nextPaymentDate)}`}
                     </p>
                     )}
+                    {/* The late penalty: running, or the grace period's last day. */}
+                    {loan.status === 'overdue' && loan.penaltyPerDay > 0 && (
+                      <p className="mt-0.5 text-xs font-medium text-red-700">
+                        {loan.penaltyDays > 0
+                          ? `Late penalty ${peso(loan.penaltyDue)} (${loan.penaltyDays} day${loan.penaltyDays === 1 ? '' : 's'}) · due now ${peso(loan.amountDueNow)}`
+                          : `Grace period until ${formatDate(loan.graceEndsOn)}, then ${peso(loan.penaltyPerDay)} a day`}
+                      </p>
+                    )}
                   </div>
                   <div className="flex w-full shrink-0 gap-2 sm:w-auto">
                     {loan.status === 'paid' && (
@@ -409,11 +419,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <div><dt className="text-gray-500">Interest</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.interestPaid.toLocaleString()}</dd></div>
                       <div><dt className="text-gray-500">Balance</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
                     </dl>
+                    {payment.penaltyPaid > 0 && <p className="mt-2 text-xs text-red-700">Late penalty: <span className="font-medium tabular-nums">{peso(payment.penaltyPaid)}</span> of this payment</p>}
                   </li>
                 ))}
               </ul>
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[680px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-gray-50/80">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Payment ID</th>
@@ -422,6 +433,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Amount</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Principal</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Interest</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Penalty</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Balance</th>
                   </tr>
                 </thead>
@@ -434,6 +446,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">₱{payment.amount.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.principalPaid.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.interestPaid.toLocaleString()}</td>
+                      <td className={`px-4 py-3 text-sm ${payment.penaltyPaid > 0 ? 'font-medium text-red-700' : 'text-gray-400'}`}>₱{payment.penaltyPaid.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">₱{payment.remainingBalance.toLocaleString()}</td>
                     </tr>
                   ))}
@@ -487,13 +500,19 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         />
       )}
       {/* Payment Recording Modal */}
-      {showPaymentModal && selectedLoanForPayment && (
+      {showPaymentModal && selectedLoanForPayment && (() => {
+        const loan = selectedLoanForPayment;
+        // The late penalty on the payment date (the server's rule): it is paid first.
+        const penalty = penaltyOn(loan, paymentData.paymentDate);
+        const totalDue = Math.round((loan.balance + penalty.due) * 100) / 100;
+        const split = splitPayment(Number(paymentData.amount) || 0, penalty.due, loan.balance);
+        return (
         <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[92vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">Record Payment</h2>
               <p className="text-sm text-gray-600 mt-2">
-                {selectedLoanForPayment.memberName} - {selectedLoanForPayment.id}
+                {loan.memberName} - {loan.id}
               </p>
             </div>
             <form onSubmit={handlePaymentSubmit}>
@@ -503,9 +522,18 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     Current Balance
                   </label>
                   <p className="text-2xl font-bold text-gray-900">
-                    ₱{selectedLoanForPayment.balance.toLocaleString()}
+                    ₱{loan.balance.toLocaleString()}
                   </p>
                 </div>
+                {penalty.due > 0 && (
+                  <dl className="space-y-1 rounded-xl bg-red-50 p-3 text-sm text-red-900 ring-1 ring-red-100">
+                    <div className="flex justify-between gap-3">
+                      <dt>Late penalty on {formatDate(paymentData.paymentDate)} ({penalty.days} day{penalty.days === 1 ? '' : 's'} × {peso(loan.penaltyPerDay)}{loan.penaltyPaid > 0 ? `, less ${peso(loan.penaltyPaid)} paid` : ''})</dt>
+                      <dd className="shrink-0 font-semibold tabular-nums">{peso(penalty.due)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-t border-red-200 pt-1 font-bold"><dt>Total due</dt><dd className="tabular-nums">{peso(totalDue)}</dd></div>
+                  </dl>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Payment Amount *
@@ -514,14 +542,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     type="number"
                     required
                     min="0.01"
-                    max={selectedLoanForPayment.balance}
+                    max={totalDue}
                     step="0.01"
                     value={paymentData.amount}
                     onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="0"
                   />
-                  {selectedLoanForPayment.repayment === 'single' && <p className="mt-1 text-xs text-gray-500">The whole balance is due by {formatDate(selectedLoanForPayment.dueDate)}; a part of it may be paid now. Once 80% is paid, the loan can be restructured into a new one.</p>}
+                  {loan.repayment === 'single' && <p className="mt-1 text-xs text-gray-500">The whole balance is due by {formatDate(loan.dueDate)}; a part of it may be paid now. Once 80% is paid, the loan can be restructured into a new one.{loan.penaltyPerDay > 0 && loan.graceEndsOn ? ` After the grace period (until ${formatDate(loan.graceEndsOn)}), ${peso(loan.penaltyPerDay)} is added each day until it is paid in full; a payment pays that penalty first.` : ''}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -538,8 +566,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 </div>
                 {paymentData.amount && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    {split.penalty > 0 && (
+                      <p className="text-sm text-blue-900">
+                        {peso(split.penalty)} to the late penalty, {peso(split.loan)} to the loan
+                        {split.penalty < penalty.due ? `; ${peso(Math.round((penalty.due - split.penalty) * 100) / 100)} of the penalty stays due` : ''}
+                      </p>
+                    )}
                     <p className="text-sm text-blue-900">
-                      New balance: <span className="font-bold">{peso(Math.max(0, Math.round(selectedLoanForPayment.balance * 100) - Math.round(Number(paymentData.amount) * 100)) / 100)}</span>
+                      New balance: <span className="font-bold">{peso(split.newBalance)}</span>
                     </p>
                   </div>
                 )}
@@ -566,7 +600,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {restructuringLoan && (
         <RestructureLoanModal loan={restructuringLoan} onClose={() => setRestructuringLoan(null)} onDone={() => { setRestructuringLoan(null); void loadData(); }} />
@@ -643,6 +678,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     </p>
                   </div>
                 )}
+                <LatePenaltyNotice loan={loan} className="mt-3" />
 
                 <h3 className="mt-5 text-sm font-bold uppercase tracking-wide text-gray-700">Payments</h3>
                 <div className="mt-2"><LoanPaymentsList loanId={loan.databaseId} version={loan} /></div>

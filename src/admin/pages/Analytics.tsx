@@ -144,9 +144,9 @@ export function Analytics({ userRole: _userRole }: AnalyticsProps) {
 
       {/* The four headline figures for the period, above every tab. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Net income" value={summary ? formatCurrency(netIncomeOf(summary)) : ''} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Kadiwa, machinery and loan interest, as on the Dashboard" />
+        <StatCard label="Net income" value={summary ? formatCurrency(netIncomeOf(summary)) : ''} icon={TrendingUp} tone="dark" loading={loading && !summary} detail="Kadiwa, machinery, loan interest and penalties, as on the Dashboard" />
         <StatCard label="Loan interest income" value={summary ? formatCurrency(summary.interestCollected) : ''} icon={HandCoins} loading={loading && !summary}
-          tone="green" detail="Interest collected on loan payments" onClick={() => selectTab('loans')} />
+          tone="green" detail={summary?.penaltiesCollected ? `Interest collected; late penalties: ${formatCurrency(summary.penaltiesCollected)}` : 'Interest collected on loan payments'} onClick={() => selectTab('loans')} />
         <StatCard label="Kadiwa net income" value={summary ? formatCurrency(summary.kadiwaNetSales) : ''} icon={Store} loading={loading && !summary} detail="Sales less costs and expenses" onClick={() => selectTab('kadiwa')} />
         <StatCard label="Machinery net income" value={summary ? formatCurrency(machineryNetOf(summary)) : ''} icon={Tractor} loading={loading && !summary} detail="Rentals and services, less expenses" onClick={() => selectTab('machinery')} />
       </div>
@@ -318,7 +318,7 @@ function LoanTooltip({ row, partial, compared }: { row: LoanRow; partial: boolea
 const INCOME_SERIES = [
   { key: 'kadiwa', label: 'Kadiwa net sales', color: '#2a78d6' },
   { key: 'machinery', label: 'Machinery (net)', color: '#eb6834' },
-  { key: 'loanInterest', label: 'Loan interest', color: '#1baf7a' },
+  { key: 'loanInterest', label: 'Loan interest and penalties', color: '#1baf7a' },
 ] as const;
 const GRANULARITIES: Array<{ id: RevenueGranularity; label: string; span: string; column: string }> = [
   { id: 'day', label: 'Daily', span: 'Last 30 days', column: 'Day' },

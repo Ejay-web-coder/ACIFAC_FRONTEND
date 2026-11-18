@@ -62,8 +62,11 @@ export function buildLoanInvoice(loan: AdminLoan, payments: AdminPayment[]): Loa
     { description: `${capitalize(loan.loanType)} loan principal (Loan ${loan.id})`, qty: 1, unitPrice: loan.amount, amount: loan.amount },
     { description: `Interest, ${interestRateLabel(loan.interestRate, loan.term)}`, qty: 1, unitPrice: interest, amount: interest },
   ];
-  const totalSales = loan.totalAmount;
-  const amountReceived = loan.totalPaid > 0 ? loan.totalPaid : totalSales;
+  // A late penalty paid on the loan is its own line, on top of principal and interest.
+  const penalty = loan.penaltyPaid > 0 ? loan.penaltyPaid : 0;
+  if (penalty > 0) lines.push({ description: 'Late payment penalty', qty: 1, unitPrice: penalty, amount: penalty });
+  const totalSales = (cents(loan.totalAmount) + cents(penalty)) / 100;
+  const amountReceived = loan.totalPaid > 0 ? (cents(loan.totalPaid) + cents(penalty)) / 100 : totalSales;
   return {
     invoiceNo: loan.id,
     date: last?.paymentDate ?? dateOnlyToday(),

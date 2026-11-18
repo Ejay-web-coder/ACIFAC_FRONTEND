@@ -73,7 +73,8 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
   const nextLoan = activeLoans.filter((loan) => loan.nextPaymentDate).sort((left, right) => String(left.nextPaymentDate).localeCompare(String(right.nextPaymentDate)))[0];
   const recentPayments = payments.slice(0, 2);
   const isOverdue = nextLoan?.status === 'overdue';
-  const nextAmount = nextLoan ? (isOverdue ? Number(nextLoan.overdueAmount) : Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment)) : 0;
+  // Overdue: what is past due and the late penalty run up on it (paid first).
+  const nextAmount = nextLoan ? (isOverdue ? Math.round((Number(nextLoan.overdueAmount) + Number(nextLoan.penaltyDue)) * 100) / 100 : Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment)) : 0;
   const daysLeft = nextLoan?.nextPaymentDate ? daysUntil(String(nextLoan.nextPaymentDate)) : null;
 
   // Your total savings: the savings deposits (dividends and patronage refunds are confidential: the office only).
@@ -130,7 +131,11 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
             <div className="mt-2 flex items-end justify-between gap-3 lg:block">
               <div className="min-w-0">
                 <p className="truncate text-2xl font-extrabold tabular-nums text-gray-900 lg:text-3xl">{peso(nextAmount)}</p>
-                <p className="text-sm font-medium text-gray-800">{isOverdue ? 'Please settle it at the ACIFAC office.' : `Due on ${formatDate(nextLoan.nextPaymentDate)}`}</p>
+                <p className="text-sm font-medium text-gray-800">{isOverdue
+                  ? nextLoan.penaltyDays > 0 ? `Includes a ${peso(Number(nextLoan.penaltyDue))} late penalty, ${peso(Number(nextLoan.penaltyPerDay))} more each day. Please settle it at the ACIFAC office.`
+                    : nextLoan.penaltyPerDay > 0 && nextLoan.graceEndsOn ? `Pay by ${formatDate(nextLoan.graceEndsOn)} to avoid a ${peso(Number(nextLoan.penaltyPerDay))} a day penalty.`
+                    : 'Please settle it at the ACIFAC office.'
+                  : `Due on ${formatDate(nextLoan.nextPaymentDate)}`}</p>
               </div>
               <Link to="/loan-status" className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-[#1b3d26] px-4 text-sm font-semibold text-white hover:bg-green-900 lg:mt-3">View loan details</Link>
             </div>

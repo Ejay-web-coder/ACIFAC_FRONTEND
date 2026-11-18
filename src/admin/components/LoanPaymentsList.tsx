@@ -23,9 +23,9 @@ export function LoanPaymentsList({ loanId, version }: { loanId: number; version:
   if (payments.length === 0) return <p className="py-4 text-center text-sm text-gray-500">No payments recorded yet.</p>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] text-sm">
+      <table className="w-full min-w-[600px] text-sm">
         <thead className="text-left text-xs text-gray-500">
-          <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 pr-3 text-right font-medium">Balance after</th><th className="py-2 font-medium">Recorded by</th></tr>
+          <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 pr-3 text-right font-medium">Penalty</th><th className="py-2 pr-3 text-right font-medium">Balance after</th><th className="py-2 font-medium">Recorded by</th></tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {payments.map((payment) => (
@@ -34,6 +34,7 @@ export function LoanPaymentsList({ loanId, version }: { loanId: number; version:
               <td className="py-2 pr-3 text-right font-semibold tabular-nums">{peso(payment.amount)}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.principalPaid)}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.interestPaid)}</td>
+              <td className={`py-2 pr-3 text-right tabular-nums ${payment.penaltyPaid > 0 ? 'text-red-700' : 'text-gray-400'}`}>{peso(payment.penaltyPaid)}</td>
               <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.remainingBalance)}</td>
               <td className="py-2 text-gray-600">{payment.recordedBy ?? ''}</td>
             </tr>

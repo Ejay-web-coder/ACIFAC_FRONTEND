@@ -120,8 +120,19 @@ export interface AdminLoan {
   monthlyPayment: number;
   /** single: due in full by the due date, payable in parts before then (loans from October 2026); monthly: equal monthly installments (earlier loans). */
   repayment?: 'single' | 'monthly';
+  /** Paid of principal and interest (totalAmount = totalPaid + balance); the late penalty is apart. */
   totalPaid: number;
   paymentCount: number;
+  /** Late penalty terms: so much a day after a grace period of graceDays past the due date (it ends on graceEndsOn); 0 for the older monthly loans. */
+  penaltyPerDay: number;
+  graceDays: number;
+  graceEndsOn: string | null;
+  /** Days past the grace period, the penalty run up less what was paid of it (both 0 once paid), and what was paid of it. */
+  penaltyDays: number;
+  penaltyDue: number;
+  penaltyPaid: number;
+  /** balance + penaltyDue: what settles the loan today. */
+  amountDueNow: number;
   overdueAmount: number;
   overdueInstallments: number;
   paidInstallments: number;
@@ -149,6 +160,9 @@ export interface AdminPayment {
   paymentDate: string;
   principalPaid: number;
   interestPaid: number;
+  /** The part that paid the late penalty (paid first). */
+  penaltyPaid: number;
+  /** Principal and interest still owed after the payment. */
   remainingBalance: number;
   createdAt?: string;
   recordedBy?: string | null;
@@ -204,6 +218,8 @@ export interface AdminLoanRequest {
   openLoanNumber?: string | null;
   openLoanBalance?: number | null;
   openLoanTotal?: number | null;
+  /** The late penalty due on that loan, deducted with its balance. */
+  openLoanPenalty?: number | null;
 }
 
 export interface LoanSummary {
@@ -215,6 +231,9 @@ export interface LoanSummary {
   totalPrincipal: number;
   totalOutstanding: number;
   totalCollected: number;
+  /** Late penalties paid, and due now on open loans. */
+  penaltiesCollected: number;
+  totalPenaltyDue: number;
   pendingRequests: number;
 }
 
@@ -244,6 +263,14 @@ export function mapLoan(loan: Record<string, unknown>): AdminLoan {
     interestRate: toNumber(loan.interestRate),
     monthlyPayment: toNumber(loan.monthlyPayment),
     totalPaid: toNumber(loan.totalPaid),
+    penaltyPerDay: toNumber(loan.penaltyPerDay),
+    graceDays: toNumber(loan.graceDays),
+    graceEndsOn: (loan.graceEndsOn as string | null | undefined) ?? null,
+    penaltyDays: toNumber(loan.penaltyDays),
+    penaltyDue: toNumber(loan.penaltyDue),
+    penaltyPaid: toNumber(loan.penaltyPaid),
+    // Older servers send no amountDueNow: the balance is then what is due.
+    amountDueNow: loan.amountDueNow === null || loan.amountDueNow === undefined ? toNumber(loan.balance) : toNumber(loan.amountDueNow),
     overdueAmount: toNumber(loan.overdueAmount),
     nextAmountDue: loan.nextAmountDue === null || loan.nextAmountDue === undefined ? null : toNumber(loan.nextAmountDue),
     farmArea: optionalNumber(loan.farmArea) ?? null,
@@ -258,6 +285,7 @@ export function mapPayment(payment: Record<string, unknown>): AdminPayment {
     amount: toNumber(payment.amount),
     principalPaid: toNumber(payment.principalPaid),
     interestPaid: toNumber(payment.interestPaid),
+    penaltyPaid: toNumber(payment.penaltyPaid),
     remainingBalance: toNumber(payment.remainingBalance),
   };
 }
@@ -274,6 +302,7 @@ export function mapLoanRequest(request: Record<string, unknown>): AdminLoanReque
     totalRepayment: optionalNumber(request.totalRepayment),
     openLoanBalance: optionalNumber(request.openLoanBalance) ?? null,
     openLoanTotal: optionalNumber(request.openLoanTotal) ?? null,
+    openLoanPenalty: optionalNumber(request.openLoanPenalty) ?? null,
   };
 }
 
@@ -323,6 +352,8 @@ export interface MemberLoanHistory {
   summary: {
     loans: number; openLoans: number; paidLoans: number; overdueLoans: number; payments: number; restructurings: number;
     totalBorrowed: number; totalInterest: number; totalRepayment: number; totalPaid: number; outstandingBalance: number;
+    /** The late penalty: paid on all loans, and due now on open ones (apart from totalPaid and the balance). */
+    penaltyPaid: number; penaltyDue: number;
   };
   loans: AdminLoan[];
   payments: AdminPayment[];
@@ -782,6 +813,8 @@ export interface AnalyticsData {
     loanPayments: number;
     totalLoanPayments: number;
     interestCollected: number;
+    /** Late penalties collected in the period (also counted in net income, with interest). */
+    penaltiesCollected?: number;
     machineryRevenue: number;
     kadiwaNetSales: number;
     totalOperatingRevenue: number;

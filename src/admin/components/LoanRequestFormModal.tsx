@@ -81,7 +81,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
   const cashAmount = Math.max(0, request.amount - inKindTotal);
   // The member's open loan: approving restructures it once 80% is paid; before that it blocks approval.
   const open = !decided && request.openLoanNumber && request.openLoanTotal ? {
-    number: request.openLoanNumber, balance: request.openLoanBalance ?? 0, total: request.openLoanTotal,
+    number: request.openLoanNumber, balance: request.openLoanBalance ?? 0, total: request.openLoanTotal, penalty: request.openLoanPenalty ?? 0,
     paidPercent: Math.floor(((request.openLoanTotal - (request.openLoanBalance ?? 0)) / request.openLoanTotal) * 1000) / 10,
   } : null;
   const blocked = open ? open.paidPercent < MIN_PAID_PERCENT : false;
@@ -106,7 +106,9 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                 {blocked ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0" />}
                 {blocked
                   ? `This member still has loan ${open.number} open, only ${open.paidPercent}% paid. A new loan is possible once at least ${MIN_PAID_PERCENT}% is paid, so it cannot be approved yet.`
-                  : `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed is deducted, so the member receives ${peso(request.amount - open.balance)}.`}
+                  : open.penalty > 0
+                    ? `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed and its ${peso(open.penalty)} late penalty are deducted, so the member receives ${peso(Math.round((request.amount - open.balance - open.penalty) * 100) / 100)}.`
+                    : `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed is deducted, so the member receives ${peso(request.amount - open.balance)}.`}
               </p>
             )}
 

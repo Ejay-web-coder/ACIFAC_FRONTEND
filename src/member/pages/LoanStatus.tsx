@@ -11,7 +11,8 @@ import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import type { Member } from '../../admin/pages/MembershipManagement';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { sumMoney } from '../../utils/money';
-import { interestRateLabel } from '../../lib/loanPolicy';
+import { interestRateLabel, LATE_PENALTY_RULE } from '../../lib/loanPolicy';
+import { LatePenaltyNotice } from '../../app/components/LatePenaltyNotice';
 
 interface LoanStatusProps {
   userRole: UserRole;
@@ -39,6 +40,14 @@ interface Loan {
   totalPaid: number;
   overdueAmount: number;
   nextAmountDue: number | null;
+  // The late penalty (see LatePenaltyNotice).
+  penaltyPerDay: number;
+  graceDays: number;
+  graceEndsOn: string | null;
+  penaltyDays: number;
+  penaltyDue: number;
+  penaltyPaid: number;
+  amountDueNow: number;
 }
 
 interface Payment {
@@ -48,6 +57,7 @@ interface Payment {
   paymentDate: string;
   principalPaid: number;
   interestPaid: number;
+  penaltyPaid: number;
   remainingBalance: number;
 }
 
@@ -117,6 +127,13 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         totalPaid: loan.totalPaid,
         overdueAmount: loan.overdueAmount,
         nextAmountDue: loan.nextAmountDue,
+        penaltyPerDay: loan.penaltyPerDay,
+        graceDays: loan.graceDays,
+        graceEndsOn: loan.graceEndsOn,
+        penaltyDays: loan.penaltyDays,
+        penaltyDue: loan.penaltyDue,
+        penaltyPaid: loan.penaltyPaid,
+        amountDueNow: loan.amountDueNow,
       })));
       setPayments(data.payments.map((payment) => ({
         id: String(payment.id),
@@ -125,6 +142,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         paymentDate: payment.paymentDate,
         principalPaid: payment.principalPaid,
         interestPaid: payment.interestPaid,
+        penaltyPaid: payment.penaltyPaid,
         remainingBalance: payment.remainingBalance,
       })));
       setLoanRequests((data.loanRequests ?? []).map((request) => ({
@@ -184,7 +202,8 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         <StatCard label="Total Repayment (with interest)" value={`₱${sumMoney(loans.map((l) => l.totalAmount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={PhilippinePeso} tone="dark" />
-        <StatCard label="Outstanding Balance" value={`₱${sumMoney(loans.map((l) => l.balance)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={TrendingDown} tone="soft" />
+        <StatCard label="Outstanding Balance" value={`₱${sumMoney(loans.map((l) => l.balance)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={TrendingDown} tone="soft"
+          detail={sumMoney(loans.map((l) => l.penaltyDue)) > 0 ? `+ ₱${sumMoney(loans.map((l) => l.penaltyDue)).toLocaleString('en-PH', { minimumFractionDigits: 2 })} late penalty` : undefined} />
         <StatCard label="Total Paid" value={`₱${sumMoney(payments.map((p) => p.amount)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} icon={CheckCircle} />
         <StatCard label="Next Payment" value={`₱${loans.find((loan) => loan.status === 'active')?.monthlyPayment.toLocaleString() || '0'}`} icon={Calendar} />
       </div>
@@ -284,14 +303,20 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   )}
                 </div>
 
+                {/* A loan already in its grace period or past it says so instead (below). */}
+                {!(loan.status === 'overdue' && loan.penaltyPerDay > 0) && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-yellow-600" />
                     <p className="text-sm text-yellow-800">
-                      Next payment of ₱{loan.monthlyPayment.toLocaleString()} due on {formatDate(loan.nextPaymentDate)}
+                      {loan.repayment === 'single'
+                        ? `₱${loan.balance.toLocaleString()} due on ${formatDate(loan.nextPaymentDate)}`
+                        : `Next payment of ₱${loan.monthlyPayment.toLocaleString()} due on ${formatDate(loan.nextPaymentDate)}`}
                     </p>
                   </div>
                 </div>
+                )}
+                <LatePenaltyNotice loan={loan} className="mt-3" />
               </div>
             ))}
           </div>
@@ -349,6 +374,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   <div><dt className="text-xs text-gray-500">Interest</dt><dd className="text-gray-900">₱{payment.interestPaid.toLocaleString()}</dd></div>
                   <div><dt className="text-xs text-gray-500">Balance after</dt><dd className="font-medium text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
                 </dl>
+                {payment.penaltyPaid > 0 && <p className="mt-2 text-xs text-red-700">Late penalty: ₱{payment.penaltyPaid.toLocaleString()} of this payment</p>}
               </div>
             ))}
           </div>
@@ -361,7 +387,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         <h3 className="font-bold text-blue-900 mb-2">Payment Information</h3>
         <div className="text-sm text-blue-800 space-y-1">
           <p>• Payments can be made at the ACIFAC office during business hours (Mon-Fri, 8:00 AM - 5:00 PM)</p>
-          <p>• Late payments may incur additional charges</p>
+          <p>• {LATE_PENALTY_RULE} A payment pays the penalty first.</p>
           <p>• For payment concerns, please contact the cooperative office</p>
           <p>• Keep your payment receipts for your records</p>
         </div>
