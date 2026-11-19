@@ -15,6 +15,11 @@ const INPUT = 'w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-
 const PRIMARY = 'flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60';
 const SECONDARY = 'flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300';
 
+// "14:05" for a wait shown as it counts down.
+const formatWait = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+// "11:48 AM": the clock time a new code can be requested.
+const formatClock = (time: number) => new Date(time).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' });
+
 // Forgot password: email or mobile number -> 6-digit code -> new password.
 // Only an email or number of an account (or of its member information) gets a
 // code; any other is refused with the server's reason, shown on this step.
@@ -31,18 +36,24 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [resendAt, setResendAt] = useState(0);
+  // The hourly code limit was reached for this email or number: when it may ask again.
+  const [limit, setLimit] = useState<{ key: string; until: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const resendIn = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const addressKey = method === 'email' ? `email:${email.trim().toLowerCase()}` : `phone:${phone.replace(/\D/g, '').slice(-10)}`;
+  const shownLimit = limit && limit.key === addressKey ? limit : null;
+  const limitWait = shownLimit ? Math.max(0, Math.ceil((shownLimit.until - now) / 1000)) : 0;
+  const tickUntil = Math.max(resendAt, limit?.until ?? 0);
 
-  // Resend countdown, from the cooldown the server reported.
+  // The resend and hourly-limit countdowns, from the waits the server reported.
   useEffect(() => {
-    if (!resendAt) return;
+    if (!tickUntil) return;
     const timer = window.setInterval(() => {
       setNow(Date.now());
-      if (Date.now() >= resendAt) window.clearInterval(timer);
+      if (Date.now() >= tickUntil) window.clearInterval(timer);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [resendAt]);
+  }, [tickUntil]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -73,6 +84,7 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
     setError('');
     try {
       const response = await forgotPasswordRequest(address());
+      setLimit(null);
       startCooldown(response.resendAvailableInSeconds);
       toast.success(response.message);
       setCode('');
@@ -82,6 +94,15 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
         // A code was sent moments ago and can still be used.
         startCooldown(Number(requestError.data.retryAfterSeconds) || 60);
         setStep('code');
+      }
+      const limitSeconds = requestError instanceof ApiError && requestError.code === 'RESET_RATE_LIMITED' ? Number(requestError.data.retryAfterSeconds) : 0;
+      if (limitSeconds > 0) {
+        // Shown on the first step with the time a new code can be requested.
+        setNow(Date.now());
+        setLimit({ key: addressKey, until: Date.now() + limitSeconds * 1000 });
+        setError('');
+        setStep('address');
+        return;
       }
       setError(errorMessage(requestError, 'Unable to send a verification code.'));
     } finally {
@@ -135,10 +156,10 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
   };
 
   const feedback = error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>;
-  const buttons = (label: string, busyLabel: string) => (
+  const buttons = (label: string, busyLabel: string, waiting = false) => (
     <div className="flex gap-3 pt-2">
       <button type="button" onClick={onClose} className={SECONDARY}>Cancel</button>
-      <button type="submit" disabled={busy} className={PRIMARY}>{busy ? busyLabel : label}</button>
+      <button type="submit" disabled={busy || waiting} className={`${PRIMARY} tabular-nums`}>{busy ? busyLabel : label}</button>
     </div>
   );
 
@@ -177,8 +198,16 @@ export function ForgotPasswordModal({ onClose, onPasswordReset }: { onClose: () 
           </div>
         )}
         {feedback}
+        {shownLimit && (limitWait > 0 ? (
+          <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <p className="font-medium">Too many code requests for this {method === 'email' ? 'email' : 'number'}.</p>
+            <p className="mt-1">You can request a new code at <strong>{formatClock(shownLimit.until)}</strong> <span className="tabular-nums">(in {formatWait(limitWait)})</span>.</p>
+          </div>
+        ) : (
+          <p role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">You can request a new code now.</p>
+        ))}
         <p className="text-xs text-gray-500">No email or mobile number on your account? Please visit or contact the ACIFAC office.</p>
-        {buttons('Send Code', 'Sending...')}
+        {buttons(limitWait > 0 ? `Wait ${formatWait(limitWait)}` : 'Send Code', 'Sending...', limitWait > 0)}
       </form>
     );
   } else if (step === 'code') {

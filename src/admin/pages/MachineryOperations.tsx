@@ -10,6 +10,7 @@ import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
+import { BagSalesPanel } from '../components/machinery/BagSalesPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
@@ -23,6 +24,7 @@ interface MachineryOperationsProps {
 const TABS = [
   { id: 'rentals', label: 'Fleet & Bookings' },
   { id: 'services', label: 'Services' },
+  { id: 'bags', label: 'Bag Sales' },
   { id: 'expenses', label: 'Expenses' },
 ] as const;
 type TabId = typeof TABS[number]['id'];
@@ -239,6 +241,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
 
       {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
+      {canEdit && tab === 'bags' && <BagSalesPanel />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
 
       {tab === 'rentals' && (<>

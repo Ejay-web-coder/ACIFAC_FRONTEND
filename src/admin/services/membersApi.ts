@@ -170,6 +170,23 @@ export function fetchMemberStatistics() {
   return apiGet<ApiResponse<MemberStatistics>>('/api/members/statistics');
 }
 
+/** An active member with the full years of membership completed on the award date. */
+export interface LoyaltyMember {
+  id: number;
+  memberNumber: string;
+  name: string;
+  /** The membership date (YYYY-MM-DD), shown as "Member Since". */
+  membershipDate: string;
+  years: number;
+  barangay: string;
+  municipality: string;
+}
+
+/** Loyalty awards: active members by years of membership on asOf (YYYY-MM-DD), longest membership first. */
+export function fetchLoyaltyReport(asOf: string) {
+  return apiGet<ApiResponse<{ asOf: string; members: LoyaltyMember[] }>>(`/api/members/loyalty?asOf=${encodeURIComponent(asOf)}`);
+}
+
 // Kept well under the backend limit (200) so each request finishes inside the serverless time limit.
 export const MEMBER_IMPORT_BATCH_SIZE = 50;
 

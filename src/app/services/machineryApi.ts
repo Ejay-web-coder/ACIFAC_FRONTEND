@@ -224,6 +224,32 @@ export const createExpense = async (payload: ExpensePayload) => mapExpense((awai
 export const updateExpense = async (id: number, payload: ExpensePayload) => mapExpense((await apiPatch<{ expense: Record<string, unknown> }>(`/api/machinery/expenses/${id}`, payload)).expense);
 export const deleteExpense = (id: number) => apiDelete<{ message: string }>(`/api/machinery/expenses/${id}`);
 
+/** A sale of bags of palay the cooperative earned as harvesting fees, at that day's price per bag. */
+export interface BagSale { id: number; saleDate: string; bags: number; pricePerBag: number; amount: number; buyer: string; notes: string; recordedBy: string | null }
+/** The bags the cooperative holds, all time: received = harvest fees paid (in bags), onHand = received - sold. */
+export interface BagStock { received: number; toCollect: number; sold: number; onHand: number }
+export interface BagSalePayload { saleDate: string; bags: string; pricePerBag: string; buyer: string; notes: string }
+
+const mapBagSale = (row: Record<string, unknown>): BagSale => ({ ...(row as unknown as BagSale), bags: toNumber(row.bags), pricePerBag: toNumber(row.pricePerBag), amount: toNumber(row.amount) });
+
+export async function fetchBagSales(params: { year?: number | string; search?: string }) {
+  const data = await apiGet<{
+    sales: Record<string, unknown>[];
+    totals: Record<string, unknown>;
+    stock: Record<string, unknown>;
+    lastSale: { pricePerBag: unknown; saleDate: string } | null;
+  }>(`/api/machinery/bag-sales${query(params)}`);
+  return {
+    sales: data.sales.map(mapBagSale),
+    totals: { count: toNumber(data.totals.count), bags: toNumber(data.totals.bags), amount: toNumber(data.totals.amount), averagePrice: numberOrNull(data.totals.averagePrice) },
+    stock: { received: toNumber(data.stock.received), toCollect: toNumber(data.stock.toCollect), sold: toNumber(data.stock.sold), onHand: toNumber(data.stock.onHand) } as BagStock,
+    lastSale: data.lastSale ? { pricePerBag: toNumber(data.lastSale.pricePerBag), saleDate: data.lastSale.saleDate } : null,
+  };
+}
+export const createBagSale = async (payload: BagSalePayload) => mapBagSale((await apiPost<{ sale: Record<string, unknown> }>('/api/machinery/bag-sales', payload)).sale);
+export const updateBagSale = async (id: number, payload: BagSalePayload) => mapBagSale((await apiPatch<{ sale: Record<string, unknown> }>(`/api/machinery/bag-sales/${id}`, payload)).sale);
+export const deleteBagSale = (id: number) => apiDelete<{ message: string }>(`/api/machinery/bag-sales/${id}`);
+
 export const fetchRates = async (machineryId: string) => (await apiGet<{ rates: Record<string, unknown>[] }>(`/api/machinery/${encodeURIComponent(machineryId)}/rates`)).rates.map(mapRate);
 export const createRate = async (machineryId: string, payload: { serviceType: string; unit: ServiceUnit; memberRate: string; nonMemberRate: string; effectiveFrom: string; effectiveTo?: string | null }) =>
   mapRate((await apiPost<{ rate: Record<string, unknown> }>(`/api/machinery/${encodeURIComponent(machineryId)}/rates`, payload)).rate);

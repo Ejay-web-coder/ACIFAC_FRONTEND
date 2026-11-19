@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from 'react';
-import { Search, Plus, Edit, RotateCcw, Eye, X, Users, UserPlus, UserX, PiggyBank, ChevronDown } from 'lucide-react';
+import { Search, Plus, Edit, RotateCcw, Eye, X, Users, UserPlus, UserX, PiggyBank, ChevronDown, Award } from 'lucide-react';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { AddMemberModal, draftFromMember, MemberForm, MemberFormModal, useSavedMemberFiles, type MemberDraftData, type MemberFormFiles } from '../components/AddMemberModal';
 import { MemberImportModal } from '../components/MemberImportModal';
 import { TerminationModal, terminationSummary } from '../components/TerminationModal';
+import { LoyaltyAwards } from '../components/loyalty/LoyaltyAwards';
 import { ParticipationProfile } from '../../app/components/attendance/ParticipationProfile';
 import { openProtectedFile, errorMessage } from '../../lib/api';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
@@ -134,6 +135,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [memberToRestore, setMemberToRestore] = useState<Member | null>(null);
   const [showArchivedMembers, setShowArchivedMembers] = useState(false);
+  // Loyalty Awards: members by years of membership, with printable certificates.
+  const [showLoyaltyAwards, setShowLoyaltyAwards] = useState(false);
   // Edit and View show the Add Member form; these fill it from the saved member.
   const viewDraft = useMemo(() => (selectedMember ? draftFromMember(selectedMember) : null), [selectedMember]);
   const editDraft = useMemo(() => (editingMember ? draftFromMember(editingMember) : null), [editingMember]);
@@ -368,30 +371,55 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-600">{showArchivedMembers ? 'Members whose membership was terminated can be reviewed and restored.' : 'Manage cooperative members and registrations'}</p>
+        <p className="text-sm text-gray-600">{showLoyaltyAwards ? 'Members grouped by years of membership, with printable loyalty certificates.' : showArchivedMembers ? 'Members whose membership was terminated can be reviewed and restored.' : 'Manage cooperative members and registrations'}</p>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-          <button
-            type="button"
-            onClick={() => setShowArchivedMembers((current) => !current)}
-            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${canEdit && !showArchivedMembers ? '' : 'col-span-2'}`}
-          >
-            {showArchivedMembers ? <RotateCcw className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
-            <span className="sm:hidden">{showArchivedMembers ? 'Back' : 'Terminated'}</span>
-            <span className="hidden sm:inline">{showArchivedMembers ? 'Back to Members' : 'Terminated Members'}</span>
-          </button>
-          {canEdit && !showArchivedMembers && (
+          {showLoyaltyAwards ? (
             <button
               type="button"
-              onClick={() => setShowAddModal(true)}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
+              onClick={() => setShowLoyaltyAwards(false)}
+              className="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
-              <Plus className="h-4 w-4" />
-              Add Member
+              <RotateCcw className="h-4 w-4" />
+              Back to Members
             </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowArchivedMembers((current) => !current)}
+                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${showArchivedMembers ? 'col-span-2' : ''}`}
+              >
+                {showArchivedMembers ? <RotateCcw className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+                <span className="sm:hidden">{showArchivedMembers ? 'Back' : 'Terminated'}</span>
+                <span className="hidden sm:inline">{showArchivedMembers ? 'Back to Members' : 'Terminated Members'}</span>
+              </button>
+              {!showArchivedMembers && (
+                <button
+                  type="button"
+                  onClick={() => setShowLoyaltyAwards(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <Award className="h-4 w-4" />
+                  <span className="sm:hidden">Loyalty</span>
+                  <span className="hidden sm:inline">Loyalty Awards</span>
+                </button>
+              )}
+              {canEdit && !showArchivedMembers && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  className="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Member
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
 
+      {showLoyaltyAwards ? <LoyaltyAwards /> : (<>
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         <StatCard label="Total Members" value={statistics.totalMembers.toLocaleString('en-PH')} icon={Users} tone="dark" loading={isLoading && statistics.totalMembers === 0} />
@@ -561,6 +589,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           </>
         )}
       </div>
+      </>)}
 
       {/* Member Details Modal */}
       {showModal && selectedMember && (
