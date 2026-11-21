@@ -1,4 +1,4 @@
-// Whether someone is actually using the page. The server signs a session out
+// Whether someone is actually using the page. The server locks a session
 // after 20 minutes without activity, and it should measure the person, not
 // background traffic: requests made while nobody has touched the page (live
 // update refreshes, timers) are sent as "passive" and do not keep the session

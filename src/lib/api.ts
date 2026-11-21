@@ -22,12 +22,48 @@ export class ApiError extends Error {
 }
 
 export const SESSION_ENDED_EVENT = 'acifac:session-ended';
+export const SESSION_LOCKED_EVENT = 'acifac:session-locked';
 export const PASSWORD_CHANGE_EVENT = 'acifac:password-change-required';
 export const SESSION_IDLE_MESSAGE = 'Your session expired because of inactivity. Please log in again.';
+const SESSION_ENDED_MESSAGE = 'Your session has expired. Please log in again.';
 // How long a request waits for the backend to come back after a restart.
 const BACKEND_RESTART_WAIT_MS = 30000;
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+// After 20 minutes without activity the server locks the session (401
+// SESSION_LOCKED) until the person enters their password again. Meanwhile the
+// page's requests wait and go out once it is unlocked, and a request the
+// server refused because of the lock is sent again (the server did nothing
+// with it), so the page carries on where it was. These are sent anyway: they
+// unlock, check or end the session.
+const SENT_WHILE_LOCKED = new Set(['/api/auth/unlock', '/api/auth/logout', '/api/auth/login', '/api/auth/me', '/api/auth/session', '/api/events/changes']);
+let lockGate: Promise<boolean> | null = null;
+let openLockGate: (stillSignedIn: boolean) => void = () => undefined;
+
+export const isSessionLocked = () => lockGate !== null;
+
+/** The session is locked: requests wait, and the lock screen opens (SESSION_LOCKED_EVENT). */
+export function markSessionLocked() {
+  if (lockGate) return;
+  lockGate = new Promise<boolean>((resolve) => { openLockGate = resolve; });
+  window.dispatchEvent(new CustomEvent(SESSION_LOCKED_EVENT));
+}
+
+/** Unlocked: the waiting requests are sent. stillSignedIn false: the session ended, and they fail as signed out. */
+export function markSessionUnlocked(stillSignedIn = true) {
+  if (!lockGate) return;
+  lockGate = null;
+  openLockGate(stillSignedIn);
+}
+
+if (typeof window !== 'undefined') window.addEventListener(SESSION_ENDED_EVENT, () => markSessionUnlocked(false));
+
+async function waitWhileLocked() {
+  while (lockGate) {
+    if (!(await lockGate)) throw new ApiError(SESSION_ENDED_MESSAGE, 401, 'SESSION_INVALID');
+  }
+}
+
+async function sendRequest(path: string, options: RequestInit) {
   const headers = new Headers(options.headers);
   headers.set('X-Requested-With', 'XMLHttpRequest');
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -53,12 +89,26 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   } catch {
     throw new ApiError('Unable to reach the ACIFAC server. Check your connection and try again.', 0);
   }
+  const data = await response.json().catch(() => ({}));
+  return { response, data, countsAsActivity };
+}
+
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const waitsWhileLocked = !SENT_WHILE_LOCKED.has(path.split('?')[0]);
+  let attempt: Awaited<ReturnType<typeof sendRequest>>;
+  for (;;) {
+    if (waitsWhileLocked) await waitWhileLocked();
+    attempt = await sendRequest(path, options);
+    if (attempt.response.status !== 401 || attempt.data.code !== 'SESSION_LOCKED') break;
+    markSessionLocked();
+    if (!waitsWhileLocked) break;
+  }
+  const { response, data, countsAsActivity } = attempt;
   if (countsAsActivity && response.status !== 401) noteServerActivity();
 
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new ApiError(data.message || 'Request failed.', response.status, data.code, data.errors, data);
-    if (response.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/me') {
+    if (response.status === 401 && data.code !== 'SESSION_LOCKED' && path !== '/api/auth/login' && path !== '/api/auth/me') {
       window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: error.message }));
     }
     if (data.code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new CustomEvent(PASSWORD_CHANGE_EVENT));

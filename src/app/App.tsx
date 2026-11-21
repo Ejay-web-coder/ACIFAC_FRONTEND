@@ -7,9 +7,10 @@ import { lazy, Suspense } from 'react';
 import { Layout } from './components/Layout';
 import { Toaster } from './components/ui/Toaster';
 import { Login } from './components/Login';
+import { SessionLock } from './components/SessionLock';
 import { SessionTimeout } from './components/SessionTimeout';
 import { ConfirmHost } from './components/common/ConfirmDialog';
-import { fetchCurrentUser } from './services/authApi';
+import { fetchCurrentUser, type CurrentUserResponse, type LockedAccount } from './services/authApi';
 
 const AdminDashboard = lazy(() => import('../admin/pages/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
 const MemberDashboard = lazy(() => import('../member/pages/MemberDashboard').then((module) => ({ default: module.MemberDashboard })));
@@ -64,25 +65,45 @@ export default function App() {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   // Why the last session ended (e.g. inactivity), shown on the login page.
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
-  const isAuthenticatedRef = useRef(false);
+  // The page was opened or refreshed while the session is locked (20 minutes
+  // without activity): the lock screen first, then the same page.
+  const [lockedAccount, setLockedAccount] = useState<LockedAccount | null>(null);
+  // Signed in, or locked: an ended session is worth telling the person about.
+  const signedInRef = useRef(false);
 
   useEffect(() => {
-    isAuthenticatedRef.current = isAuthenticated;
-  }, [isAuthenticated]);
+    signedInRef.current = isAuthenticated || lockedAccount !== null;
+  }, [isAuthenticated, lockedAccount]);
+
+  // What the server says about this browser's session.
+  const applyCurrentUser = ({ user, code, message, locked }: CurrentUserResponse) => {
+    const role = roleFromServer(user?.role);
+    if (role) {
+      setUserRole(role);
+      setMustChangePassword(Boolean(user?.must_change_password));
+      setLockedAccount(null);
+      setIsAuthenticated(true);
+    } else if (code === 'SESSION_LOCKED' && locked) {
+      setLockedAccount(locked);
+    } else if (code === 'SESSION_IDLE_TIMEOUT' && message) {
+      // Reopened or refreshed after a server without the lock screen ended the session.
+      setLoginNotice(message);
+    }
+  };
+
+  // Unlocked from the lock screen shown at page load: open the page that was asked for.
+  const openAfterUnlock = () => {
+    fetchCurrentUser()
+      .then((result) => {
+        if (roleFromServer(result.user?.role)) applyCurrentUser(result);
+        else window.location.reload();
+      })
+      .catch(() => window.location.reload());
+  };
 
   useEffect(() => {
     fetchCurrentUser()
-      .then(({ user, code, message }) => {
-        const role = roleFromServer(user?.role);
-        if (role) {
-          setUserRole(role);
-          setMustChangePassword(Boolean(user?.must_change_password));
-          setIsAuthenticated(true);
-        } else if (code === 'SESSION_IDLE_TIMEOUT' && message) {
-          // Reopened or refreshed after the server timed the session out.
-          setLoginNotice(message);
-        }
-      })
+      .then(applyCurrentUser)
       .catch((error) => {
         setIsAuthenticated(false);
         // A server that still answers 401 when signed out (before this change was deployed).
@@ -95,11 +116,12 @@ export default function App() {
     const onSessionEnded = (event: Event) => {
       const message = (event as CustomEvent<string>).detail || 'Your session has ended. Please sign in again.';
       closeLiveUpdates();
-      if (isAuthenticatedRef.current) {
+      if (signedInRef.current) {
         toast.error(message);
         setLoginNotice(message);
       }
       setIsAuthenticated(false);
+      setLockedAccount(null);
       setMustChangePassword(false);
     };
     const onPasswordChangeRequired = () => setMustChangePassword(true);
@@ -120,11 +142,25 @@ export default function App() {
 
   if (!isAuthReady) return null;
 
+  if (lockedAccount && !isAuthenticated) {
+    return (
+      <>
+        <Toaster />
+        <SessionLock
+          displayName={lockedAccount.display_name}
+          username={lockedAccount.username}
+          idleMinutes={Math.round(lockedAccount.idleTimeoutSeconds / 60)}
+          onUnlocked={openAfterUnlock}
+        />
+      </>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Toaster />
       <ConfirmHost />
-      {/* A Kadiwa vendor stays signed in until they log out: no inactivity countdown. */}
+      {/* A Kadiwa vendor stays signed in until they log out: never locked for inactivity. */}
       {isAuthenticated && userRole !== 'vendor' && <SessionTimeout />}
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-gray-500">Loading...</div>}>
         <Routes>

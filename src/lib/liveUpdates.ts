@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_URL, apiFetch, SESSION_ENDED_EVENT, SESSION_IDLE_MESSAGE } from './api';
+import { API_URL, apiFetch, markSessionLocked, SESSION_ENDED_EVENT, SESSION_IDLE_MESSAGE } from './api';
 import { SESSION_ACTIVITY_HEADER } from './sessionActivity';
 
 // Live updates over Server-Sent Events. The server only sends
@@ -9,7 +9,7 @@ import { SESSION_ACTIVITY_HEADER } from './sessionActivity';
 // Where the server cannot stream (on Vercel live updates are off), the browser
 // asks every 3 seconds which tables changed (GET /api/events/changes) and
 // refreshes the pages that show them. The checks never count as activity, so
-// the inactivity sign-out still happens, and they pause while the tab is hidden.
+// the inactivity lock still happens, and they pause while the tab is hidden.
 
 type Listener = { tables: Set<string>; callback: () => void };
 
@@ -109,6 +109,11 @@ function ensureConnection() {
     closeLiveUpdates();
     window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, { detail: reason === 'inactivity' ? SESSION_IDLE_MESSAGE : 'Your session has ended. Please sign in again.' }));
   });
+  // 20 minutes without activity: updates stop until the password is entered again.
+  source.addEventListener('session-locked', () => {
+    closeLiveUpdates();
+    markSessionLocked();
+  });
 }
 
 export function closeLiveUpdates() {
@@ -116,6 +121,14 @@ export function closeLiveUpdates() {
   source = null;
   streaming = false;
   stopPolling();
+}
+
+// After the session is unlocked: updates start again, and every page shown
+// refreshes, since nothing was sent while it was locked.
+export function resumeLiveUpdates() {
+  if (listeners.size === 0) return;
+  ensureConnection();
+  notifyAll();
 }
 
 // Calls `onChange` (debounced) whenever one of `tables` changes.

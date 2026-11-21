@@ -42,9 +42,14 @@ export function loginRequest(payload: { usernameOrEmail: string; password: strin
   return apiPost<{ message: string; user?: AuthUser; role?: UserRole; mustChangePassword?: boolean }>('/api/auth/login', payload);
 }
 export const logoutRequest = () => apiPost<{ message: string }>('/api/auth/logout');
+/** Whose session is locked (after 20 minutes without activity), for the lock screen. */
+export interface LockedAccount { username: string | null; display_name: string | null; idleTimeoutSeconds: number }
+export interface CurrentUserResponse { user?: AuthUser | null; code?: string; message?: string; locked?: LockedAccount }
 // Signed out is not an error here: user is null, with the reason in code and
-// message (e.g. SESSION_IDLE_TIMEOUT), so the browser console stays clean.
-export const fetchCurrentUser = () => apiGet<{ user?: AuthUser | null; code?: string; message?: string }>('/api/auth/me');
+// message, so the browser console stays clean. A locked session (code
+// SESSION_LOCKED) also says whose it is. 'passive' checks without counting as activity.
+export const fetchCurrentUser = (mode?: 'passive') =>
+  apiFetch<CurrentUserResponse>('/api/auth/me', mode ? { headers: { 'X-Session-Activity': mode } } : {});
 // Forgot password: the code is emailed or texted, to whichever the person
 // typed, and checked on the server only. After a correct code the server sets
 // an httpOnly cookie that authorises the reset, so the page never holds the
@@ -59,6 +64,9 @@ export const resetPasswordRequest = (payload: { token?: string; newPassword: str
 export interface SessionStatus { idleTimeoutSeconds: number; idleExpiresInSeconds: number; sessionExpiresInSeconds: number }
 // 'passive' checks the session without counting as activity.
 export const fetchSessionStatus = (mode: 'active' | 'passive') => apiFetch<SessionStatus>('/api/auth/session', { headers: { 'X-Session-Activity': mode } });
+// "Stay logged in" on a locked session: the password unlocks it. Wrong
+// passwords count toward the same lockout as on the login page.
+export const unlockSessionRequest = (password: string) => apiPost<SessionStatus & { message: string }>('/api/auth/unlock', { password });
 // Signed in: a code to the account's own email or mobile number, used in place of the current password.
 export const sendPasswordChangeCodeRequest = (channel: 'email' | 'sms') =>
   apiPost<{ message: string; sentTo: string; expiresInSeconds: number; resendAvailableInSeconds: number }>('/api/auth/change-password/code', { channel });

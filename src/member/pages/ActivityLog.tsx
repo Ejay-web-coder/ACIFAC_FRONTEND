@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from 'react';
-import { CalendarDays, CheckCircle2, ChevronDown, Clock, Landmark, Lock, LogIn, LogOut, Monitor, PiggyBank, Search, Send, ShieldAlert, ShoppingCart, Tractor, UserRound, History, KeyRound, XCircle } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, Clock, Landmark, Lock, LockOpen, LogIn, LogOut, Monitor, PiggyBank, Search, Send, ShieldAlert, ShoppingCart, Tractor, UserRound, History, KeyRound, XCircle } from 'lucide-react';
 import { EmptyState, ListSkeleton } from '../../app/components/common/UiKit';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatTime } from '../../utils/dateTime';
 import { errorMessage } from '../../lib/api';
@@ -35,6 +35,8 @@ function iconFor(entry: ActivityEntry): Icon {
   if (entry.status === 'failed') return ShieldAlert;
   if (entry.action === 'LOGIN') return LogIn;
   if (entry.action === 'LOGOUT' || entry.action === 'SESSION_EXPIRED') return LogOut;
+  if (entry.action === 'SESSION_LOCKED') return Lock;
+  if (entry.action === 'SESSION_UNLOCKED') return LockOpen;
   if (entry.category === 'security') return KeyRound;
   if (entry.category === 'profile') return UserRound;
   if (entry.category === 'savings') return PiggyBank;

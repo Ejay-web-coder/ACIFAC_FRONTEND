@@ -1,70 +1,88 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Clock3 } from 'lucide-react';
-import { closeLiveUpdates } from '../../lib/liveUpdates';
-import { clearProfilePhoto } from '../../lib/profilePhoto';
+import { ApiError, isSessionLocked, markSessionLocked, markSessionUnlocked, SESSION_LOCKED_EVENT } from '../../lib/api';
+import { closeLiveUpdates, resumeLiveUpdates } from '../../lib/liveUpdates';
 import { lastInteraction, lastServerActivity } from '../../lib/sessionActivity';
-import { fetchSessionStatus, logoutRequest } from '../services/authApi';
+import { fetchCurrentUser, fetchSessionStatus, type LockedAccount, type SessionStatus } from '../services/authApi';
+import { SessionLock } from './SessionLock';
 
-// The server ends a session after 20 minutes without activity; this keeps the
+// The server locks a session after 20 minutes without activity; this keeps the
 // page in step with it. It tells the server when someone is using the page
-// without it making requests (reading, filling in a long form), warns a
-// minute before the timeout, and near the end asks the server rather than
-// trusting the local clock, since another tab may have kept the session
-// alive. When the server has ended the session, its 401 goes through the
-// usual handling in App, which returns to the login page. Nothing is polled
-// while the person is away except those checks near the deadline.
+// without it making requests (reading, filling in a long form). When the time
+// is up by this page's clock it asks the server rather than trusting the local
+// clock, since another tab may have kept the session alive. Once the session
+// is locked (found here, by any request, or by the live-update stream) the
+// lock screen covers the page: "Stay logged in" with the password, or "Log
+// out". Meanwhile the page's requests wait (see api.ts) and go on after the
+// unlock. Nothing is polled while the person is away.
 
 const DEFAULT_IDLE_TIMEOUT_MS = 20 * 60 * 1000;
-const WARNING_MS = 60 * 1000;
 // Activity without requests is reported to the server this often at most.
 const ACTIVITY_REPORT_MS = 4 * 60 * 1000;
-const TICK_MS = 15 * 1000;
+// Only this page's clock is read this often; the server is asked when time is up.
+const TICK_MS = 1000;
 
-const formatCountdown = (ms: number) => {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-};
+type Check = 'active' | 'locked' | 'ended' | 'unreachable';
 
 export function SessionTimeout() {
   const idleTimeoutRef = useRef(DEFAULT_IDLE_TIMEOUT_MS);
-  // When the server will end the session if nothing else happens.
+  // When the server will lock the session if nothing else happens.
   const deadlineRef = useRef(0);
-  const syncingRef = useRef(false);
-  const expiryCheckedRef = useRef(false);
-  const [warningUntil, setWarningUntil] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  const [loggingOut, setLoggingOut] = useState(false);
+  const checkingRef = useRef(false);
+  const [locked, setLocked] = useState(isSessionLocked);
+  const [account, setAccount] = useState<LockedAccount | null>(null);
 
-  const sync = useCallback(async (mode: 'active' | 'passive') => {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
+  // Asks the server how long the session has left (null: a check is already running).
+  const check = useCallback(async (mode: 'active' | 'passive'): Promise<Check | null> => {
+    if (checkingRef.current) return null;
+    checkingRef.current = true;
     try {
       const status = await fetchSessionStatus(mode);
       idleTimeoutRef.current = status.idleTimeoutSeconds * 1000;
       deadlineRef.current = Date.now() + status.idleExpiresInSeconds * 1000;
-    } catch {
-      // A 401 is handled globally; a network error is retried on the next tick.
+      return 'active';
+    } catch (error) {
+      // SESSION_LOCKED has already opened the lock screen (api.ts); any other
+      // 401 signs the page out (App).
+      if (error instanceof ApiError && error.status === 401) return error.code === 'SESSION_LOCKED' ? 'locked' : 'ended';
+      return 'unreachable';
     } finally {
-      syncingRef.current = false;
+      checkingRef.current = false;
     }
   }, []);
 
   const tick = useCallback(async () => {
+    if (isSessionLocked()) return;
     // The person's own requests have already moved the server's deadline.
     deadlineRef.current = Math.max(deadlineRef.current, lastServerActivity() + idleTimeoutRef.current);
-    if (lastInteraction() > lastServerActivity() && Date.now() - lastServerActivity() >= ACTIVITY_REPORT_MS) await sync('active');
-    if (deadlineRef.current - Date.now() <= WARNING_MS) await sync('passive');
-    const remaining = deadlineRef.current - Date.now();
-    setNow(Date.now());
-    setWarningUntil(remaining <= WARNING_MS ? deadlineRef.current : null);
-  }, [sync]);
+    if (lastInteraction() > lastServerActivity() && Date.now() - lastServerActivity() >= ACTIVITY_REPORT_MS) await check('active');
+    if (Date.now() < deadlineRef.current) return;
+    // Time is up by this page's clock. Without an answer from the server, the page locks anyway.
+    if ((await check('passive')) === 'unreachable') markSessionLocked();
+  }, [check]);
+
+  const finishUnlock = useCallback((status?: SessionStatus) => {
+    if (status) {
+      idleTimeoutRef.current = status.idleTimeoutSeconds * 1000;
+      deadlineRef.current = Date.now() + status.idleExpiresInSeconds * 1000;
+    }
+    setLocked(false);
+    setAccount(null);
+    markSessionUnlocked();
+    resumeLiveUpdates();
+  }, []);
 
   useEffect(() => {
-    void sync('passive');
+    void check('passive');
     const timer = window.setInterval(() => void tick(), TICK_MS);
     // Timers are slowed in background tabs and stop while a laptop sleeps.
     const onReturn = () => {
-      if (document.visibilityState === 'visible') void tick();
+      if (document.visibilityState !== 'visible') return;
+      if (!isSessionLocked()) {
+        void tick();
+        return;
+      }
+      // Unlocked in another tab meanwhile? A check that does not count as activity tells.
+      void check('passive').then((result) => { if (result === 'active') finishUnlock(); });
     };
     document.addEventListener('visibilitychange', onReturn);
     window.addEventListener('focus', onReturn);
@@ -73,60 +91,34 @@ export function SessionTimeout() {
       document.removeEventListener('visibilitychange', onReturn);
       window.removeEventListener('focus', onReturn);
     };
-  }, [sync, tick]);
+  }, [check, tick, finishUnlock]);
 
-  // Countdown while the warning is shown; at zero, confirm with the server.
   useEffect(() => {
-    if (warningUntil === null) return;
-    expiryCheckedRef.current = false;
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-      if (Date.now() >= warningUntil && !expiryCheckedRef.current) {
-        expiryCheckedRef.current = true;
-        void tick();
-      }
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [warningUntil, tick]);
+    const onLocked = () => {
+      setLocked(true);
+      closeLiveUpdates();
+      // Whose session it is, for the lock screen.
+      fetchCurrentUser('passive')
+        .then(({ user, locked: who }) => setAccount({
+          username: who?.username ?? user?.username ?? null,
+          display_name: who?.display_name ?? user?.display_name ?? null,
+          idleTimeoutSeconds: who?.idleTimeoutSeconds ?? idleTimeoutRef.current / 1000,
+        }))
+        .catch(() => undefined);
+    };
+    window.addEventListener(SESSION_LOCKED_EVENT, onLocked);
+    // Locked before this page part was shown.
+    if (isSessionLocked()) onLocked();
+    return () => window.removeEventListener(SESSION_LOCKED_EVENT, onLocked);
+  }, []);
 
-  const staySignedIn = async () => {
-    await sync('active');
-    await tick();
-  };
-
-  const logOut = async () => {
-    setLoggingOut(true);
-    await logoutRequest().catch(() => undefined);
-    closeLiveUpdates();
-    clearProfilePhoto();
-    window.location.replace('/login');
-  };
-
-  if (warningUntil === null) return null;
-
+  if (!locked) return null;
   return (
-    <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-[80] p-4" role="alertdialog" aria-modal="true" aria-labelledby="session-timeout-title" aria-describedby="session-timeout-message">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
-          <Clock3 className="h-5 w-5 text-amber-600" aria-hidden="true" />
-          <h2 id="session-timeout-title" className="text-xl font-bold text-gray-900">Are you still there?</h2>
-        </div>
-        <div className="p-6 space-y-4">
-          <p id="session-timeout-message" className="text-sm text-gray-600">You have been inactive for a while. You will be logged out soon.</p>
-          <div className="text-center">
-            <p className="text-xs text-gray-500">Logging out in</p>
-            <p className="text-3xl font-bold tabular-nums text-gray-900">{formatCountdown(warningUntil - now)}</p>
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={() => void logOut()} disabled={loggingOut} className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 disabled:opacity-60">
-              {loggingOut ? 'Logging out...' : 'Log out'}
-            </button>
-            <button type="button" onClick={() => void staySignedIn()} disabled={loggingOut} autoFocus className="flex-1 px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-60">
-              Stay signed in
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SessionLock
+      displayName={account?.display_name}
+      username={account?.username}
+      idleMinutes={Math.round((account?.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_MS / 1000) / 60)}
+      onUnlocked={finishUnlock}
+    />
   );
 }
