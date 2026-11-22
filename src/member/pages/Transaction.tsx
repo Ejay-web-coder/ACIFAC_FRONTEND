@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Calendar, Download, Eye, PiggyBank, Tractor, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Calendar, Download, Eye, PiggyBank, Tractor, Wallet, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { UserRole } from '../../app/App';
@@ -11,7 +11,7 @@ interface TransactionProps {
   userRole: UserRole;
 }
 
-type TransactionType = 'savings' | 'withdrawal' | 'payment' | 'debt' | 'rental';
+type TransactionType = 'savings' | 'withdrawal' | 'payment' | 'debt' | 'rental' | 'machinery';
 type TransactionStatus = 'completed' | 'pending' | 'approved' | 'declined' | 'scheduled' | 'ongoing';
 
 interface Transaction {
@@ -29,11 +29,13 @@ interface Transaction {
   status: TransactionStatus;
   paymentMethod: string;
   reference: string;
+  /** Who recorded it at the office (name and position); empty for a booking request. */
+  recordedBy: string;
 }
 
 // The filter chips on phones (the same choices as the Filter Type list).
 const FILTERS: Array<['all' | TransactionType, string]> = [
-  ['all', 'All'], ['payment', 'Loan payments'], ['debt', 'Loans'], ['rental', 'Rentals'], ['savings', 'Savings'], ['withdrawal', 'Withdrawals'],
+  ['all', 'All'], ['payment', 'Loan payments'], ['debt', 'Loans'], ['machinery', 'Machinery payments'], ['rental', 'Rentals'], ['savings', 'Savings'], ['withdrawal', 'Withdrawals'],
 ];
 
 // How each kind of entry looks. `sign` is what it means for the member.
@@ -43,7 +45,12 @@ const TYPE_STYLE: Record<TransactionType, { label: string; icon: typeof ArrowUpR
   payment: { label: 'Loan Payment', icon: ArrowUpRight, chip: 'bg-red-100', text: 'text-red-800', amount: 'text-red-600', sign: '-' },
   debt: { label: 'Loan', icon: ArrowDownLeft, chip: 'bg-orange-100', text: 'text-orange-800', amount: 'text-orange-600', sign: '+' },
   rental: { label: 'Rental', icon: Tractor, chip: 'bg-blue-100', text: 'text-blue-800', amount: 'text-blue-600', sign: '' },
+  machinery: { label: 'Machinery Payment', icon: Wrench, chip: 'bg-sky-100', text: 'text-sky-800', amount: 'text-sky-700', sign: '-' },
 };
+
+// "Lorna Cruz, Treasurer"; entries recorded before names were kept say the office.
+const recorder = (name?: string | null, position?: string | null) => (name ? [name, position].filter(Boolean).join(', ') : 'ACIFAC office');
+const receiptNumber = (prefix: string, id: number) => `${prefix}-${String(id).padStart(6, '0')}`;
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -111,8 +118,9 @@ async function downloadReceiptPdf(txn: Transaction) {
     ['Amount:', peso(txn.amount)],
     ['Payment Method:', txn.paymentMethod],
     ['Reference:', txn.reference],
-    ['Status:', capitalize(txn.status), true],
   ];
+  if (txn.recordedBy) details.push(['Recorded by:', txn.recordedBy]);
+  details.push(['Status:', capitalize(txn.status), true]);
   if (txn.balance !== null) details.push([`${txn.balanceLabel}:`, peso(txn.balance)]);
 
   // The shaded box is drawn first, so its height is measured before the rows.
@@ -184,8 +192,9 @@ export function Transaction({ userRole }: TransactionProps) {
         balance: typeof deposit.balance === 'number' ? deposit.balance : savingsRunning,
         balanceLabel: 'Savings Balance',
         status: 'completed' as const,
-        paymentMethod: deposit.paymentMethod || 'Recorded by ACIFAC Admin',
+        paymentMethod: deposit.paymentMethod || 'Not specified',
         reference: deposit.reference || `SAV-${deposit.id}`,
+        recordedBy: recorder(deposit.recordedBy, deposit.recordedByPosition),
       };
     });
 
@@ -203,11 +212,30 @@ export function Transaction({ userRole }: TransactionProps) {
     status: rental.status === 'approved' ? (rental.operationStatus || 'approved') : rental.status,
     paymentMethod: 'Rental fee payable to ACIFAC',
     reference: `RENT-${rental.id}`,
+    recordedBy: '',
+  }));
+
+  // Payments for machinery work done for the member, each with the fee left after it.
+  const machineryRows: Transaction[] = (memberData.machineryPayments ?? []).map((payment) => ({
+    id: receiptNumber('MS', payment.id),
+    date: payment.paymentDate,
+    type: 'machinery' as const,
+    category: 'Machinery Service Payment',
+    description: `${payment.serviceType} by ${payment.machineryName}`,
+    detail: `Work done on ${formatDate(payment.serviceDate)} · fee ${peso(payment.feeAmount)}`,
+    amount: payment.amount,
+    balance: payment.balanceAfter,
+    balanceLabel: 'Service Fee Balance',
+    status: 'completed' as const,
+    paymentMethod: 'Cash, at the ACIFAC office',
+    reference: receiptNumber('MS', payment.id),
+    recordedBy: recorder(payment.recordedBy, payment.recordedByPosition),
   }));
 
   const transactions: Transaction[] = [
     ...savingsRows,
     ...rentalRows,
+    ...machineryRows,
     ...memberData.loans.map((loan) => ({
       id: `LOAN-${loan.id}`,
       date: loan.dateApproved,
@@ -218,8 +246,9 @@ export function Transaction({ userRole }: TransactionProps) {
       balance: Number(loan.balance),
       balanceLabel: 'Loan Balance',
       status: 'completed' as const,
-      paymentMethod: 'Recorded by ACIFAC Admin',
+      paymentMethod: 'Released at the ACIFAC office',
       reference: loan.id,
+      recordedBy: recorder(loan.approvedBy, loan.approvedByPosition),
     })),
     ...memberData.payments.map((payment) => ({
       id: `PAY-${payment.id}`,
@@ -231,8 +260,9 @@ export function Transaction({ userRole }: TransactionProps) {
       balance: Number(payment.remainingBalance),
       balanceLabel: 'Remaining Loan Balance',
       status: 'completed' as const,
-      paymentMethod: 'Recorded by ACIFAC Admin',
+      paymentMethod: 'Cash, at the ACIFAC office',
       reference: `PAY-${payment.id}`,
+      recordedBy: recorder(payment.recordedBy, payment.recordedByPosition),
     })),
   ];
 
@@ -292,6 +322,7 @@ export function Transaction({ userRole }: TransactionProps) {
               <option value="savings">Savings Deposits</option>
               <option value="withdrawal">Savings Withdrawals</option>
               <option value="rental">Machinery Rentals</option>
+              <option value="machinery">Machinery Payments</option>
               <option value="payment">Loan Payments</option>
               <option value="debt">Loan Disbursements</option>
             </select>
@@ -455,6 +486,12 @@ export function Transaction({ userRole }: TransactionProps) {
                     <span className="text-gray-700">Reference:</span>
                     <span className="font-medium text-gray-900">{selectedTransaction.reference}</span>
                   </div>
+                  {selectedTransaction.recordedBy && (
+                    <div className="flex justify-between gap-3 py-2">
+                      <span className="text-gray-700">Recorded by:</span>
+                      <span className="text-right font-medium text-gray-900">{selectedTransaction.recordedBy}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between py-2 border-t-2 border-b-2 border-gray-300 my-3">
                     <span className="text-lg font-bold text-gray-900">Status:</span>
                     <span className="text-lg font-bold text-gray-900">{capitalize(selectedTransaction.status)}</span>

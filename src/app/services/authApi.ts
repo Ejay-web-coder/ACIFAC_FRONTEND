@@ -111,6 +111,9 @@ export interface AdminLoan {
   databaseId: number;
   id: string;
   memberDatabaseId: number | null;
+  /** Who approved the loan (name), and their position in the cooperative. */
+  approvedBy?: string | null;
+  approvedByPosition?: string | null;
   memberId: string | number | null;
   memberName: string;
   loanType: string;
@@ -173,7 +176,10 @@ export interface AdminPayment {
   /** Principal and interest still owed after the payment. */
   remainingBalance: number;
   createdAt?: string;
+  /** The name of the person who recorded the payment, and their position. */
   recordedBy?: string | null;
+  recordedByPosition?: string | null;
+  memberNumber?: string | null;
 }
 
 export interface AdminLoanRequest {
@@ -522,6 +528,8 @@ export interface MemberRentalRequest {
   status: 'pending' | 'approved' | 'declined';
   submittedAt: string;
   reviewedAt: string | null;
+  /** Why the office declined it (null for older declines and other statuses). */
+  reviewNotes: string | null;
   operationStatus: 'scheduled' | 'ongoing' | 'completed' | null;
 }
 
@@ -585,12 +593,29 @@ export interface MyMemberData {
   loanRequests: AdminLoanRequest[];
   payments: AdminPayment[];
   rentalRequests: MemberRentalRequest[];
+  /** Payments for machinery work done for the member, newest first, with the service's balance after each. */
+  machineryPayments: MemberMachineryPayment[];
   /** total is the deposits minus the withdrawals; balance is the savings after each entry. */
-  savings: { total: number; transactions: Array<{ id: number; type?: 'Deposit' | 'Withdrawal'; amount: number; balance?: number; date: string; paymentMethod: string | null; reference: string | null; notes: string }> };
+  savings: { total: number; transactions: Array<{ id: number; type?: 'Deposit' | 'Withdrawal'; amount: number; balance?: number; date: string; paymentMethod: string | null; reference: string | null; notes: string; recordedBy?: string | null; recordedByPosition?: string | null }> };
+}
+
+export interface MemberMachineryPayment {
+  id: number;
+  amount: number;
+  paymentDate: string;
+  notes: string;
+  serviceId: number;
+  serviceType: string;
+  machineryName: string;
+  serviceDate: string;
+  feeAmount: number;
+  balanceAfter: number;
+  recordedBy: string | null;
+  recordedByPosition: string | null;
 }
 
 export async function fetchMyMemberData(): Promise<MyMemberData> {
-  const response = await apiGet<{ data: Omit<MyMemberData, 'loans' | 'payments' | 'loanRequests' | 'rentalRequests'> & { loans: Record<string, unknown>[]; payments: Record<string, unknown>[]; loanRequests: Record<string, unknown>[]; rentalRequests: Record<string, unknown>[] } }>('/api/members/me');
+  const response = await apiGet<{ data: Omit<MyMemberData, 'loans' | 'payments' | 'loanRequests' | 'rentalRequests' | 'machineryPayments'> & { loans: Record<string, unknown>[]; payments: Record<string, unknown>[]; loanRequests: Record<string, unknown>[]; rentalRequests: Record<string, unknown>[]; machineryPayments?: Record<string, unknown>[] } }>('/api/members/me');
   const data = response.data;
   return {
     ...data,
@@ -598,6 +623,9 @@ export async function fetchMyMemberData(): Promise<MyMemberData> {
     payments: data.payments.map(mapPayment),
     loanRequests: data.loanRequests.map(mapLoanRequest),
     rentalRequests: data.rentalRequests.map((row) => ({ ...(row as unknown as MemberRentalRequest), rentalFee: toNumber(row.rentalFee), duration: toNumber(row.duration) })),
+    machineryPayments: (data.machineryPayments ?? []).map((row) => ({
+      ...(row as unknown as MemberMachineryPayment), amount: toNumber(row.amount), feeAmount: toNumber(row.feeAmount), balanceAfter: toNumber(row.balanceAfter),
+    })),
   };
 }
 
@@ -767,8 +795,24 @@ export interface AuditLogEntry {
   new_values: Record<string, unknown> | null;
   target_user_id: number | null;
   ip_address: string | null;
+  /** The browser or app the action came from. */
+  user_agent?: string | null;
   status: string;
   created_at: string;
+  /** Anything else kept with the entry (the reason a sign-in failed, the member of an attendance, ...). */
+  details?: Record<string, unknown> | null;
+  /**
+   * Who the action was for: the member or account it concerns (a loan's
+   * borrower, a payment's member, the vendor of a confirmed sale), a
+   * non-member client or buyer by name, or an announcement's audience. Null
+   * when it is not about a particular person.
+   */
+  target_name?: string | null;
+  target_member_number?: string | null;
+  /** The account the action was on, when it was on an account (compare with user_id for one's own). */
+  target_account_id?: number | null;
+  target_role?: string | null;
+  target_kind?: 'member' | 'account' | 'name' | 'audience' | null;
 }
 
 export function fetchAdminAuditLogs(params: { page?: number; limit?: number; search?: string; action?: string; module?: string; role?: string; status?: string; userId?: string | number; fromDate?: string; toDate?: string } = {}) {
@@ -988,6 +1032,8 @@ export interface RentalRequest {
   rentalFee: number;
   notes: string;
   status: 'pending' | 'approved' | 'declined';
+  /** Why the office declined it (null for older declines and other statuses). */
+  reviewNotes?: string | null;
 }
 
 export interface MachineryOperation {
@@ -1021,7 +1067,9 @@ export async function fetchMachineryCatalog() {
   return data.machinery.map((row) => ({ ...(row as unknown as Machinery), dailyFee: toNumber(row.dailyFee) }));
 }
 
-export const reviewRentalRequest = (id: number, status: 'approved' | 'declined') => apiPatch<{ message: string }>(`/api/machinery/requests/${id}`, { status });
+/** A decline needs the reason; the member is told it by email, text and notification. */
+export const reviewRentalRequest = (id: number, status: 'approved' | 'declined', reason?: string) =>
+  apiPatch<{ message: string }>(`/api/machinery/requests/${id}`, status === 'declined' ? { status, reason } : { status });
 export const completeMachineryOperation = (id: number) => apiPatch<{ operation: MachineryOperation }>(`/api/machinery/operations/${id}`, { status: 'completed' });
 export const updateMachineryRequest = (id: string, payload: Partial<{ name: string; type: string; dailyFee: string | number; status: 'available' | 'maintenance'; lastMaintenance: string | null; nextMaintenance: string | null }>) => apiPatch<{ machinery: Machinery }>(`/api/machinery/${id}`, payload);
 /** Members book for themselves; the office books for a member (memberDatabaseId) or a non-member (clientCategory 'non_member' and clientName). */
@@ -1304,7 +1352,8 @@ export type AnnouncementAudience = 'All' | 'Members Only' | 'Admins Only' | 'Ven
 export interface AnnouncementRecord { id: number; title: string; message: string; audience: AnnouncementAudience; postedAt: string; postedBy?: string | null }
 
 export const fetchAnnouncements = () => apiGet<{ data: AnnouncementRecord[]; pagination: Pagination }>('/api/announcements?limit=50');
-export const createAnnouncementRequest = (payload: { title: string; message: string; audience: AnnouncementRecord['audience'] }) => apiPost<{ data: AnnouncementRecord }>('/api/announcements', payload);
+/** emailedMembers: how many members it is being emailed to (announcements for All or Members Only). */
+export const createAnnouncementRequest = (payload: { title: string; message: string; audience: AnnouncementRecord['audience'] }) => apiPost<{ data: AnnouncementRecord; emailedMembers?: number }>('/api/announcements', payload);
 export const deleteAnnouncementRequest = (id: number) => apiDelete<{ success: boolean }>(`/api/announcements/${id}`);
 export const markAnnouncementDoneRequest = (id: number) => apiPatch<{ success: boolean }>(`/api/announcements/${id}/done`, {});
 

@@ -3,8 +3,8 @@ import { Calculator, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { searchMembers, type Machinery, type MemberSuggestion, type RentalRequest } from '../../../app/services/authApi';
 import {
-  CROPPING_PERIODS, createService, fetchRates, quoteService, rateLabel, updateService,
-  type ClientCategory, type CroppingPeriod, type MachineryService, type ServicePayload, type ServiceQuote, type ServiceRate,
+  CROPPING_PERIODS, SEASON_LABELS, createService, fetchRates, isBagUnit, quoteService, rateLabel, seasonForDate, updateService,
+  type ClientCategory, type CroppingPeriod, type MachineryService, type Season, type ServicePayload, type ServiceQuote, type ServiceRate,
 } from '../../../app/services/machineryApi';
 import { errorMessage } from '../../../lib/api';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
@@ -31,6 +31,9 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     machineryId: service?.machineryId ?? defaultMachineryId ?? machines[0]?.id ?? '',
     serviceType: service?.serviceType ?? '',
     serviceDate: service?.serviceDate ?? dateOnlyToday(),
+    // Harvesting is charged by season; it follows the date until the office picks one.
+    season: (service?.season ?? seasonForDate(service?.serviceDate ?? dateOnlyToday())) as Season,
+    seasonPicked: Boolean(service?.season),
     croppingPeriod: (service?.croppingPeriod ?? '1st') as CroppingPeriod,
     year: String(service?.year ?? dateOnlyToday().slice(0, 4)),
     clientCategory: (service?.clientCategory ?? 'member') as ClientCategory,
@@ -72,23 +75,29 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     return () => { active = false; };
   }, [form.machineryId]);
 
-  // One entry per service type, with its unit and the rate on the chosen date.
+  // One entry per service type, with the rate on the chosen date for the
+  // chosen season (a seasonal rate first, else an all-year one) and its unit.
   const serviceTypes = useMemo(() => {
-    const types = new Map<string, { unit: ServiceRate['unit']; current: ServiceRate | null }>();
+    const types = new Map<string, { unit: ServiceRate['unit']; current: ServiceRate | null; seasonal: boolean }>();
     for (const rate of rates) {
-      const entry = types.get(rate.serviceType) ?? { unit: rate.unit, current: null };
-      if (rate.effectiveFrom <= form.serviceDate && (!rate.effectiveTo || rate.effectiveTo >= form.serviceDate)) entry.current = rate;
+      const entry = types.get(rate.serviceType) ?? { unit: rate.unit, current: null, seasonal: false };
+      if (rate.season) entry.seasonal = true;
+      const onDate = rate.effectiveFrom <= form.serviceDate && (!rate.effectiveTo || rate.effectiveTo >= form.serviceDate);
+      if (onDate && (rate.season === form.season || (!rate.season && !entry.current?.season))) entry.current = rate;
       types.set(rate.serviceType, entry);
     }
-    return [...types.entries()].map(([name, entry]) => ({ name, ...entry }));
-  }, [rates, form.serviceDate]);
+    return [...types.entries()].map(([name, entry]) => ({ name, ...entry, unit: entry.current?.unit ?? entry.unit }));
+  }, [rates, form.serviceDate, form.season]);
 
   useEffect(() => {
     if (!serviceTypes.length) return;
     if (!serviceTypes.some((type) => type.name.toLowerCase() === form.serviceType.toLowerCase())) set('serviceType', serviceTypes[0].name);
   }, [serviceTypes, form.serviceType]);
 
-  const unit = serviceTypes.find((type) => type.name.toLowerCase() === form.serviceType.toLowerCase())?.unit ?? null;
+  const chosenType = serviceTypes.find((type) => type.name.toLowerCase() === form.serviceType.toLowerCase());
+  const unit = chosenType?.unit ?? null;
+  const seasonal = Boolean(chosenType?.seasonal);
+  const bagUnit = isBagUnit(unit);
 
   useEffect(() => {
     const search = memberSearch.trim();
@@ -106,19 +115,22 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     const requestId = ++quoteRequest.current;
     if (!form.machineryId || !form.serviceType || !unit) { setQuote(null); setQuoting(false); return; }
     // Only what the fee depends on; the area of a harvest or per-day job is for the report.
+    const bagValue = form.bagMode === 'value' ? { bagValue: form.bagValue } : { kgPerBag: form.kgPerBag, pricePerKg: form.pricePerKg };
     const quantities = unit === 'per_ha' ? { areaHa: form.areaHa }
       : unit === 'per_day' ? { days: form.days }
-        : { totalBags: form.totalBags, ...(form.bagMode === 'value' ? { bagValue: form.bagValue } : { kgPerBag: form.kgPerBag, pricePerKg: form.pricePerKg }) };
+        // Wet-season harvesting is charged by area, in bags per hectare.
+        : unit === 'bags_per_ha' ? { areaHa: form.areaHa, ...bagValue }
+          : { totalBags: form.totalBags, ...bagValue };
     if (Object.values(quantities).some((value) => !String(value ?? '').trim())) { setQuote(null); setQuoteError(''); setQuoting(false); return; }
     setQuoting(true);
     const timer = window.setTimeout(() => {
-      quoteService({ machineryId: form.machineryId, serviceType: form.serviceType, serviceDate: form.serviceDate, clientCategory: form.clientCategory, ...quantities })
+      quoteService({ machineryId: form.machineryId, serviceType: form.serviceType, serviceDate: form.serviceDate, ...(seasonal ? { season: form.season } : {}), clientCategory: form.clientCategory, ...quantities })
         .then((result) => { if (requestId === quoteRequest.current) { setQuote(result); setQuoteError(''); } })
         .catch((error) => { if (requestId === quoteRequest.current) { setQuote(null); setQuoteError(errorMessage(error, 'Unable to compute the fee.')); } })
         .finally(() => { if (requestId === quoteRequest.current) setQuoting(false); });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [form.machineryId, form.serviceType, form.serviceDate, form.clientCategory, form.areaHa, form.days, form.totalBags, form.bagMode, form.bagValue, form.kgPerBag, form.pricePerKg, unit]);
+  }, [form.machineryId, form.serviceType, form.serviceDate, form.season, seasonal, form.clientCategory, form.areaHa, form.days, form.totalBags, form.bagMode, form.bagValue, form.kgPerBag, form.pricePerKg, unit]);
   const selectedMachine = machinery.find((machine) => machine.id === form.machineryId);
   const linkableRequests = rentalRequests.filter((request) => request.status === 'approved'
     && (request.machineryId === form.machineryId || machinery.find((machine) => machine.id === request.machineryId)?.parentMachineryId === form.machineryId));
@@ -133,6 +145,7 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
       machineryId: form.machineryId,
       serviceType: form.serviceType,
       serviceDate: form.serviceDate,
+      ...(seasonal ? { season: form.season } : {}),
       croppingPeriod: form.croppingPeriod,
       year: Number(form.year),
       clientCategory: form.clientCategory,
@@ -141,10 +154,10 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
       clientAddress: form.clientAddress.trim(),
       areaHa: form.areaHa.trim() || undefined,
       days: unit === 'per_day' ? form.days : undefined,
-      totalBags: unit === 'per_100_bags' ? form.totalBags : undefined,
-      bagValue: unit === 'per_100_bags' && form.bagMode === 'value' ? form.bagValue : undefined,
-      kgPerBag: unit === 'per_100_bags' && form.bagMode === 'kg' ? form.kgPerBag : undefined,
-      pricePerKg: unit === 'per_100_bags' && form.bagMode === 'kg' ? form.pricePerKg : undefined,
+      totalBags: bagUnit && form.totalBags.trim() ? form.totalBags : undefined,
+      bagValue: bagUnit && form.bagMode === 'value' ? form.bagValue : undefined,
+      kgPerBag: bagUnit && form.bagMode === 'kg' ? form.kgPerBag : undefined,
+      pricePerKg: bagUnit && form.bagMode === 'kg' ? form.pricePerKg : undefined,
       feeAmount: form.changeFee ? form.feeAmount : undefined,
       feeOverrideReason: form.changeFee ? form.feeOverrideReason.trim() : undefined,
       rentalRequestId: form.rentalRequestId ? Number(form.rentalRequestId) : null,
@@ -167,7 +180,9 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     ? `${Number(form.areaHa)} ha × ${peso(quote.rateUsed)}/ha = ${peso(quote.feeAmount)}`
     : quote.unit === 'per_day'
       ? `${form.days} day(s) × ${peso(quote.rateUsed)}/day = ${peso(quote.feeAmount)}`
-      : `${Number(form.totalBags)} bags × ${quote.rateUsed}/100 = ${bags(quote.feeBags)} × ${peso(quote.bagValue)} per bag = ${peso(quote.feeAmount)}`);
+      : quote.unit === 'bags_per_ha'
+        ? `${Number(form.areaHa)} ha × ${quote.rateUsed} bags/ha = ${bags(quote.feeBags)} × ${peso(quote.bagValue)} per bag = ${peso(quote.feeAmount)}`
+        : `${Number(form.totalBags)} bags × ${quote.rateUsed}/100 = ${bags(quote.feeBags)} × ${peso(quote.bagValue)} per bag = ${peso(quote.feeAmount)}`);
 
   return (
     <Modal
@@ -202,8 +217,16 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
               </select>
             </label>
             <label className={labelClass}>Service date
-              <input required type="date" max={dateOnlyToday()} value={form.serviceDate} onChange={(event) => { set('serviceDate', event.target.value); if (event.target.value) set('year', event.target.value.slice(0, 4)); }} className={inputClass} />
+              <input required type="date" max={dateOnlyToday()} value={form.serviceDate} onChange={(event) => { set('serviceDate', event.target.value); if (event.target.value) { set('year', event.target.value.slice(0, 4)); if (!form.seasonPicked) set('season', seasonForDate(event.target.value)); } }} className={inputClass} />
             </label>
+            {seasonal && (
+              <label className={labelClass}>Season
+                <select value={form.season} onChange={(event) => { set('season', event.target.value); set('seasonPicked', true); }} className={inputClass}>
+                  {(Object.keys(SEASON_LABELS) as Season[]).map((season) => <option key={season} value={season}>{SEASON_LABELS[season]}</option>)}
+                </select>
+                <span className="mt-1 block text-xs font-normal text-gray-500">Dry: bags per 100 harvested. Wet: bags per hectare.</span>
+              </label>
+            )}
             <label className={labelClass}>Cropping period
               <select value={form.croppingPeriod} onChange={(event) => set('croppingPeriod', event.target.value)} className={inputClass}>
                 {CROPPING_PERIODS.map((period) => <option key={period} value={period}>{period} cropping</option>)}
@@ -273,9 +296,9 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
             <legend className="px-1 text-sm font-semibold text-gray-900">Work done</legend>
             {!unit ? <p className="text-sm text-gray-500">Choose a service type to enter the area or bags.</p> : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {unit === 'per_100_bags' && (
-                  <label className={labelClass}>Total bags harvested
-                    <input required inputMode="decimal" value={form.totalBags} onChange={(event) => set('totalBags', event.target.value)} className={inputClass} placeholder="e.g. 100" />
+                {bagUnit && (
+                  <label className={labelClass}>Total bags harvested{unit === 'bags_per_ha' && <span className="font-normal text-gray-500"> · for the report</span>}
+                    <input required={unit === 'per_100_bags'} inputMode="decimal" value={form.totalBags} onChange={(event) => set('totalBags', event.target.value)} className={inputClass} placeholder="e.g. 100" />
                   </label>
                 )}
                 {unit === 'per_day' && (
@@ -283,10 +306,10 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
                     <input required type="number" min={1} step={1} value={form.days} onChange={(event) => set('days', event.target.value)} className={inputClass} />
                   </label>
                 )}
-                <label className={labelClass}>Area (ha){unit !== 'per_ha' && <span className="font-normal text-gray-500"> · for the report</span>}
-                  <input required={unit === 'per_ha'} inputMode="decimal" value={form.areaHa} onChange={(event) => set('areaHa', event.target.value)} className={inputClass} placeholder="e.g. 1.5" />
+                <label className={labelClass}>Area (ha){unit !== 'per_ha' && unit !== 'bags_per_ha' && <span className="font-normal text-gray-500"> · for the report</span>}
+                  <input required={unit === 'per_ha' || unit === 'bags_per_ha'} inputMode="decimal" value={form.areaHa} onChange={(event) => set('areaHa', event.target.value)} className={inputClass} placeholder="e.g. 1.5" />
                 </label>
-                {unit === 'per_100_bags' && (
+                {bagUnit && (
                   <div className="sm:col-span-2">
                     <div className="flex items-center gap-3 text-sm">
                       <span className="font-medium text-gray-700">Value of one bag</span>

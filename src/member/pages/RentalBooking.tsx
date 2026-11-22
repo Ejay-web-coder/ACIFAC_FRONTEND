@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,13 +8,17 @@ import { usePagination } from '../../app/components/common/usePagination';
 import { createRentalRequest, fetchMachineryCatalog, type Machinery } from '../../app/services/authApi';
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { useMyMemberData } from '../../lib/useMyMemberData';
-import { dateOnlyToday, formatDate } from '../../utils/dateTime';
+import { addDateOnlyDays, dateOnlyToday, formatDate } from '../../utils/dateTime';
 import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
 
 const statusLabel: Record<Machinery['status'], string> = { available: 'Available', 'in-use': 'In use today', maintenance: 'Under maintenance' };
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 // A per-service machine's fee is charged by the office after the work: per hectare or per 100 bags.
-const feeBasis = (machine: Machinery) => /harvest/i.test(`${machine.type} ${machine.name}`) ? 'per 100 bags of palay harvested' : 'per hectare worked';
+const isHarvester = (machine: Machinery | undefined) => Boolean(machine && /harvest/i.test(`${machine.type} ${machine.name}`));
+// Combined Harvester Policy: the harvest share is per 100 bags in the dry season and per hectare in the wet season.
+const feeBasis = (machine: Machinery) => isHarvester(machine) ? 'in bags of palay: per 100 bags harvested in the dry season, per hectare in the wet season' : 'per hectare worked';
+// "Magpa schedule sa manager 1-week bago araw ng harvest."
+const HARVESTER_NOTICE_DAYS = 7;
 // Days as the cooperative counts them: end date - start date, at least one.
 // "Oct 8–10", "Sep 30 – Oct 2" (and the year after it): one short range for the request list.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -81,6 +85,8 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 	};
 
 	const today = dateOnlyToday();
+	const harvester = isHarvester(selectedMachine);
+	const earliest = harvester ? addDateOnlyDays(today, HARVESTER_NOTICE_DAYS) : today;
 	const days = form.startDate && form.endDate && form.endDate >= form.startDate ? rentalDays(form.startDate, form.endDate) : null;
 	const inputClass = 'mt-2 w-full rounded-xl border border-gray-300 px-3 py-2';
 
@@ -108,8 +114,9 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 					{selectedMachine && <span className={`mt-1 block text-xs font-normal ${selectedMachine.status === 'maintenance' ? 'text-yellow-700' : 'text-green-700'}`}>{statusLabel[selectedMachine.status]}</span>}
 					{machinery.length === 0 && <span className="mt-1 block text-xs font-normal text-gray-500">No machinery is listed yet.</span>}
 				</label>
-				<label className="text-sm font-medium text-gray-700">Start Date<input required type="date" min={today} value={form.startDate} onChange={event => update('startDate', event.target.value)} className={inputClass} /></label>
-				<label className="text-sm font-medium text-gray-700">End Date<input required type="date" min={form.startDate || today} value={form.endDate} onChange={event => update('endDate', event.target.value)} className={inputClass} /></label>
+				<label className="text-sm font-medium text-gray-700">Start Date<input required type="date" min={earliest} value={form.startDate} onChange={event => update('startDate', event.target.value)} className={inputClass} />
+					{harvester && <span className="mt-1 block text-xs font-normal text-gray-600">Book a harvester at least one week before the harvest: from {formatDate(earliest)}.</span>}</label>
+				<label className="text-sm font-medium text-gray-700">End Date<input required type="date" min={form.startDate || earliest} value={form.endDate} onChange={event => update('endDate', event.target.value)} className={inputClass} /></label>
 				<label className="text-sm font-medium text-gray-700 sm:col-span-2">Purpose<input required value={form.purpose} onChange={event => update('purpose', event.target.value)} placeholder="e.g. Rice harvesting" className={inputClass} /></label>
 				<label className="text-sm font-medium text-gray-700 sm:col-span-2">Notes / Remarks<textarea rows={1} value={form.notes} onChange={event => update('notes', event.target.value)} className={`${inputClass} min-h-[2.625rem] resize-y`} placeholder="Optional details" /></label>
 			</div>
@@ -120,7 +127,7 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 						? (selectedMachine.pricingMode === 'per_day'
 							? <span>Estimated fee <strong className="tabular-nums text-gray-900">{peso(selectedMachine.dailyFee * days)}</strong> for {days} day{days === 1 ? '' : 's'}</span>
 							: <span>{days} day{days === 1 ? '' : 's'} reserved. The fee is {feeBasis(selectedMachine)}, charged by the office after the work.</span>)
-						: 'The cooperative approves each booking.'}
+						: harvester ? 'Members come first for the harvester. The cooperative approves each booking.' : 'The cooperative approves each booking.'}
 				</p>
 				<button type="submit" disabled={isSubmitting} className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60">{isSubmitting ? 'Sending...' : 'Request Rental'}</button>
 			</div>
@@ -147,7 +154,7 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-gray-100">
-								{rentalPages.pageItems.map(rental => <tr key={rental.id} className="hover:bg-gray-50">
+								{rentalPages.pageItems.map(rental => <Fragment key={rental.id}><tr className={`hover:bg-gray-50${rental.status === 'declined' && rental.reviewNotes ? ' border-b-0' : ''}`}>
 									{/* On a phone the name takes the room the other columns leave and ends in "…" when it is longer. */}
 									<td className="whitespace-nowrap px-2 py-3 font-medium text-gray-900 max-sm:w-full max-sm:max-w-0 sm:px-4"><span className="block truncate" title={rental.machineryName}>{rental.machineryName}</span></td>
 									<td className="whitespace-nowrap px-2 py-3 sm:px-4 text-gray-700">{dateRange(rental.startDate, rental.endDate).range}<span className="hidden sm:inline">, {dateRange(rental.startDate, rental.endDate).year}</span></td>
@@ -155,7 +162,12 @@ export function RentalBooking({ userRole }: { userRole: UserRole }) {
 									<td className="whitespace-nowrap px-2 py-3 sm:px-4 text-right tabular-nums text-gray-900">{rental.rentalFee > 0 ? wholePeso(rental.rentalFee) : <span className="text-xs text-gray-500">After the work</span>}</td>
 									<td className="hidden whitespace-nowrap px-2 py-3 sm:px-4 text-gray-600 md:table-cell">{formatDate(rental.submittedAt, true)}</td>
 									<td className="whitespace-nowrap px-2 py-3 sm:px-4"><span className={`rounded-full px-2 py-1 text-xs capitalize sm:px-2.5 ${rental.status === 'approved' ? 'bg-green-100 text-green-800' : rental.status === 'declined' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{rental.status}{rental.status === 'approved' && rental.operationStatus ? <span className="hidden sm:inline"> · {rental.operationStatus}</span> : null}</span></td>
-								</tr>)}
+								</tr>
+								{/* Why the office declined it, under the request, across the whole row. */}
+								{rental.status === 'declined' && rental.reviewNotes && <tr>
+									<td colSpan={6} className="px-2 pb-3 pt-0 text-xs text-red-700 sm:px-4"><span className="font-semibold">Reason declined:</span> <span className="whitespace-pre-line break-words">{rental.reviewNotes}</span></td>
+								</tr>}
+								</Fragment>)}
 							</tbody>
 						</table>
 					</div>

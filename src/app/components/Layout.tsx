@@ -33,6 +33,7 @@ import {
   Info,
   History,
   Copy,
+  ReceiptText,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -56,6 +57,9 @@ import { copyText } from '../../utils/clipboard';
 import { EmptyState, ListSkeleton } from './common/UiKit';
 import { clearProfilePhoto, useProfilePhoto } from '../../lib/profilePhoto';
 import { confirmAction } from './common/ConfirmDialog';
+import { AuditLogDetailsModal } from './AuditLogDetailsModal';
+import { auditActorName, auditTargetText } from './auditLogDetails';
+import { forgetPushOnSignOut } from '../../lib/pushNotifications';
 
 /** What the layout gives the pages under it (useOutletContext). */
 export interface LayoutOutletContext {
@@ -76,10 +80,15 @@ interface AuditLog {
   username: string | null;
   /** An administrator's position in the cooperative when they acted. */
   position: string | null;
+  /** Who the action was for (the member, account or client), '' when it is not about one person. */
+  target: string;
+  targetMemberNumber: string | null;
   action: string;
   resource: string;
   timestamp: string;
   details: string;
+  /** Everything the entry kept, for its details window. */
+  entry: AuditLogEntry;
 }
 
 const AUDIT_ACTION_WORDS: Record<string, string[]> = {
@@ -100,8 +109,8 @@ interface Announcement {
 
 const AUDIENCE_LABELS: Record<AnnouncementAudience, string> = { All: 'All', 'Members Only': 'Members only', 'Admins Only': 'Admins only', 'Vendors Only': 'Vendors only' };
 const AUDIENCE_HINTS: Record<AnnouncementAudience, string> = {
-  All: 'Everyone gets it in their notifications: members, administrators and Kadiwa vendors.',
-  'Members Only': 'Only members get it in their notifications.',
+  All: 'Everyone gets it in their notifications: members, administrators and Kadiwa vendors. Members also get it by email.',
+  'Members Only': 'Only members get it, in their notifications and by email.',
   'Admins Only': 'Only administrators get it in their notifications.',
   'Vendors Only': 'Only Kadiwa store vendors get it in their notifications.',
 };
@@ -124,6 +133,7 @@ const navigation: NavItem[] = [
   { name: 'My Profile', href: '/member-profile', icon: User, roles: ['member'], group: 'My Account', aliases: ['/member/profile'], short: 'Profile' },
   { name: 'Loan Status', href: '/loan-status', icon: PhilippinePeso, roles: ['member'], group: 'My Account', aliases: ['/member/loans'], short: 'Loans' },
   { name: 'Savings', href: '/member/savings', icon: PiggyBank, roles: ['member'], group: 'My Account', short: 'Savings' },
+  { name: 'Dues', href: '/member/dues', icon: ReceiptText, roles: ['member'], group: 'My Account', short: 'Dues' },
   { name: 'Attendance', href: '/member/attendance', icon: CalendarCheck, roles: ['member'], group: 'My Account', short: 'Attendance' },
   { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Transaction' },
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
@@ -131,6 +141,7 @@ const navigation: NavItem[] = [
   { name: 'Attendance', href: '/attendance', icon: CalendarCheck, roles: ['admin'], group: 'Members', aliases: ['/admin/attendance'], short: 'Attendance' },
   { name: 'Loans & Payments', href: '/loans', icon: PhilippinePeso, roles: ['admin'], group: 'Finance', aliases: ['/admin/loans'], short: 'Loans' },
   { name: 'Savings', href: '/admin/savings', icon: Wallet, roles: ['admin'], group: 'Finance', short: 'Savings' },
+  { name: 'Dues', href: '/admin/dues', icon: ReceiptText, roles: ['admin'], group: 'Finance', short: 'Dues' },
   { name: 'Machinery Operations', href: '/machinery', icon: Tractor, roles: ['admin'], group: 'Operations', aliases: ['/admin/machinery'], short: 'Machinery' },
   { name: 'Kadiwa Store', href: '/kadiwa', icon: Store, roles: ['admin'], group: 'Operations', aliases: ['/admin/kadiwa'], short: 'Kadiwa' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin'], group: 'Overview', aliases: ['/admin/analytics'], short: 'Analytics' },
@@ -181,8 +192,11 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   // One administrator's actions only ('' = everyone), and the administrators to choose from.
   const [auditLogsAdmin, setAuditLogsAdmin] = useState('');
   const [auditAdmins, setAuditAdmins] = useState<Array<{ id: number; label: string }>>([]);
+  // The entry whose details are open (clicked in the list).
+  const [openAuditLog, setOpenAuditLog] = useState<AuditLogEntry | null>(null);
+  const closeAuditLogDetails = useCallback(() => setOpenAuditLog(null), []);
   // Opened again later, the audit log shows everyone.
-  useEffect(() => { if (!showAuditLogs) setAuditLogsAdmin(''); }, [showAuditLogs]);
+  useEffect(() => { if (!showAuditLogs) { setAuditLogsAdmin(''); setOpenAuditLog(null); } }, [showAuditLogs]);
 
   // Notifications and announcements are stored in PostgreSQL and refreshed
   // through live updates, so they are the same on every device.
@@ -302,6 +316,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
     setIsLoggingOut(true);
 
     try {
+      // This device stops getting the account's phone notifications first, while still signed in.
+      await forgetPushOnSignOut();
       await logoutRequest();
       toast.success('Logged out successfully');
     } catch {
@@ -323,10 +339,11 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
       return;
     }
     try {
-      await createAnnouncementRequest({ title: announcementForm.title.trim(), message: announcementForm.message.trim(), audience: announcementForm.audience });
+      const posted = await createAnnouncementRequest({ title: announcementForm.title.trim(), message: announcementForm.message.trim(), audience: announcementForm.audience });
       setAnnouncementForm({ title: '', message: '', audience: 'All' });
       loadAnnouncements();
-      toast.success('Announcement posted successfully');
+      const emailed = posted.emailedMembers ?? 0;
+      toast.success(emailed ? `Announcement posted. Emailing it to ${emailed} ${emailed === 1 ? 'member' : 'members'}.` : 'Announcement posted successfully');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to post announcement.');
     }
@@ -367,8 +384,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
           .map((account) => ({ id: account.user_id, label: `${account.full_name || account.username}${account.position ? ` (${account.position})` : ''}` })));
 
         const rows = (response.data ?? []).map((row: AuditLogEntry): AuditLog => {
-          // Who did it by full name (e.g. "Krezner Allado"), else the username.
-          const userName = row.user_full_name || row.user_name_snapshot || (row.user_id ? `User #${row.user_id}` : 'System');
+          const userName = auditActorName(row);
           const summary = row.description || `${row.action} on ${row.entity_type || 'record'}`;
           const resource = row.entity_type ? `${row.entity_type} ${row.entity_id ?? ''}`.trim() : row.module;
           return {
@@ -376,10 +392,13 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             user: userName,
             username: row.user_full_name ? row.user_name_snapshot : null,
             position: row.user_position ?? null,
+            target: auditTargetText(row),
+            targetMemberNumber: row.target_member_number ?? null,
             action: row.action,
             resource,
             timestamp: row.created_at ? formatDateTime(row.created_at) : 'Unknown',
             details: summary,
+            entry: row,
           };
         });
         setAuditLogs(rows);
@@ -398,13 +417,9 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   }, [showAuditLogs, userRole, auditLogsAdmin]);
 
   const filteredAuditLogs = auditLogs.filter(log => {
-    const matchesSearch =
-      log.id.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
-      log.user.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
-      (log.username ?? '').toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
-      (log.position ?? '').toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
-      log.resource.toLowerCase().includes(auditLogsSearch.toLowerCase()) ||
-      log.details.toLowerCase().includes(auditLogsSearch.toLowerCase());
+    const search = auditLogsSearch.toLowerCase();
+    const matchesSearch = [log.id, log.user, log.username, log.position, log.target, log.targetMemberNumber, log.resource, log.details]
+      .some((text) => (text ?? '').toLowerCase().includes(search));
 
     // Actions are named like MEMBER_CREATED or DOCUMENT_UPLOADED: the filter matches the kind of action in the name.
     const matchesFilter = auditLogsFilter === 'all' || AUDIT_ACTION_WORDS[auditLogsFilter]?.some((word) => log.action.toUpperCase().includes(word));
@@ -768,7 +783,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search by ID, name, position, resource or details"
+                  placeholder="Search by ID, name, who it was for, resource or details"
                   value={auditLogsSearch}
                   onChange={(e) => setAuditLogsSearch(e.target.value)}
                   className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-9 pr-3 text-sm"
@@ -808,14 +823,17 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                   {/* Phones: one card per log entry */}
                   <ul className="divide-y divide-gray-100 md:hidden">
                     {filteredAuditLogs.map((log) => (
-                      <li key={log.id} className="px-4 py-3">
+                      <li key={log.id}>
+                        <button type="button" onClick={() => setOpenAuditLog(log.entry)} className="block w-full px-4 py-3 text-left hover:bg-green-50/40 focus-visible:bg-green-50/60 focus-visible:outline-none" aria-label={`Show the details of audit log #${log.id}`}>
                         <div className="flex items-center justify-between gap-2">
                           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${log.action === 'DELETE' ? 'bg-red-50 text-red-700 ring-red-200' : log.action === 'VIEW' ? 'bg-gray-100 text-gray-700 ring-gray-200' : 'bg-green-50 text-green-800 ring-green-200'}`}>{log.action}</span>
                           <span className="text-xs text-gray-400">#{log.id}</span>
                         </div>
                         <p className="mt-1.5 text-sm text-gray-900">{log.details}</p>
                         <p className="mt-1 text-xs text-gray-500"><span title={log.username ? `Username: ${log.username}` : undefined}>{log.user}</span>{log.position && <span className="font-medium text-green-800"> ({log.position})</span>} · {log.resource}</p>
+                        {log.target && <p className="text-xs text-gray-600">For: <span className="font-medium text-gray-800">{log.target}</span></p>}
                         <p className="text-xs text-gray-400">{log.timestamp}</p>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -827,14 +845,22 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 lg:px-6">ID</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">User</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Action</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Resource</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">For</th>
+                          <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 lg:table-cell">Resource</th>
                           <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 lg:table-cell">Timestamp</th>
                           <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 xl:table-cell">Details</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {filteredAuditLogs.map((log) => (
-                          <tr key={log.id} className="hover:bg-green-50/40">
+                          <tr
+                            key={log.id}
+                            tabIndex={0}
+                            onClick={() => setOpenAuditLog(log.entry)}
+                            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setOpenAuditLog(log.entry); } }}
+                            className="cursor-pointer hover:bg-green-50/40 focus-visible:bg-green-50/60 focus-visible:outline-none"
+                            aria-label={`Show the details of audit log #${log.id}`}
+                          >
                             <td className="px-4 py-3 font-mono text-xs text-gray-900 lg:px-6">{log.id}</td>
                             <td className="px-4 py-3 text-gray-600" title={log.username ? `Username: ${log.username}` : undefined}>{log.user}{log.position && <span className="block text-xs font-medium text-green-800">{log.position}</span>}</td>
                             <td className="px-4 py-3">
@@ -842,7 +868,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
                                 {log.action}
                               </span>
                             </td>
-                            <td className="max-w-[12rem] truncate px-4 py-3 text-gray-600">{log.resource}</td>
+                            <td className="max-w-[12rem] px-4 py-3 text-gray-600">{log.target ? <span className="line-clamp-2 break-words">{log.target}{log.targetMemberNumber && <span className="block text-xs text-gray-500">{log.targetMemberNumber}</span>}</span> : <span className="text-gray-400">—</span>}</td>
+                            <td className="hidden max-w-[12rem] truncate px-4 py-3 text-gray-600 lg:table-cell">{log.resource}</td>
                             <td className="hidden whitespace-nowrap px-4 py-3 text-gray-500 lg:table-cell">{log.timestamp}</td>
                             <td className="hidden max-w-xs truncate px-4 py-3 text-gray-600 xl:table-cell" title={log.details}>{log.details}</td>
                           </tr>
@@ -854,7 +881,8 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
               )}
             </div>
 
-            <div className="flex justify-end border-t border-gray-100 px-4 py-3 md:px-6">
+            <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 md:px-6">
+              <p className="hidden text-xs text-gray-500 sm:block">Click an entry to see all of its details.</p>
               <button
                 type="button"
                 onClick={() => setShowAuditLogs(false)}
@@ -866,6 +894,7 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
           </div>
         </div>
       )}
+      {showAuditLogs && openAuditLog && <AuditLogDetailsModal entry={openAuditLog} onClose={closeAuditLogDetails} />}
 
     </div>
   );

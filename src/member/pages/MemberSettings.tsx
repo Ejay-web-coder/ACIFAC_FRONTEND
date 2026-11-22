@@ -6,6 +6,7 @@ import { fetchCurrentUser, updateNotificationPreferencesRequest, updateProfileRe
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { ActivityLog } from './ActivityLog';
+import { PhoneNotifications } from '../../app/components/PhoneNotifications';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'activity';
 
@@ -184,10 +185,11 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Notification Preferences</h2>
                 <div className="space-y-4">
+                  <PhoneNotifications />
                   <div className="flex items-center justify-between gap-4 p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">Email Notifications</p>
-                      <p className="text-sm text-gray-600">Receive emails when savings, share capital, loans, payments or machinery rentals are recorded on your account</p>
+                      <p className="text-sm text-gray-600">Receive emails when savings, share capital, loans, payments or machinery rentals are recorded on your account, and the cooperative's announcements and the meetings and activities you must attend</p>
                       <p className="mt-1 text-xs text-gray-500">{notificationEmail ? <>Sent to <span className="font-medium text-gray-700">{notificationEmail}</span>. To change it, contact the ACIFAC office.</> : 'No email address is on file. Ask the ACIFAC office to add one to receive emails.'}</p>
                     </div>
                     <label className="relative inline-flex shrink-0 items-center cursor-pointer">
@@ -204,7 +206,7 @@ export function MemberSettings({ mustChangePassword = false }: { mustChangePassw
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">SMS Notifications</p>
-                      <p className="text-sm text-gray-600">Loan payment reminders by text message to your mobile number.</p>
+                      <p className="text-sm text-gray-600">Text messages to your mobile number when your loan application or machinery rental is approved or declined, and loan payment reminders.</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input

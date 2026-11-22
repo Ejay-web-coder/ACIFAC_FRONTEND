@@ -6,12 +6,18 @@ import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import { completeMachineryOperation, createRentalRequest, fetchAdminMachinery, reviewRentalRequest, searchMembers, updateMachineryRequest, type Machinery, type MachineryOperation, type RentalRequest, type RenterCategory, type MemberSuggestion } from '../../app/services/authApi';
-import { dateOnlyToday, formatDate } from '../../utils/dateTime';
+import { addDateOnlyDays, dateOnlyToday, formatDate } from '../../utils/dateTime';
+
+// Combined Harvester Policy: a harvester is scheduled at least one week before
+// the harvest, and members come first.
+const isHarvester = (machine: Machinery | undefined) => Boolean(machine && /harvest/i.test(`${machine.type} ${machine.name}`));
+const HARVESTER_NOTICE_DAYS = 7;
 import { useLiveRefresh } from '../../lib/liveUpdates';
 import { ServicesPanel } from '../components/machinery/ServicesPanel';
 import { ExpensesPanel } from '../components/machinery/ExpensesPanel';
 import { BagSalesPanel } from '../components/machinery/BagSalesPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
+import { DeclineRentalModal } from '../components/machinery/DeclineRentalModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
 import { ConditionBadge } from '../components/machinery/shared';
 import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
@@ -67,6 +73,8 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   // Approved bookings: those still to come or running today (soonest first), or the completed ones.
   const [bookingView, setBookingView] = useState<'current' | 'completed'>('current');
   const today = dateOnlyToday();
+  const formHarvester = isHarvester(machinery.find((machine) => machine.id === formData.machineryId));
+  const earliestStart = formHarvester ? addDateOnlyDays(today, HARVESTER_NOTICE_DAYS) : today;
   const shownBookings = bookingView === 'current'
     ? operations.filter((op) => op.status !== 'completed').sort((a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id)
     : operations.filter((op) => op.status === 'completed');
@@ -128,15 +136,22 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
     return () => document.removeEventListener('mousedown', closeSuggestions);
   }, []);
 
-  const updateRequestStatus = async (id: number, status: RentalRequest['status']) => {
+  // A decline asks for the reason first (DeclineRentalModal).
+  const [declining, setDeclining] = useState<RentalRequest | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const updateRequestStatus = async (id: number, status: 'approved' | 'declined', reason?: string) => {
+    setReviewing(true);
     try {
-      await reviewRentalRequest(id, status as 'approved' | 'declined');
+      await reviewRentalRequest(id, status, reason);
       // Leaves the pending list immediately; the reload brings the new operation.
-      setRentalRequests((current) => current.map((request) => request.id === id ? { ...request, status } : request));
+      setRentalRequests((current) => current.map((request) => request.id === id ? { ...request, status, reviewNotes: reason ?? null } : request));
+      setDeclining(null);
       void loadData();
       toast.success(status === 'approved' ? 'Booking approved' : 'Booking declined');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to review rental request.');
+    } finally {
+      setReviewing(false);
     }
   };
 
@@ -296,8 +311,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                   </p>
                   <p className="mt-1 text-xs text-gray-500">{formatDate(request.startDate)} to {formatDate(request.endDate)} · {request.duration} day(s){request.rentalFee > 0 ? ` · ₱${request.rentalFee.toLocaleString()}` : ''}</p>
                   {request.notes && <p className="mt-1 text-xs text-gray-500">Note: {request.notes}</p>}
+                  {request.status === 'declined' && request.reviewNotes && <p className="mt-1 text-xs text-red-700">Reason declined: {request.reviewNotes}</p>}
+                  {request.status === 'pending' && request.clientCategory === 'non_member' && isHarvester(machinery.find((machine) => machine.id === request.machineryId)) && (
+                    <p className="mt-1 text-xs text-amber-700">Members come first: a member's request for the same days is answered before this one.</p>
+                  )}
                 </div>
-                {request.status === 'pending' && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => updateRequestStatus(request.id, 'approved')} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Check className="h-4 w-4" />Approve</button><button type="button" onClick={() => updateRequestStatus(request.id, 'declined')} className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><X className="h-4 w-4" />Decline</button></div>}
+                {request.status === 'pending' && <div className="flex shrink-0 gap-2"><button type="button" onClick={() => updateRequestStatus(request.id, 'approved')} disabled={reviewing} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"><Check className="h-4 w-4" />Approve</button><button type="button" onClick={() => setDeclining(request)} disabled={reviewing} className="inline-flex items-center gap-1 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"><X className="h-4 w-4" />Decline</button></div>}
               </div>
               ))}
               <Pagination page={requestPages.page} totalPages={requestPages.totalPages} total={requestPages.total} pageSize={requestPages.pageSize} onPageChange={requestPages.setPage} onPageSizeChange={requestPages.setPageSize} label="requests" />
@@ -426,6 +445,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
       {showAddMachine && (
         <AddMachineModal machinery={machinery} onClose={() => setShowAddMachine(false)} onAdded={() => { setShowAddMachine(false); void loadData(); }} />
+      )}
+      {declining && (
+        <DeclineRentalModal request={declining} saving={reviewing} onCancel={() => setDeclining(null)} onDecline={(reason) => void updateRequestStatus(declining.id, 'declined', reason)} />
       )}
 
       {/* New Rental Modal Form */}
@@ -570,10 +592,12 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     type="date"
                     name="startDate"
                     value={formData.startDate}
+                    min={earliestStart}
                     onChange={handleFormChange}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"
                   />
+                  {formHarvester && <p className="mt-1 text-xs text-gray-500">Harvesters are booked at least one week ahead: from {formatDate(earliestStart)}.</p>}
                 </div>
 
                 <div>
@@ -584,6 +608,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                     type="date"
                     name="endDate"
                     value={formData.endDate}
+                    min={formData.startDate || earliestStart}
                     onChange={handleFormChange}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-600"

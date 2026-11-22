@@ -7,7 +7,14 @@ import type { Machinery, Pagination } from './authApi';
 
 export type CroppingPeriod = '1st' | '2nd' | '3rd';
 export type ClientCategory = 'member' | 'non_member';
-export type ServiceUnit = 'per_ha' | 'per_100_bags' | 'per_day';
+export type ServiceUnit = 'per_ha' | 'per_100_bags' | 'per_day' | 'bags_per_ha';
+// Combined Harvester Policy: harvesting is charged by season (dry: bags per 100, wet: bags per hectare).
+export type Season = 'dry' | 'wet';
+export const SEASON_LABELS: Record<Season, string> = { dry: 'Dry season (tag-araw)', wet: 'Wet season (tag-ulan)' };
+/** Harvest season of a date: June to November is the wet season, December to May the dry season. */
+export const seasonForDate = (date: string): Season => { const month = Number(date.slice(5, 7)); return month >= 6 && month <= 11 ? 'wet' : 'dry'; };
+/** Units whose fee is taken in bags of palay. */
+export const isBagUnit = (unit: ServiceUnit | null | undefined) => unit === 'per_100_bags' || unit === 'bags_per_ha';
 export type PaymentStatus = 'unpaid' | 'partial' | 'full';
 export type MachineCondition = 'operational' | 'non_operational' | 'always_repair' | 'idle';
 export type PricingMode = 'per_day' | 'per_service';
@@ -17,13 +24,14 @@ export const CROPPING_PERIODS: CroppingPeriod[] = ['1st', '2nd', '3rd'];
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = ['fuel', 'labor', 'repair_maintenance', 'other'];
 export const EXPENSE_LABELS: Record<ExpenseCategory, string> = { fuel: 'Fuel', labor: 'Labor', repair_maintenance: 'Repair & maintenance', other: 'Other' };
 export const CONDITION_LABELS: Record<MachineCondition, string> = { operational: 'Operational', non_operational: 'Non-operational', always_repair: 'Always under repair', idle: 'Idle' };
-export const UNIT_LABELS: Record<ServiceUnit, string> = { per_ha: 'per hectare', per_100_bags: 'bags per 100 bags', per_day: 'per day' };
+export const UNIT_LABELS: Record<ServiceUnit, string> = { per_ha: 'per hectare', per_100_bags: 'bags per 100 bags', per_day: 'per day', bags_per_ha: 'bags per hectare' };
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // "₱3,800.00/ha", "10 bags per 100", "₱600.00/day"
 export function rateLabel(unit: ServiceUnit, rate: number) {
   if (unit === 'per_100_bags') return `${rate.toLocaleString('en-PH', { maximumFractionDigits: 2 })} bags per 100`;
+  if (unit === 'bags_per_ha') return `${rate.toLocaleString('en-PH', { maximumFractionDigits: 2 })} bags per ha`;
   return `${peso(rate)}/${unit === 'per_ha' ? 'ha' : 'day'}`;
 }
 
@@ -32,6 +40,8 @@ export interface ServiceRate {
   machineryId: string;
   serviceType: string;
   unit: ServiceUnit;
+  /** null: all year. */
+  season: Season | null;
   memberRate: number;
   nonMemberRate: number;
   effectiveFrom: string;
@@ -53,6 +63,7 @@ export interface MachineryService {
   clientName: string;
   clientAddress: string;
   unit: ServiceUnit;
+  season: Season | null;
   areaHa: number;
   days: number | null;
   totalBags: number | null;
@@ -72,7 +83,7 @@ export interface MachineryService {
   lastPaymentDate: string | null;
 }
 
-export interface ServicePayment { id: number; serviceId: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null }
+export interface ServicePayment { id: number; serviceId: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null; recordedByPosition?: string | null }
 
 export interface MachineryExpense {
   id: number;
@@ -90,6 +101,7 @@ export interface PeriodBalance { id: number; machineryId: string; machineryName:
 
 export interface ServiceQuote {
   unit: ServiceUnit;
+  season: Season | null;
   rateUsed: number;
   feeAmount: number;
   feeBags: number | null;
@@ -101,6 +113,7 @@ export interface ServicePayload {
   machineryId: string;
   serviceType: string;
   serviceDate: string;
+  season?: Season;
   croppingPeriod: CroppingPeriod;
   year: number;
   clientCategory: ClientCategory;
@@ -151,7 +164,7 @@ const query = (params: Record<string, string | number | undefined | null>) => {
   return text ? `?${text}` : '';
 };
 
-export async function quoteService(payload: Pick<ServicePayload, 'machineryId' | 'serviceType' | 'serviceDate' | 'clientCategory' | 'areaHa' | 'days' | 'totalBags' | 'bagValue' | 'kgPerBag' | 'pricePerKg'>) {
+export async function quoteService(payload: Pick<ServicePayload, 'machineryId' | 'serviceType' | 'serviceDate' | 'season' | 'clientCategory' | 'areaHa' | 'days' | 'totalBags' | 'bagValue' | 'kgPerBag' | 'pricePerKg'>) {
   const data = await apiPost<{ quote: Record<string, unknown> }>('/api/machinery/services/quote', payload);
   const quote = data.quote;
   const rate = quote.rate as Record<string, unknown>;
@@ -251,7 +264,7 @@ export const updateBagSale = async (id: number, payload: BagSalePayload) => mapB
 export const deleteBagSale = (id: number) => apiDelete<{ message: string }>(`/api/machinery/bag-sales/${id}`);
 
 export const fetchRates = async (machineryId: string) => (await apiGet<{ rates: Record<string, unknown>[] }>(`/api/machinery/${encodeURIComponent(machineryId)}/rates`)).rates.map(mapRate);
-export const createRate = async (machineryId: string, payload: { serviceType: string; unit: ServiceUnit; memberRate: string; nonMemberRate: string; effectiveFrom: string; effectiveTo?: string | null }) =>
+export const createRate = async (machineryId: string, payload: { serviceType: string; unit: ServiceUnit; season?: Season | null; memberRate: string; nonMemberRate: string; effectiveFrom: string; effectiveTo?: string | null }) =>
   mapRate((await apiPost<{ rate: Record<string, unknown> }>(`/api/machinery/${encodeURIComponent(machineryId)}/rates`, payload)).rate);
 export const updateRate = async (rateId: number, payload: Partial<{ memberRate: string; nonMemberRate: string; effectiveFrom: string; effectiveTo: string | null }>) =>
   mapRate((await apiPatch<{ rate: Record<string, unknown> }>(`/api/machinery/rates/${rateId}`, payload)).rate);
@@ -309,7 +322,7 @@ export interface ReportMachine {
   deliveryDate: string | null;
   condition: MachineCondition | null;
   implements: Array<{ id: string; name: string }>;
-  rates: Array<{ serviceType: string; unit: ServiceUnit; memberRate: number; nonMemberRate: number; effectiveFrom: string; effectiveTo: string | null }>;
+  rates: Array<{ serviceType: string; unit: ServiceUnit; season?: Season | null; memberRate: number; nonMemberRate: number; effectiveFrom: string; effectiveTo: string | null }>;
   summary: {
     farmers: { member: number; nonMember: number; total: number };
     areaHa: { member: number; nonMember: number; total: number };

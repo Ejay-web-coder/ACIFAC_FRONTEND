@@ -93,7 +93,8 @@ export function monthsText(report: PhilmechReport) {
 
 export const priceText = (value: string) => (value.trim() === '' || Number.isNaN(Number(value)) ? '' : amountText(Number(value)));
 
-const UNIT_SUFFIX: Record<ServiceUnit, string> = { per_ha: '/ha', per_100_bags: ' bags/100 bags', per_day: '/day' };
+const UNIT_SUFFIX: Record<ServiceUnit, string> = { per_ha: '/ha', per_100_bags: ' bags/100 bags', per_day: '/day', bags_per_ha: ' bags/ha' };
+const SEASON_NAMES = { dry: 'dry season', wet: 'wet season' } as const;
 
 // The rate of service for members or non-members during the report months.
 // A rate that changed shows each amount in order ("2,800 → 3,800/ha"); a
@@ -101,7 +102,9 @@ const UNIT_SUFFIX: Record<ServiceUnit, string> = { per_ha: '/ha', per_100_bags: 
 export function rateText(machine: ReportMachine, member: boolean) {
   const byService = new Map<string, ReportMachine['rates']>();
   for (const rate of [...machine.rates].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))) {
-    byService.set(rate.serviceType, [...(byService.get(rate.serviceType) ?? []), rate]);
+    // Harvesting has a dry-season and a wet-season rate: each is named.
+    const key = rate.season ? `${rate.serviceType} (${SEASON_NAMES[rate.season]})` : rate.serviceType;
+    byService.set(key, [...(byService.get(key) ?? []), rate]);
   }
   return [...byService.entries()].map(([service, rates]) => {
     const amounts = rates.map((rate) => (member ? rate.memberRate : rate.nonMemberRate)).filter((amount, index, all) => index === 0 || amount !== all[index - 1]);
@@ -112,6 +115,7 @@ export function rateText(machine: ReportMachine, member: boolean) {
 
 function feeText(unit: ServiceUnit, rate: number) {
   if (unit === 'per_100_bags') return `${rateNumber(rate)}/100 bags`;
+  if (unit === 'bags_per_ha') return `${rateNumber(rate)} bags/ha`;
   if (unit === 'per_day') return `${rateNumber(rate)}/day`;
   return rateNumber(rate);
 }
@@ -214,7 +218,7 @@ export function cashflowGrid(report: PhilmechReport): Grid {
 export function clientGrid(machine: ReportMachine): Grid {
   const showService = machine.implements.length > 0 || new Set(machine.clients.map((client) => client.serviceType.toLowerCase())).size > 1;
   const totals = machine.clients.reduce((sum, client) => {
-    const paidInBags = client.unit === 'per_100_bags' && client.feeBags !== null;
+    const paidInBags = (client.unit === 'per_100_bags' || client.unit === 'bags_per_ha') && client.feeBags !== null;
     return {
       pesos: sum.pesos + (paidInBags ? 0 : cents(client.totalAmount)),
       bags: sum.bags + (paidInBags ? cents(client.feeBags ?? 0) : 0),
@@ -250,7 +254,7 @@ export function clientGrid(machine: ReportMachine): Grid {
       { cells: [heading('Partial'), heading('Full')] },
     ],
     body: machine.clients.map((client) => {
-      const paidInBags = client.unit === 'per_100_bags' && client.feeBags !== null;
+      const paidInBags = (client.unit === 'per_100_bags' || client.unit === 'bags_per_ha') && client.feeBags !== null;
       return {
         key: String(client.serviceId),
         cells: [

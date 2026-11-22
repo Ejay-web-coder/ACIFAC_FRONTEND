@@ -3,7 +3,7 @@
 // award), with a printable certificate for one member or a whole group, and
 // the report as a PDF.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Award, CalendarClock, FileDown, Medal, Printer, RotateCcw, Search, Trophy, Users } from 'lucide-react';
+import { AlertTriangle, Award, CalendarClock, CheckCircle2, FileDown, Medal, Printer, RotateCcw, Search, Trophy, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { ListSkeleton, Pagination, SectionCard, StatCard } from '../../../app/components/common/UiKit';
 import { usePagination } from '../../../app/components/common/usePagination';
@@ -12,7 +12,7 @@ import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { dateOnlyToday, formatDate, isDateOnly } from '../../../utils/dateTime';
 import { fetchLoyaltyReport, type LoyaltyMember } from '../../services/membersApi';
-import { certificateSigners, groupByTier, matchesSearch, nextMilestone, type CertificateSigners, type LoyaltyTier } from './loyaltyTiers';
+import { ATTENDANCE_CHOICES, certificateSigners, groupByTier, inGoodStanding, matchesSearch, nextMilestone, standingRule, type CertificateSigners, type LoyaltyTier } from './loyaltyTiers';
 
 const TIER_LOOK: Record<LoyaltyTier['key'], { icon: typeof Award; tone: 'dark' | 'green' | 'soft' | 'warning' }> = {
   '15': { icon: Trophy, tone: 'dark' },
@@ -25,8 +25,10 @@ const inputClass = 'mt-1 h-11 w-full rounded-xl border border-gray-300 bg-white 
 
 export function LoyaltyAwards() {
   const [awardDate, setAwardDate] = useState(dateOnlyToday());
+  // Good standing: the share of required activities attended in the last 12 months.
+  const [minAttendance, setMinAttendance] = useState(75);
   // The members and the date they were counted to (always loaded together).
-  const [report, setReport] = useState<{ asOf: string; members: LoyaltyMember[] } | null>(null);
+  const [report, setReport] = useState<{ asOf: string; minAttendance?: number; members: LoyaltyMember[] } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
@@ -34,13 +36,13 @@ export function LoyaltyAwards() {
   const [printing, setPrinting] = useState<string | null>(null);
   const latestRequest = useRef(0);
 
-  const load = async (asOf = awardDate) => {
+  const load = async (asOf = awardDate, attendance = minAttendance) => {
     if (!isDateOnly(asOf)) return;
     const request = ++latestRequest.current;
     setIsLoading(true);
     setLoadError(false);
     try {
-      const { data } = await fetchLoyaltyReport(asOf);
+      const { data } = await fetchLoyaltyReport(asOf, attendance);
       if (request === latestRequest.current) setReport(data);
     } catch (error) {
       console.error('Load loyalty awards failed:', error);
@@ -51,9 +53,9 @@ export function LoyaltyAwards() {
   };
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => { void load(awardDate); }, 300);
+    const timeout = window.setTimeout(() => { void load(awardDate, minAttendance); }, 300);
     return () => window.clearTimeout(timeout);
-  }, [awardDate]);
+  }, [awardDate, minAttendance]);
 
   // New, updated or terminated members change the groups.
   useLiveRefresh(['members'], () => { void load(); }, 800);
@@ -73,7 +75,9 @@ export function LoyaltyAwards() {
 
   const allGroups = useMemo(() => groupByTier(report?.members ?? []), [report]);
   const shownGroups = useMemo(() => groupByTier((report?.members ?? []).filter((member) => matchesSearch(member, search))), [report, search]);
-  const awardees = allGroups.filter(({ tier }) => tier.award).reduce((sum, group) => sum + group.members.length, 0);
+  // Only members in good standing receive an award.
+  const awardees = allGroups.filter(({ tier }) => tier.award).reduce((sum, group) => sum + group.members.filter(inGoodStanding).length, 0);
+  const heldBack = allGroups.filter(({ tier }) => tier.award).reduce((sum, group) => sum + group.members.filter((member) => !inGoodStanding(member)).length, 0);
 
   const run = async (key: string, task: () => Promise<void>, failure: string) => {
     setPrinting(key);
@@ -91,7 +95,7 @@ export function LoyaltyAwards() {
   };
   const printReport = () => {
     if (!report) return;
-    void run('report', () => (import('./loyaltyPdf')).then(({ downloadLoyaltyReportPdf }) => downloadLoyaltyReportPdf(report.members, report.asOf)), 'Unable to make the report.');
+    void run('report', () => (import('./loyaltyPdf')).then(({ downloadLoyaltyReportPdf }) => downloadLoyaltyReportPdf(report.members, report.asOf, report.minAttendance ?? minAttendance)), 'Unable to make the report.');
   };
 
   const showSkeleton = isLoading && !report;
@@ -100,7 +104,7 @@ export function LoyaltyAwards() {
     <div className="space-y-6">
       <SectionCard
         title="Loyalty Awards"
-        description="Active members grouped by full years of membership, counted from their membership date to the award date. 5, 10 and 15 years earn a loyalty award."
+        description={`Active members grouped by full years of membership, counted from their membership date to the award date. 5, 10 and 15 years earn a loyalty award for members in good standing: in the 12 months before the award date they ${standingRule(minAttendance)}.`}
         actions={(
           <button type="button" onClick={printReport} disabled={!report || printing !== null}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
@@ -108,11 +112,18 @@ export function LoyaltyAwards() {
           </button>
         )}
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <label className="block text-sm font-medium text-gray-700">
             Award date
             <input type="date" value={awardDate} onChange={(event) => setAwardDate(event.target.value)} className={inputClass} />
             <span className="mt-1 block text-xs font-normal text-gray-500">{isDateOnly(awardDate) ? 'Years are counted to this day; certificates are dated this day.' : 'Choose the award date.'}</span>
+          </label>
+          <label className="block text-sm font-medium text-gray-700">
+            Attendance needed
+            <select value={minAttendance} onChange={(event) => setMinAttendance(Number(event.target.value))} className={inputClass}>
+              {ATTENDANCE_CHOICES.map((value) => <option key={value} value={value}>{value ? `At least ${value}%` : 'Not required'}</option>)}
+            </select>
+            <span className="mt-1 block text-xs font-normal text-gray-500">Of the activities each member had to attend in the last 12 months</span>
           </label>
           <label className="block text-sm font-medium text-gray-700">
             Board Chairperson
@@ -144,6 +155,7 @@ export function LoyaltyAwards() {
       {report && !loadError && (
         <p className="-mt-3 text-sm text-gray-600">
           <span className="font-semibold text-gray-900">{awardees.toLocaleString('en-PH')}</span> of {report.members.length.toLocaleString('en-PH')} active members qualify for a loyalty award as of {formatDate(report.asOf)}.
+          {heldBack > 0 && <> {heldBack.toLocaleString('en-PH')} more {heldBack === 1 ? 'has' : 'have'} the years but {heldBack === 1 ? 'is' : 'are'} not in good standing.</>}
         </p>
       )}
 
@@ -166,6 +178,20 @@ export function LoyaltyAwards() {
   );
 }
 
+// Good standing, or why not (attendance, late or overdue loan payments).
+function Standing({ member }: { member: LoyaltyMember }) {
+  if (!member.standing) return null;
+  if (member.standing.goodStanding) {
+    return <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-green-700"><CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />Good standing{member.standing.attendanceRate !== null ? ` · ${member.standing.attendanceRate}% attendance` : ''}</span>;
+  }
+  return (
+    <span className="mt-0.5 block text-xs text-amber-800">
+      <span className="inline-flex items-center gap-1 font-semibold"><AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />Not in good standing</span>
+      <span className="block max-w-[22rem] text-amber-700">{member.standing.reasons.join('; ')}</span>
+    </span>
+  );
+}
+
 function TierSection({ tier, members, searching, resetKey, printing, onPrint }: {
   tier: LoyaltyTier;
   members: LoyaltyMember[];
@@ -176,6 +202,8 @@ function TierSection({ tier, members, searching, resetKey, printing, onPrint }: 
 }) {
   const pages = usePagination(members, { resetKey });
   const eligible = Boolean(tier.award);
+  // Certificates are printed for members in good standing only.
+  const qualified = members.filter(inGoodStanding);
   const groupKey = `group-${tier.key}`;
   const busy = printing !== null;
   const printOne = (member: LoyaltyMember) => onPrint([member], `member-${member.id}`, `Loyalty Certificate - ${member.name}`);
@@ -193,10 +221,10 @@ function TierSection({ tier, members, searching, resetKey, printing, onPrint }: 
           </span>
         )}
         description={tier.award ?? 'Not yet eligible. Each member is shown with the day they reach 5 years.'}
-        actions={eligible && members.length > 0 ? (
-          <button type="button" disabled={busy} onClick={() => onPrint(members, groupKey, `Loyalty Certificates - ${tier.award}`)}
+        actions={eligible && qualified.length > 0 ? (
+          <button type="button" disabled={busy} onClick={() => onPrint(qualified, groupKey, `Loyalty Certificates - ${tier.award}`)}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50">
-            <Printer className="h-4 w-4" />{printing === groupKey ? 'Preparing…' : `Print ${members.length === 1 ? 'certificate' : `all ${members.length} certificates`}`}
+            <Printer className="h-4 w-4" />{printing === groupKey ? 'Preparing…' : `Print ${qualified.length === 1 ? 'certificate' : `all ${qualified.length} certificates`}`}
           </button>
         ) : undefined}
       >
@@ -219,8 +247,9 @@ function TierSection({ tier, members, searching, resetKey, printing, onPrint }: 
                       <span className="block truncate text-sm text-gray-500">{member.memberNumber}</span>
                       <span className="block text-xs text-gray-500">Member since {formatDate(member.membershipDate, true)}</span>
                       {next && <span className="block text-xs text-green-700">{next.years} years on {formatDate(next.date, true)}</span>}
+                      <Standing member={member} />
                     </span>
-                    {eligible && (
+                    {eligible && inGoodStanding(member) && (
                       <button type="button" disabled={busy} onClick={() => printOne(member)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-green-700 hover:bg-green-50 disabled:opacity-50" aria-label={`Print the loyalty certificate of ${member.name}`} title="Print certificate">
                         <Printer className="h-5 w-5" />
                       </button>
@@ -239,6 +268,7 @@ function TierSection({ tier, members, searching, resetKey, printing, onPrint }: 
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Member Since</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Years</th>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Next Award</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Standing</th>
                     {eligible && <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Certificate</th>}
                   </tr>
                 </thead>
@@ -256,9 +286,10 @@ function TierSection({ tier, members, searching, resetKey, printing, onPrint }: 
                         <td className="whitespace-nowrap px-5 py-3 text-gray-600">
                           {next ? <span className="inline-flex items-center gap-1.5"><CalendarClock className="h-4 w-4 text-gray-400" aria-hidden="true" />{next.years} years on {formatDate(next.date, true)}</span> : 'Highest award reached'}
                         </td>
+                        <td className="px-5 py-3"><Standing member={member} /></td>
                         {eligible && (
                           <td className="whitespace-nowrap px-5 py-3 text-right">
-                            <button type="button" disabled={busy} onClick={() => printOne(member)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50" aria-label={`Print the loyalty certificate of ${member.name}`}>
+                            <button type="button" disabled={busy || !inGoodStanding(member)} title={inGoodStanding(member) ? undefined : 'Not in good standing'} onClick={() => printOne(member)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:opacity-50" aria-label={`Print the loyalty certificate of ${member.name}`}>
                               <Printer className="h-4 w-4" />{printing === `member-${member.id}` ? 'Preparing…' : 'Certificate'}
                             </button>
                           </td>

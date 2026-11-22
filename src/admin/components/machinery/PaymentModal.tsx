@@ -8,14 +8,17 @@ import { errorMessage } from '../../../lib/api';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { Modal, PaymentBadge, inputClass, labelClass, peso, primaryButton, secondaryButton } from './shared';
 import { confirmAction } from '../../../app/components/common/ConfirmDialog';
+import { PaymentReceiptModal } from '../receipt/PaymentReceiptModal';
+import { machineryPaymentReceipt, type PaymentReceipt } from '../receipt/paymentReceipt';
 
 /** What is being paid for: its fee, what has been paid so far and who pays. */
 interface Account { fee: number; amountPaid: number; balance: number; paymentStatus: PaymentStatus; payer: string }
-interface PaymentEntry { id: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null }
+interface PaymentEntry { id: number; amount: number; paymentDate: string; notes: string; recordedBy: string | null; recordedByPosition?: string | null }
 type Loaded = { account: Account; payments: PaymentEntry[] };
 
 // The payment window of a service: how to load, receive and void its payments.
-function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive, remove, onClose, onChanged }: {
+// receiptOf: the receipt of one payment (all the payments are given for the balance after it).
+function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive, remove, receiptOf, onClose, onChanged }: {
   initial: Account;
   description: string;
   feeLabel: string;
@@ -23,9 +26,11 @@ function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive
   load: () => Promise<Loaded>;
   receive: (payment: { amount: string; paymentDate: string; notes: string }) => Promise<Loaded>;
   remove: (paymentId: number) => Promise<Loaded>;
+  receiptOf?: (payment: PaymentEntry, payments: PaymentEntry[]) => PaymentReceipt;
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [account, setAccount] = useState(initial);
   const [payments, setPayments] = useState<PaymentEntry[] | null>(null);
   const [amount, setAmount] = useState(initial.balance > 0 ? initial.balance.toFixed(2) : '');
@@ -108,11 +113,15 @@ function PaymentsDialog({ initial, description, feeLabel, paidOff, load, receive
                 <p className="font-semibold tabular-nums text-gray-900">{peso(payment.amount)} <span className="font-normal text-gray-500">· {formatDate(payment.paymentDate)}</span></p>
                 {(payment.notes || payment.recordedBy) && <p className="truncate text-xs text-gray-500">{[payment.notes, payment.recordedBy && `by ${payment.recordedBy}`].filter(Boolean).join(' · ')}</p>}
               </div>
-              <button type="button" onClick={() => void voidEntry(payment)} disabled={busy} className="shrink-0 text-xs font-semibold text-red-700 hover:text-red-900">Void</button>
+              <div className="flex shrink-0 items-center gap-3">
+                {receiptOf && <button type="button" onClick={() => setReceipt(receiptOf(payment, payments))} className="text-xs font-semibold text-green-700 hover:text-green-900">Receipt</button>}
+                <button type="button" onClick={() => void voidEntry(payment)} disabled={busy} className="text-xs font-semibold text-red-700 hover:text-red-900">Void</button>
+              </div>
             </li>
           ))}
         </ul>
       )}
+      {receipt && <PaymentReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Modal>
   );
 }
@@ -127,6 +136,7 @@ export function PaymentModal({ service, onClose, onChanged }: { service: Machine
       load={async () => fromService(await fetchService(service.id))}
       receive={async (payment) => fromService(await receivePayment(service.id, payment))}
       remove={async (paymentId) => fromService(await voidPayment(service.id, paymentId))}
+      receiptOf={(payment, payments) => machineryPaymentReceipt(service, { ...payment, serviceId: service.id }, payments.map((entry) => ({ ...entry, serviceId: service.id })))}
       onClose={onClose} onChanged={onChanged} />
   );
 }

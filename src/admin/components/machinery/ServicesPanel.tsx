@@ -53,8 +53,10 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
   const services = data?.services ?? [];
 
   const workOf = (service: MachineryService) => service.unit === 'per_100_bags'
-    ? <>{bags(service.totalBags)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)}</span></>
-    : service.unit === 'per_day' ? `${service.days} day(s)` : hectares(service.areaHa);
+    ? <>{bags(service.totalBags)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)}{service.season === 'dry' ? ' · dry season' : ''}</span></>
+    : service.unit === 'bags_per_ha'
+      ? <>{hectares(service.areaHa)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)} · wet season</span></>
+      : service.unit === 'per_day' ? `${service.days} day(s)` : hectares(service.areaHa);
   const clientBadge = (service: MachineryService) => <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${service.clientCategory === 'member' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>{service.clientCategory === 'member' ? 'M' : 'NM'}</span>;
   const actionsOf = (service: MachineryService) => (
     <>

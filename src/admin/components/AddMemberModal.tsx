@@ -148,6 +148,15 @@ const REQUIRED_ID_SIGNATURES = 3;
 const APPLICANT_ID: OcrIdRequirement = { slot: 'holder', person: 'applicant', label: 'Applicant\'s valid ID', cardCapture: false };
 type PickedId = { file: File; source: 'upload' | 'camera' };
 
+// Membership Policy: "Age limit 18-65 years old", on the membership date.
+const MEMBER_MIN_AGE = 18;
+const MEMBER_MAX_AGE = 65;
+function ageOn(birthday: string, onDate: string) {
+  const [by, bm, bd] = birthday.split('-').map(Number);
+  const [y, m, d] = onDate.split('-').map(Number);
+  return y - by - (m < bm || (m === bm && d < bd) ? 1 : 0);
+}
+
 function calculateAgeFromBirthday(birthday: string) {
   if (!birthday) return '';
   const birthDate = new Date(`${birthday}T00:00:00`);
@@ -541,6 +550,11 @@ export function MemberForm({
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) next.email = 'Enter a valid email address.';
     if (!form.membershipAcceptanceDate) next.membershipAcceptanceDate = 'Acceptance date is required.';
     if (form.membershipFee !== '' && !(Number(form.membershipFee) >= 0)) next.membershipFee = 'Enter zero or more.';
+    // New members only: the age limit applies when joining (the server checks edits that change the dates).
+    if (isAdd && /^\d{4}-\d{2}-\d{2}$/.test(form.birthday) && /^\d{4}-\d{2}-\d{2}$/.test(form.membershipAcceptanceDate)) {
+      const age = ageOn(form.birthday, form.membershipAcceptanceDate);
+      if (age < MEMBER_MIN_AGE || age > MEMBER_MAX_AGE) next.birthday = `Members must be ${MEMBER_MIN_AGE} to ${MEMBER_MAX_AGE} years old when they join (Membership Policy). This applicant is ${age} on the acceptance date.`;
+    }
     if (isAdd) {
       if (!form.birthday) next.birthday = 'Birthday is required.';
       if (!form.civilStatus) next.civilStatus = 'Required.';

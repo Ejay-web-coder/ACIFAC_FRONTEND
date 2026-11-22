@@ -307,7 +307,7 @@ export function KadiwaStore({ userRole }: KadiwaStoreProps) {
           </div>
           <div className="relative w-full sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input type="search" value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} placeholder="Search product or size" aria-label="Search inventory by product or size" className="input-style pl-9" />
+            <input type="search" value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} placeholder="Search product or size" aria-label="Search inventory by product or size" className="w-full rounded-xl border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-600" />
           </div>
         </div>
 

@@ -677,7 +677,7 @@ export function SalesHistory({ period, onPeriodChange, refreshKey, branch = 'all
                 {sales.length > 3 && (
                   <div className="relative w-full sm:max-w-xs">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or sale ID" aria-label="Search sales by name or sale ID" className="input-style pl-9" />
+                    <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or sale ID" aria-label="Search sales by name or sale ID" className="w-full rounded-xl border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-600" />
                   </div>
                 )}
               </div>

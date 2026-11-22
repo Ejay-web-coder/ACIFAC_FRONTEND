@@ -3,7 +3,7 @@ import { CalendarX, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Machinery } from '../../../app/services/authApi';
 import {
-  CONDITION_LABELS, UNIT_LABELS, createRate, deleteRate, fetchRates, rateLabel, updateMachine, updateRate,
+  CONDITION_LABELS, SEASON_LABELS, UNIT_LABELS, createRate, deleteRate, fetchRates, rateLabel, updateMachine, updateRate,
   type MachineCondition, type PricingMode, type ServiceRate, type ServiceUnit,
 } from '../../../app/services/machineryApi';
 import { errorMessage } from '../../../lib/api';
@@ -25,7 +25,8 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
     nextMaintenance: machine.nextMaintenance ?? '',
   });
   const [rates, setRates] = useState<ServiceRate[]>([]);
-  const [rateForm, setRateForm] = useState({ serviceType: '', unit: 'per_ha' as ServiceUnit, memberRate: '', nonMemberRate: '', effectiveFrom: '', effectiveTo: '' });
+  // season '' = all year; harvesting has a dry-season and a wet-season rate (Combined Harvester Policy).
+  const [rateForm, setRateForm] = useState({ serviceType: '', unit: 'per_ha' as ServiceUnit, season: '' as '' | 'dry' | 'wet', memberRate: '', nonMemberRate: '', effectiveFrom: '', effectiveTo: '' });
   const [busy, setBusy] = useState(false);
   const implementsList = machinery.filter((row) => row.parentMachineryId === machine.id);
   // Only main machines can take implements, and a machine with implements stays a main machine.
@@ -73,7 +74,7 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
     event.preventDefault();
     setBusy(true);
     try {
-      await createRate(machine.id, { ...rateForm, serviceType: rateForm.serviceType.trim(), nonMemberRate: rateForm.nonMemberRate || rateForm.memberRate, effectiveTo: rateForm.effectiveTo || null });
+      await createRate(machine.id, { ...rateForm, serviceType: rateForm.serviceType.trim(), season: rateForm.season || null, nonMemberRate: rateForm.nonMemberRate || rateForm.memberRate, effectiveTo: rateForm.effectiveTo || null });
       toast.success('Rate added', { description: 'An open rate for the same service now ends the day before.' });
       setRateForm((current) => ({ ...current, memberRate: '', nonMemberRate: '', effectiveFrom: '', effectiveTo: '' }));
       loadRates();
@@ -172,7 +173,7 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
           <tbody className="divide-y divide-gray-100">
             {rates.map((rate) => (
               <tr key={rate.id}>
-                <td className="px-3 py-2 font-medium text-gray-900">{rate.serviceType}</td>
+                <td className="px-3 py-2 font-medium text-gray-900">{rate.serviceType}{rate.season && <span className="block text-xs font-normal text-gray-500">{SEASON_LABELS[rate.season]}</span>}</td>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">{rateLabel(rate.unit, rate.memberRate)}</td>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">{rateLabel(rate.unit, rate.nonMemberRate)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-gray-600">{formatDate(rate.effectiveFrom, true)} – {rate.effectiveTo ? formatDate(rate.effectiveTo, true) : 'onwards'}</td>
@@ -188,14 +189,25 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
         </table>
       </div>
 
-      <form onSubmit={addRate} className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-dashed border-gray-300 p-3 lg:grid-cols-7">
-        <p className="col-span-2 text-sm font-semibold text-gray-900 lg:col-span-7">Add a rate</p>
+      <form onSubmit={addRate} className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-dashed border-gray-300 p-3 lg:grid-cols-8">
+        <p className="col-span-2 text-sm font-semibold text-gray-900 lg:col-span-8">Add a rate</p>
         <label className={`${labelClass} col-span-2 lg:col-span-2`}>Service type
           <input required list="machine-service-types" value={rateForm.serviceType} onChange={(event) => {
-            const existing = rates.find((rate) => rate.serviceType.toLowerCase() === event.target.value.trim().toLowerCase());
+            const existing = rates.find((rate) => rate.serviceType.toLowerCase() === event.target.value.trim().toLowerCase() && (rate.season ?? '') === rateForm.season);
             setRateForm({ ...rateForm, serviceType: event.target.value, unit: existing?.unit ?? rateForm.unit });
           }} className={inputClass} placeholder="e.g. Rotavator" />
           <datalist id="machine-service-types">{serviceTypes.map((type) => <option key={type} value={type} />)}</datalist>
+        </label>
+        <label className={labelClass}>Season
+          <select value={rateForm.season} onChange={(event) => {
+            const season = event.target.value as '' | 'dry' | 'wet';
+            const existing = rates.find((rate) => rate.serviceType.toLowerCase() === rateForm.serviceType.trim().toLowerCase() && (rate.season ?? '') === season);
+            setRateForm({ ...rateForm, season, unit: existing?.unit ?? (season === 'wet' ? 'bags_per_ha' : season === 'dry' ? 'per_100_bags' : rateForm.unit) });
+          }} className={inputClass}>
+            <option value="">All year</option>
+            <option value="dry">{SEASON_LABELS.dry}</option>
+            <option value="wet">{SEASON_LABELS.wet}</option>
+          </select>
         </label>
         <label className={labelClass}>Unit
           <select value={rateForm.unit} onChange={(event) => setRateForm({ ...rateForm, unit: event.target.value as ServiceUnit })} className={inputClass}>
@@ -203,7 +215,7 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
           </select>
         </label>
         <label className={labelClass}>Member rate
-          <input required inputMode="decimal" value={rateForm.memberRate} onChange={(event) => setRateForm({ ...rateForm, memberRate: event.target.value })} className={inputClass} placeholder={rateForm.unit === 'per_100_bags' ? 'bags' : '₱'} />
+          <input required inputMode="decimal" value={rateForm.memberRate} onChange={(event) => setRateForm({ ...rateForm, memberRate: event.target.value })} className={inputClass} placeholder={rateForm.unit === 'per_100_bags' || rateForm.unit === 'bags_per_ha' ? 'bags' : '₱'} />
         </label>
         <label className={labelClass}>Non-member
           <input inputMode="decimal" value={rateForm.nonMemberRate} onChange={(event) => setRateForm({ ...rateForm, nonMemberRate: event.target.value })} className={inputClass} placeholder="same as member" />
@@ -214,7 +226,8 @@ export function MachineSettingsModal({ machine, machinery, onClose, onChanged }:
         <label className={labelClass}>To (optional)
           <input type="date" min={rateForm.effectiveFrom || undefined} value={rateForm.effectiveTo} onChange={(event) => setRateForm({ ...rateForm, effectiveTo: event.target.value })} className={inputClass} />
         </label>
-        <div className="col-span-2 flex justify-end lg:col-span-7"><button type="submit" disabled={busy} className={primaryButton}>Add rate</button></div>
+        <p className="col-span-2 text-xs text-gray-500 lg:col-span-6">A new rate ends the open rate of the same service and season the day before it starts. Harvesting: dry season in bags per 100 harvested, wet season in bags per hectare.</p>
+        <div className="col-span-2 flex justify-end"><button type="submit" disabled={busy} className={primaryButton}>Add rate</button></div>
       </form>
     </Modal>
   );

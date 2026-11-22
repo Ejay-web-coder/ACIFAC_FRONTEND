@@ -180,11 +180,31 @@ export interface LoyaltyMember {
   years: number;
   barangay: string;
   municipality: string;
+  /** Good standing for a loyalty award over the 12 months up to the award date. */
+  standing: LoyaltyStanding;
 }
 
-/** Loyalty awards: active members by years of membership on asOf (YYYY-MM-DD), longest membership first. */
-export function fetchLoyaltyReport(asOf: string) {
-  return apiGet<ApiResponse<{ asOf: string; members: LoyaltyMember[] }>>(`/api/members/loyalty?asOf=${encodeURIComponent(asOf)}`);
+export interface LoyaltyStanding {
+  goodStanding: boolean;
+  /** Attended ÷ required activities × 100; null with none to attend. */
+  attendanceRate: number | null;
+  attended: number;
+  eligible: number;
+  latePayments: number;
+  overdueLoans: number;
+  /** Why the member is not in good standing (empty when they are). */
+  reasons: string[];
+}
+
+/**
+ * Loyalty awards: active members by years of membership on asOf (YYYY-MM-DD),
+ * longest membership first, each with their good standing (minAttendance: the
+ * percent of required activities to attend in the last 12 months; 75 by default).
+ */
+export function fetchLoyaltyReport(asOf: string, minAttendance?: number) {
+  const params = new URLSearchParams({ asOf });
+  if (minAttendance !== undefined) params.set('minAttendance', String(minAttendance));
+  return apiGet<ApiResponse<{ asOf: string; minAttendance: number; members: LoyaltyMember[] }>>(`/api/members/loyalty?${params}`);
 }
 
 // Kept well under the backend limit (200) so each request finishes inside the serverless time limit.
@@ -331,7 +351,9 @@ export interface MemberSavingsEntry {
   paymentMethod: string;
   reference: string;
   notes: string;
+  /** The name of the person who recorded it, and their position. */
   recordedBy: string | null;
+  recordedByPosition?: string | null;
   createdAt?: string;
 }
 

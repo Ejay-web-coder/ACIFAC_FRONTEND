@@ -7,7 +7,7 @@ import { formatDate } from '../../../utils/dateTime';
 import type { LoyaltyMember } from '../../services/membersApi';
 import { INVOICE_HEADER } from '../loanInvoice';
 import { finalY, font, footers, PAGE, pdfText, tableStyles } from '../paperFormPdf';
-import { givenOn, groupByTier, tierOf, yearsPhrase, type CertificateSigners } from './loyaltyTiers';
+import { givenOn, groupByTier, inGoodStanding, standingRule, tierOf, yearsPhrase, type CertificateSigners } from './loyaltyTiers';
 
 const ADDRESS = INVOICE_HEADER.address;
 const GREEN: [number, number, number] = [22, 101, 52];
@@ -128,13 +128,13 @@ export async function downloadLoyaltyCertificates(members: LoyaltyMember[], awar
   (await buildLoyaltyCertificates(members, awardDate, signers, fileName)).save(`${fileName}.pdf`);
 }
 
-export async function downloadLoyaltyReportPdf(members: LoyaltyMember[], awardDate: string) {
-  const doc = await buildLoyaltyReportPdf(members, awardDate);
+export async function downloadLoyaltyReportPdf(members: LoyaltyMember[], awardDate: string, minAttendance?: number) {
+  const doc = await buildLoyaltyReportPdf(members, awardDate, minAttendance);
   doc.save(`Loyalty Awards Report ${awardDate}.pdf`);
 }
 
 /** The Loyalty Awards report: the count in each group, then the members of each award group. */
-export async function buildLoyaltyReportPdf(members: LoyaltyMember[], awardDate: string) {
+export async function buildLoyaltyReportPdf(members: LoyaltyMember[], awardDate: string, minAttendance?: number) {
   const [{ jsPDF }, { autoTable }, logo] = await Promise.all([import('jspdf'), import('jspdf-autotable'), loadPdfLogo()]);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   doc.setProperties({ title: `Loyalty Awards Report ${awardDate}`, creator: 'ACIFAC' });
@@ -151,13 +151,17 @@ export async function buildLoyaltyReportPdf(members: LoyaltyMember[], awardDate:
   doc.line(PAGE.left, 32.5, PAGE.right, 32.5);
   font(doc, 'normal', 9, 60);
   doc.text(`Active members by full years of membership as of ${formatDate(awardDate)}, counted from the membership date.`, PAGE.left, 39);
+  if (minAttendance !== undefined) {
+    font(doc, 'normal', 8, 80);
+    doc.text(pdfText(`An award needs good standing in the 12 months before: ${standingRule(minAttendance)}.`), PAGE.left, 43, { maxWidth: PAGE.right - PAGE.left });
+  }
 
   const styles = { ...tableStyles.styles, minCellHeight: 6.5 };
   const groups = groupByTier(members);
   autoTable(doc, {
     ...tableStyles,
     styles,
-    startY: 43,
+    startY: minAttendance !== undefined ? 50 : 43,
     head: [['Years of membership', 'Award', 'Members']],
     body: groups.map(({ tier, members: list }) => [pdfText(tier.label), tier.award ?? 'Not yet eligible', String(list.length)]),
     foot: [['Total active members', '', { content: String(members.length), styles: { halign: 'right' } }]],
@@ -171,16 +175,17 @@ export async function buildLoyaltyReportPdf(members: LoyaltyMember[], awardDate:
     if (!tier.award) continue;
     if (y > PAGE.bottom - 30) { doc.addPage(); y = 22; }
     font(doc, 'bold', 10.5);
-    doc.text(pdfText(`${tier.label}: ${tier.award} (${list.length})`), PAGE.left, y);
+    doc.text(pdfText(`${tier.label}: ${tier.award} (${list.filter(inGoodStanding).length} of ${list.length} in good standing)`), PAGE.left, y);
     autoTable(doc, {
       ...tableStyles,
       styles,
       startY: y + 2.5,
-      head: [['#', 'Member No.', 'Name', 'Member Since', 'Years', 'Barangay']],
+      head: [['#', 'Member No.', 'Name', 'Member Since', 'Years', 'Barangay', 'Standing']],
       body: list.length
-        ? list.map((member, index) => [String(index + 1), member.memberNumber, pdfText(member.name), formatDate(member.membershipDate, true), String(member.years), pdfText(member.barangay)])
-        : [[{ content: `No active member has reached ${tier.min} years yet.`, colSpan: 6, styles: { halign: 'center', textColor: 110 } }]],
-      columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 1: { cellWidth: 34 }, 3: { cellWidth: 27 }, 4: { cellWidth: 14, halign: 'center' }, 5: { cellWidth: 34 } },
+        ? list.map((member, index) => [String(index + 1), member.memberNumber, pdfText(member.name), formatDate(member.membershipDate, true), String(member.years), pdfText(member.barangay),
+          inGoodStanding(member) ? 'Good standing' : pdfText(member.standing.reasons.join('; '))])
+        : [[{ content: `No active member has reached ${tier.min} years yet.`, colSpan: 7, styles: { halign: 'center', textColor: 110 } }]],
+      columnStyles: { 0: { cellWidth: 9, halign: 'center' }, 1: { cellWidth: 30 }, 3: { cellWidth: 24 }, 4: { cellWidth: 12, halign: 'center' }, 5: { cellWidth: 26 }, 6: { cellWidth: 36 } },
     });
     y = finalY(doc) + 10;
   }

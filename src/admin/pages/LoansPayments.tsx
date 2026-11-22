@@ -15,6 +15,8 @@ import { FarmInputPricesModal } from '../components/FarmInputPricesModal';
 import { LoanPaymentsList } from '../components/LoanPaymentsList';
 import { LoanRequestFormModal } from '../components/LoanRequestFormModal';
 import { LoanReceiptModal } from '../components/LoanReceiptModal';
+import { PaymentReceiptModal } from '../components/receipt/PaymentReceiptModal';
+import { loanPaymentReceipt, type PaymentReceipt } from '../components/receipt/paymentReceipt';
 import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
 import { interestRateLabel, penaltyOn, splitPayment } from '../../lib/loanPolicy';
@@ -115,6 +117,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     : <span className={className}>{name}</span>;
   // The fully paid loan whose receipt is open.
   const [receiptLoan, setReceiptLoan] = useState<Loan | null>(null);
+  // The receipt of one payment that is open (any payment, not only a paid-off loan's).
+  const [paymentReceipt, setPaymentReceipt] = useState<PaymentReceipt | null>(null);
   const [paymentData, setPaymentData] = useState({
     amount: '',
     paymentDate: dateOnlyToday()
@@ -420,6 +424,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <div><dt className="text-gray-500">Balance</dt><dd className="font-medium tabular-nums text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
                     </dl>
                     {payment.penaltyPaid > 0 && <p className="mt-2 text-xs text-red-700">Late penalty: <span className="font-medium tabular-nums">{peso(payment.penaltyPaid)}</span> of this payment</p>}
+                    <button type="button" onClick={() => setPaymentReceipt(loanPaymentReceipt(payment))} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50">
+                      <Receipt className="h-4 w-4" />Receipt
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -435,6 +442,8 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Interest</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Penalty</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Balance</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Recorded by</th>
+                    <th className="px-4 py-3"><span className="sr-only">Receipt</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -448,6 +457,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       <td className="px-4 py-3 text-sm text-gray-600">₱{payment.interestPaid.toLocaleString()}</td>
                       <td className={`px-4 py-3 text-sm ${payment.penaltyPaid > 0 ? 'font-medium text-red-700' : 'text-gray-400'}`}>₱{payment.penaltyPaid.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">₱{payment.remainingBalance.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{payment.recordedBy || '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button type="button" onClick={() => setPaymentReceipt(loanPaymentReceipt(payment))} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-semibold text-green-700 hover:bg-green-50" aria-label={`Receipt of payment ${payment.id}`}>
+                          <Receipt className="h-4 w-4" />Receipt
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -681,7 +696,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 <LatePenaltyNotice loan={loan} className="mt-3" />
 
                 <h3 className="mt-5 text-sm font-bold uppercase tracking-wide text-gray-700">Payments</h3>
-                <div className="mt-2"><LoanPaymentsList loanId={loan.databaseId} version={loan} /></div>
+                <div className="mt-2"><LoanPaymentsList loanId={loan.databaseId} version={loan} onReceipt={(payment) => setPaymentReceipt(loanPaymentReceipt(payment))} /></div>
               </div>
               <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-6 py-4">
                 {canEdit && loan.status !== 'paid' && (<>
@@ -703,6 +718,7 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
       {showFarmInputs && <FarmInputPricesModal onClose={() => setShowFarmInputs(false)} />}
       {historyMember && <LoanHistoryModal memberId={historyMember.id} memberName={historyMember.name} onClose={() => setHistoryMember(null)} />}
       {receiptLoan && <LoanReceiptModal loan={receiptLoan} onClose={() => setReceiptLoan(null)} />}
+      {paymentReceipt && <PaymentReceiptModal receipt={paymentReceipt} onClose={() => setPaymentReceipt(null)} />}
     </div>
   );
 }

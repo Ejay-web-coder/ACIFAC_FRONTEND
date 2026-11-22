@@ -15,6 +15,11 @@ import { useLiveRefresh } from '../../lib/liveUpdates';
 import { memberDocumentPath, addShareContributionRequest, terminateMemberRequest, type MemberTermination, createMemberRequest, fetchArchivedMembers, fetchMemberRequest, fetchMemberStatistics, fetchMembers, replaceMemberDocumentsRequest, restoreMemberRequest, updateMemberRequest } from '../services/membersApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 
+// Membership Policy: a member who resigned cannot come back as a member. A
+// resignation recorded by mistake can be undone on the day it was recorded.
+const RESIGNED_NOTE = 'Resigned: cannot come back as a member (Membership Policy).';
+const resignedForGood = (member: { termination?: MemberTermination | null }) => member.termination?.type === 'voluntary' && member.termination.date !== dateOnlyToday();
+
 export interface Member {
   id: number;
   name: string;
@@ -502,11 +507,13 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                             </button>
                           </>
                         )}
-                        {canEdit && showArchivedMembers && (
+                        {canEdit && showArchivedMembers && (resignedForGood(member) ? (
+                          <p className="flex-1 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">{RESIGNED_NOTE}</p>
+                        ) : (
                           <button type="button" onClick={() => handleRestoreMember(member)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-green-300 bg-white px-3 text-sm font-semibold text-green-700 hover:bg-green-50" aria-label={`Restore ${member.name}`}>
-                            <RotateCcw className="h-4 w-4" />Restore
+                            <RotateCcw className="h-4 w-4" />{member.termination?.type === 'voluntary' ? 'Undo resignation' : 'Restore'}
                           </button>
-                        )}
+                        ))}
                       </div>
                     </div>
                   </details>
@@ -573,11 +580,15 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                               </button>
                             </>
                           )}
-                          {canEdit && showArchivedMembers && (
-                            <button type="button" onClick={() => handleRestoreMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-green-700 hover:bg-green-50" title="Restore member" aria-label={`Restore ${member.name}`}>
+                          {canEdit && showArchivedMembers && (resignedForGood(member) ? (
+                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-gray-300" title={RESIGNED_NOTE} aria-label={`${member.name} resigned and cannot be restored`}>
+                              <RotateCcw className="h-5 w-5" />
+                            </span>
+                          ) : (
+                            <button type="button" onClick={() => handleRestoreMember(member)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-green-700 hover:bg-green-50" title={member.termination?.type === 'voluntary' ? 'Undo the resignation (recorded today by mistake)' : 'Restore member'} aria-label={`Restore ${member.name}`}>
                               <RotateCcw className="h-5 w-5" />
                             </button>
-                          )}
+                          ))}
                         </div>
                       </td>
                     </tr>

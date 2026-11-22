@@ -4,6 +4,7 @@ import { Clock3, Lock, LogIn, LogOut } from 'lucide-react';
 import { ApiError } from '../../lib/api';
 import { closeLiveUpdates } from '../../lib/liveUpdates';
 import { clearProfilePhoto } from '../../lib/profilePhoto';
+import { forgetPushOnSignOut } from '../../lib/pushNotifications';
 import { logoutRequest, unlockSessionRequest, type SessionStatus } from '../services/authApi';
 
 // The lock screen after 20 minutes without activity (administrators and
@@ -80,6 +81,7 @@ export function SessionLock({ displayName, username, idleMinutes, onUnlocked }: 
 
   const logOut = async () => {
     setBusy('logout');
+    await forgetPushOnSignOut();
     await logoutRequest().catch(() => undefined);
     closeLiveUpdates();
     clearProfilePhoto();

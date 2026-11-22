@@ -26,6 +26,17 @@ export const LOYALTY_TIERS: LoyaltyTier[] = [
 
 export const LOYALTY_MILESTONES = [5, 10, 15];
 
+/**
+ * A loyalty award needs good standing over the 12 months up to the award date:
+ * attendance at the activities the member had to attend, and loans paid on time.
+ * A member whose standing is not known (an older report) counts as in good standing.
+ */
+export const inGoodStanding = (member: Pick<LoyaltyMember, 'standing'>) => member.standing?.goodStanding !== false;
+export const ATTENDANCE_CHOICES = [0, 50, 75, 90];
+export const standingRule = (minAttendance: number) => (minAttendance > 0
+  ? `attended at least ${minAttendance}% of the meetings and activities they had to attend, and paid loans on time (no overdue loan, no late penalty)`
+  : 'paid loans on time (no overdue loan, no late penalty)');
+
 export function tierOf(years: number): LoyaltyTier {
   return LOYALTY_TIERS.find((tier) => years >= tier.min) ?? LOYALTY_TIERS[LOYALTY_TIERS.length - 1];
 }

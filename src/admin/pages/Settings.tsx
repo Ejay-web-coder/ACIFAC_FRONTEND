@@ -8,6 +8,7 @@ import {
 import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { formatDateTime } from '../../utils/dateTime';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
+import { PhoneNotifications } from '../../app/components/PhoneNotifications';
 
 interface SettingsProps {
   userRole: UserRole;
@@ -210,6 +211,7 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-4">Notification Preferences</h2>
                 <div className="space-y-4">
+                  <PhoneNotifications />
                   <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                     <div>
                       <p className="font-medium text-gray-900">Email Notifications</p>

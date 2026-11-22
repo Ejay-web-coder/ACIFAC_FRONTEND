@@ -29,6 +29,8 @@ const Savings = lazy(() => import('../admin/pages/Savings').then((module) => ({ 
 const RentalBooking = lazy(() => import('../member/pages/RentalBooking').then((module) => ({ default: module.RentalBooking })));
 const MemberAttendance = lazy(() => import('../member/pages/MemberAttendance').then((module) => ({ default: module.MemberAttendance })));
 const MemberSavings = lazy(() => import('../member/pages/MemberSavings').then((module) => ({ default: module.MemberSavings })));
+const MemberDues = lazy(() => import('../member/pages/MemberDues').then((module) => ({ default: module.MemberDues })));
+const Dues = lazy(() => import('../admin/pages/Dues').then((module) => ({ default: module.Dues })));
 const AccountManagement = lazy(() => import('../admin/pages/AccountManagement').then((module) => ({ default: module.AccountManagement })));
 const Reports = lazy(() => import('../admin/pages/Reports').then((module) => ({ default: module.Reports })));
 const Attendance = lazy(() => import('../admin/pages/Attendance').then((module) => ({ default: module.Attendance })));
@@ -212,6 +214,8 @@ export default function App() {
           <Route path="/reports" element={<RoleRoute userRole={userRole} allowedRole="admin"><Reports /></RoleRoute>} />
           <Route path="/ocr" element={<RoleRoute userRole={userRole} allowedRole="admin"><OCRScanner userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/savings" element={<RoleRoute userRole={userRole} allowedRole="admin"><Savings userRole={userRole} view="total" /></RoleRoute>} />
+          <Route path="/admin/dues" element={<RoleRoute userRole={userRole} allowedRole="admin"><Dues /></RoleRoute>} />
+          <Route path="/member/dues" element={<RoleRoute userRole={userRole} allowedRole="member"><MemberDues /></RoleRoute>} />
           <Route path="/admin/dashboard" element={<RoleRoute userRole={userRole} allowedRole="admin"><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/members" element={<RoleRoute userRole={userRole} allowedRole="admin"><MembershipManagement userRole={userRole} /></RoleRoute>} />
           <Route path="/admin/attendance" element={<RoleRoute userRole={userRole} allowedRole="admin"><Attendance userRole={userRole} /></RoleRoute>} />
