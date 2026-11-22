@@ -9,7 +9,8 @@ import { SignaturePad } from '../../admin/components/SignaturePad';
 import type { OcrIdReading, OcrIdRequirement, VerificationCheck } from '../../admin/services/ocrApi';
 import { fetchFarmInputs, fetchLoanQuote, previewLoanIdChecks, readLoanId, type FarmInput, type LoanApplicationIds, type LoanIdHolder, type LoanQuote } from '../services/authApi';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
-import { interestRateLabel, LATE_PENALTY_RULE, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
+import { FIRST_LOAN_YEAR_HECTARES, interestRateLabel, LATE_PENALTY_RULE, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
+import { LoanProceeds } from './LoanProceeds';
 import { dateOnlyToday, formatDate } from '../../utils/dateTime';
 import type { Member } from '../../admin/pages/MembershipManagement';
 
@@ -203,12 +204,13 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
     if (!DECIMAL.test(farmArea)) { setQuote(null); return; }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      fetchLoanQuote({ farmArea, amount: (totalCents / 100).toFixed(2), term: LOAN_TERM })
+      // The borrower decides the 2-hectare limit of a first year of loans; the farm inputs, what comes out of the cash.
+      fetchLoanQuote({ farmArea, amount: (totalCents / 100).toFixed(2), inKindAmount: (inKindCents / 100).toFixed(2), term: LOAN_TERM, memberId: selectedMember?.id ?? null })
         .then((result) => { if (!cancelled) { setQuote(result); setQuoteError(''); } })
         .catch((error: Error) => { if (!cancelled) { setQuote(null); setQuoteError(error.message); } });
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [form.farmArea, form.term, totalCents]);
+  }, [form.farmArea, form.term, totalCents, inKindCents, selectedMember?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -564,16 +566,24 @@ export function LoanApplicationModal({ title, initialMember = null, allowMemberL
 
             <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
               <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-                <div className="flex justify-between gap-3"><dt>Maximum eligible ({area.toFixed(2)} ha × {money(MAX_LOAN_PER_HECTARE)})</dt><dd className="font-semibold">{money(maximum)}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Maximum eligible ({(quote?.eligibleFarmArea ?? area).toFixed(2)} ha × {money(MAX_LOAN_PER_HECTARE)})</dt><dd className="font-semibold">{money(maximum)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Interest ({interestRateLabel(DEFAULT_INTEREST_RATE)})</dt><dd className="font-semibold">{money(quote?.calculatedInterest ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>Total repayment</dt><dd className="font-bold">{money(quote?.totalRepayment ?? 0)}</dd></div>
                 <div className="flex justify-between gap-3"><dt>One payment, due 6 months after approval</dt><dd className="font-semibold">{money(quote?.totalRepayment ?? 0)}</dd></div>
               </dl>
+              {quote?.firstLoanYear?.inFirstYear && (
+                <p className="mt-2 text-xs text-emerald-900"><span className="font-semibold">First year of loans:</span> until {quote.firstLoanYear.endsOn ? formatDate(quote.firstLoanYear.endsOn) : '12 months after the first loan'}, a loan covers at most {FIRST_LOAN_YEAR_HECTARES} hectares{quote.firstLoanYear.limited ? `, so only ${FIRST_LOAN_YEAR_HECTARES} of the ${area.toFixed(2)} ha count` : ''}.</p>
+              )}
               <p className="mt-2 text-xs text-emerald-900"><span className="font-semibold">Late payment:</span> {LATE_PENALTY_RULE}</p>
               {errors.total ? <p className="mt-2 font-semibold text-red-700">{errors.total}</p>
                 : totalCents > maximum * 100 && quote ? <p className="mt-2 font-semibold text-red-700">The amount applied for is more than the maximum eligible amount.</p>
                   : <p className="mt-2 text-xs text-emerald-800">{quoteError || 'Calculated by ACIFAC’s server, the same way the loan is saved.'}</p>}
             </div>
+            {quote && totalCents > 0 && (
+              <div className="mt-2">
+                <LoanProceeds amount={totalCents / 100} inKind={inKindCents / 100} release={quote.deductions} preview you={!allowMemberLookup} />
+              </div>
+            )}
 
             <SectionBar>IV. Co-Maker Information</SectionBar>
             <FormTable cols="grid-cols-1">

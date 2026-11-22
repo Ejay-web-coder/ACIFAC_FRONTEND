@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api';
 import { formatDate } from '../../utils/dateTime';
 import { StatusBadge } from './common/UiKit';
 import { interestRateLabel } from '../../lib/loanPolicy';
+import { RecordedLoanProceeds, recordedRelease } from './LoanProceeds';
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -104,7 +105,8 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                             {loan.status !== 'paid' && loan.penaltyDays > 0 && <p className="mt-2 text-xs font-medium text-red-700">Late penalty: {peso(loan.penaltyDue)} due ({loan.penaltyDays} day{loan.penaltyDays === 1 ? '' : 's'} past the grace period) · due now {peso(loan.amountDueNow)}</p>}
                             {loan.status === 'overdue' && loan.penaltyPerDay > 0 && loan.penaltyDays === 0 && loan.graceEndsOn && <p className="mt-2 text-xs text-amber-800">Grace period until {formatDate(loan.graceEndsOn)}; then {peso(loan.penaltyPerDay)} a day until paid in full.</p>}
                             {loan.status === 'paid' && loan.penaltyPaid > 0 && <p className="mt-2 text-xs text-gray-600">Late penalty paid: {peso(loan.penaltyPaid)}</p>}
-                            {loan.renewedFromLoan && <p className="mt-2 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted; {peso(loan.netProceeds ?? 0)} released.</p>}
+                            {loan.renewedFromLoan && <p className="mt-2 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted{recordedRelease(loan) ? ' from the proceeds' : `; ${peso(loan.netProceeds ?? 0)} released`}.</p>}
+                            {recordedRelease(loan) && <div className="mt-2"><RecordedLoanProceeds loan={loan} /></div>}
                           </li>
                         );
                       })}

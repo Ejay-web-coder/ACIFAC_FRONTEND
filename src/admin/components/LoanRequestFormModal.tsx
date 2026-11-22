@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle, Clock, Eye, PenLine, RefreshCcw, X, XCircle
 import { toast } from 'sonner';
 import type { AdminLoanRequest } from '../../app/services/authApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
-import { interestRateLabel } from '../../lib/loanPolicy';
+import { FIRST_LOAN_YEAR_HECTARES, inFirstLoanYear, interestRateLabel, loanRelease, MAX_LOAN_PER_HECTARE } from '../../lib/loanPolicy';
+import { LoanProceeds } from '../../app/components/LoanProceeds';
 
 const peso = (value: number | string | null | undefined) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const text = (value: unknown) => (value === null || value === undefined || String(value).trim() === '' ? '' : String(value));
@@ -84,7 +85,13 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
     number: request.openLoanNumber, balance: request.openLoanBalance ?? 0, total: request.openLoanTotal, penalty: request.openLoanPenalty ?? 0,
     paidPercent: Math.floor(((request.openLoanTotal - (request.openLoanBalance ?? 0)) / request.openLoanTotal) * 1000) / 10,
   } : null;
-  const blocked = open ? open.paidPercent < MIN_PAID_PERCENT : false;
+  // In the member's first year of loans a loan covers at most 2 hectares: the server refuses more.
+  const firstYearMaximum = FIRST_LOAN_YEAR_HECTARES * MAX_LOAN_PER_HECTARE;
+  const overFirstYear = !decided && inFirstLoanYear(request.firstLoanYearEnds, dateOnlyToday()) && request.amount > firstYearMaximum;
+  const blocked = (open ? open.paidPercent < MIN_PAID_PERCENT : false) || overFirstYear;
+  // What approving would take from the proceeds, after a restructured loan's balance and penalty.
+  const carried = open ? Math.round((open.balance + open.penalty) * 100) / 100 : 0;
+  const release = loanRelease(request.amount, inKindTotal, carried);
   const address = [request.farmLocation, request.barangay, request.municipality, request.province].filter(Boolean).join(', ');
 
   return (
@@ -102,13 +109,19 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
         <div className="flex-1 overflow-y-auto bg-slate-100 px-2 py-4 sm:px-6">
           <div className="mx-auto max-w-3xl rounded-lg border border-slate-300 bg-white px-3 py-5 shadow-sm sm:px-6">
             {open && (
-              <p className={`flex items-start gap-2 rounded-xl p-3 text-sm ${blocked ? 'bg-red-50 text-red-800 ring-1 ring-red-100' : 'bg-amber-50 text-amber-900 ring-1 ring-amber-200'}`}>
-                {blocked ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0" />}
-                {blocked
+              <p className={`flex items-start gap-2 rounded-xl p-3 text-sm ${open.paidPercent < MIN_PAID_PERCENT ? 'bg-red-50 text-red-800 ring-1 ring-red-100' : 'bg-amber-50 text-amber-900 ring-1 ring-amber-200'}`}>
+                {open.paidPercent < MIN_PAID_PERCENT ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0" />}
+                {open.paidPercent < MIN_PAID_PERCENT
                   ? `This member still has loan ${open.number} open, only ${open.paidPercent}% paid. A new loan is possible once at least ${MIN_PAID_PERCENT}% is paid, so it cannot be approved yet.`
                   : open.penalty > 0
-                    ? `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed and its ${peso(open.penalty)} late penalty are deducted, so the member receives ${peso(Math.round((request.amount - open.balance - open.penalty) * 100) / 100)}.`
-                    : `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed is deducted, so the member receives ${peso(request.amount - open.balance)}.`}
+                    ? `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed and its ${peso(open.penalty)} late penalty are deducted from the new loan, with the savings, Capital Build-Up and PCIC insurance (see III. Loan Details).`
+                    : `Approving restructures loan ${open.number} (${open.paidPercent}% paid): the ${peso(open.balance)} still owed is deducted from the new loan, with the savings, Capital Build-Up and PCIC insurance (see III. Loan Details).`}
+              </p>
+            )}
+            {overFirstYear && (
+              <p className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-800 ring-1 ring-red-100">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {`This is in the member's first year of loans${request.firstLoanYearEnds ? ` (until ${formatDate(request.firstLoanYearEnds)})` : ' (their first loan)'}, when a loan covers at most ${FIRST_LOAN_YEAR_HECTARES} hectares: at most ${peso(firstYearMaximum)}. It cannot be approved for ${peso(request.amount)}; disapprove it so the member can apply again for up to that amount.`}
               </p>
             )}
 
@@ -168,6 +181,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                 <div><dt className="text-xs text-slate-500">Total repayment</dt><dd className="font-semibold tabular-nums text-green-700">{peso(request.totalRepayment)}</dd></div>
                 <div><dt className="text-xs text-slate-500">Term</dt><dd>{request.term} months, due at end of term</dd></div>
               </dl>
+              {!decided && <div className="mt-2"><LoanProceeds amount={request.amount} inKind={inKindTotal} carried={carried} release={release} preview /></div>}
             </Section>
 
             <Section title="IV. Co-Maker">
@@ -204,7 +218,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                     const tone = key === 'approved' ? 'border-green-600 bg-green-50 text-green-800' : key === 'declined' ? 'border-red-500 bg-red-50 text-red-800' : 'border-amber-500 bg-amber-50 text-amber-900';
                     return (
                       <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled && !on ? 'cursor-not-allowed opacity-50' : disabled ? 'cursor-default' : ''}`}
-                        title={disabled && !decided ? 'The member must pay at least 80% of the open loan first.' : undefined}>
+                        title={disabled && !decided ? (overFirstYear ? `In the first year of loans, at most ${FIRST_LOAN_YEAR_HECTARES} hectares (${peso(firstYearMaximum)}).` : 'The member must pay at least 80% of the open loan first.') : undefined}>
                         <input type="radio" name="office-decision" checked={on} disabled={disabled} onChange={() => setDecision(key)} className="h-4 w-4 accent-current" />{label}
                       </label>
                     );

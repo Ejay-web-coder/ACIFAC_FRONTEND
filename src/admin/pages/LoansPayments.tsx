@@ -21,6 +21,7 @@ import { usePagination } from '../../app/components/common/usePagination';
 import type { Member } from './MembershipManagement';
 import { interestRateLabel, penaltyOn, splitPayment } from '../../lib/loanPolicy';
 import { LatePenaltyNotice } from '../../app/components/LatePenaltyNotice';
+import { RecordedLoanProceeds, recordedRelease } from '../../app/components/LoanProceeds';
 
 type Loan = AdminLoan;
 type Payment = AdminPayment;
@@ -661,8 +662,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                   {loan.borrowerSignature && <button type="button" onClick={() => openLoanSignature('loans', loan.databaseId)} className="ml-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline"><PenLine className="h-3.5 w-3.5" />Borrower&apos;s signature</button>}
                 </p>
                 {loan.renewedFromLoan && (
-                  <p className="-mt-2 mb-3 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted; {peso(loan.netProceeds ?? 0)} released.</p>
+                  <p className="-mt-2 mb-3 text-xs text-amber-800">Restructured from {loan.renewedFromLoan}: {peso(loan.renewalDeduction ?? 0)} still owed on it was deducted{recordedRelease(loan) ? ' from the proceeds' : `; ${peso(loan.netProceeds ?? 0)} released`}.</p>
                 )}
+                {recordedRelease(loan) && <div className="mb-3"><RecordedLoanProceeds loan={loan} /></div>}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-gray-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                   <div>
                     <p className="text-xs text-gray-500">Loan Amount</p>

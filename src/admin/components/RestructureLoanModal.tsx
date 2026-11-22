@@ -3,15 +3,17 @@ import { AlertTriangle, CalendarClock, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { restructureAdminLoan, type AdminLoan } from '../../app/services/authApi';
 import { errorMessage } from '../../lib/api';
-import { formatDate } from '../../utils/dateTime';
-import { interestRateLabel, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
+import { dateOnlyToday, formatDate } from '../../utils/dateTime';
+import { FIRST_LOAN_YEAR_HECTARES, inFirstLoanYear, interestRateLabel, loanRelease, MAX_LOAN_PER_HECTARE, POLICY_INTEREST_RATE } from '../../lib/loanPolicy';
+import { LoanProceeds } from '../../app/components/LoanProceeds';
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const cents = (value: number) => Math.round(value * 100);
 // The loan policy: restructuring once 80% is paid; a new loan of at most
-// ₱50,000 a hectare at 2.5% interest a month for 6 months (15%).
+// ₱50,000 a hectare (2 hectares in the member's first year of loans) at 2.5%
+// interest a month for 6 months (15%), less the deductions at release.
 const MIN_PAID_PERCENT = 80;
-const MAX_PER_HECTARE = 50000;
+const MAX_PER_HECTARE = MAX_LOAN_PER_HECTARE;
 const POLICY_RATE = POLICY_INTEREST_RATE;
 
 /**
@@ -43,11 +45,16 @@ export function RestructureLoanModal({ loan, onClose, onDone }: { loan: AdminLoa
   const neededCents = Math.max(0, Math.ceil((totalCents * MIN_PAID_PERCENT) / 100) - paidCents);
 
   const areaValid = /^\d+(\.\d{1,2})?$/.test(farmArea.trim()) && Number(farmArea) > 0;
-  const maxCents = areaValid ? Math.round(Number(farmArea) * MAX_PER_HECTARE * 100) : 0;
+  // In the member's first year of loans, at most 2 hectares count.
+  const firstYear = inFirstLoanYear(loan.firstLoanYearEnds, dateOnlyToday());
+  const loanArea = areaValid ? (firstYear ? Math.min(Number(farmArea), FIRST_LOAN_YEAR_HECTARES) : Number(farmArea)) : 0;
+  const maxCents = Math.round(loanArea * MAX_PER_HECTARE * 100);
   const amountValid = /^\d+(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0;
   const amountCents = amountValid ? cents(Number(amount)) : 0;
   const amountError = !amountValid || !areaValid ? ''
-    : amountCents > maxCents ? `At most ${peso(maxCents / 100)} for ${Number(farmArea)} hectare${Number(farmArea) === 1 ? '' : 's'}.`
+    : amountCents > maxCents ? (loanArea < Number(farmArea)
+      ? `At most ${peso(maxCents / 100)}: in the member's first year of loans${loan.firstLoanYearEnds ? ` (until ${formatDate(loan.firstLoanYearEnds)})` : ''}, a loan covers at most ${FIRST_LOAN_YEAR_HECTARES} hectares.`
+      : `At most ${peso(maxCents / 100)} for ${Number(farmArea)} hectare${Number(farmArea) === 1 ? '' : 's'}.`)
     : amountCents <= owedCents ? `Must be more than the ${peso(owedCents / 100)} still owed${penaltyCents > 0 ? ' (balance and late penalty)' : ''}, which is deducted from it.`
     : '';
   // Same rounding as the server: interest rounded to the centavo.
@@ -61,7 +68,7 @@ export function RestructureLoanModal({ loan, onClose, onDone }: { loan: AdminLoa
     try {
       const { loan: created } = await restructureAdminLoan(loan.databaseId, { amount: amount.trim(), farmArea: farmArea.trim(), reason: reason.trim() });
       toast.success('Loan restructured', {
-        description: `${loan.memberName}: ${loan.id} is closed. New loan ${created.id} of ${peso(created.amount)}; ${peso(created.netProceeds ?? 0)} released, due by ${formatDate(created.dueDate)}.`,
+        description: `${loan.memberName}: ${loan.id} is closed. New loan ${created.id} of ${peso(created.amount)}; ${peso(created.cashReleased ?? created.netProceeds ?? 0)} released in cash${created.paidAtRelease ? ` (${peso(created.paidAtRelease)} to pay at release)` : ''}, due by ${formatDate(created.dueDate)}.`,
       });
       onDone(created);
     } catch (error) {
@@ -110,25 +117,26 @@ export function RestructureLoanModal({ loan, onClose, onDone }: { loan: AdminLoa
                     <input inputMode="decimal" required value={farmArea} onChange={(event) => setFarmArea(event.target.value)} className={`mt-1 ${inputClass}`} aria-invalid={(farmArea !== '' && !areaValid) || undefined} />
                   </label>
                 </div>
-                <p className="-mt-2 text-xs text-gray-500">{amountError ? <span className="text-red-700">{amountError}</span> : `At most ₱${MAX_PER_HECTARE.toLocaleString('en-PH')} a hectare${areaValid ? `: ${peso(maxCents / 100)}` : ''}.`}</p>
+                <p className="-mt-2 text-xs text-gray-500">{amountError ? <span className="text-red-700">{amountError}</span> : `At most ₱${MAX_PER_HECTARE.toLocaleString('en-PH')} a hectare${firstYear ? `, ${FIRST_LOAN_YEAR_HECTARES} hectares at most in the member's first year of loans` : ''}${areaValid ? `: ${peso(maxCents / 100)}` : ''}.`}</p>
 
                 <label className="block text-sm font-medium text-gray-700">Reason *
                   <textarea required rows={2} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} className={`mt-1 ${inputClass}`} placeholder="e.g., Next cropping season" />
                 </label>
 
                 {amountValid && areaValid && !amountError && (
-                  <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                    <p className="font-semibold">New loan</p>
-                    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
-                      <dt>Loan amount</dt><dd className="text-right tabular-nums">{peso(amountCents / 100)}</dd>
-                      <dt>Less still owed on {loan.id}</dt><dd className="text-right tabular-nums">− {peso(loan.balance)}</dd>
-                      {penaltyCents > 0 && <><dt>Less its late penalty</dt><dd className="text-right tabular-nums">− {peso(loan.penaltyDue)}</dd></>}
-                      <dt className="font-semibold">Released to the member</dt><dd className="text-right font-semibold tabular-nums">{peso((amountCents - owedCents) / 100)}</dd>
-                      <dt className="pt-1">Interest ({interestRateLabel(POLICY_RATE)})</dt><dd className="pt-1 text-right tabular-nums">{peso(interestCents / 100)}</dd>
-                      <dt>To repay</dt><dd className="text-right tabular-nums">{peso((amountCents + interestCents) / 100)}</dd>
-                    </dl>
-                    <p className="mt-2 flex items-start gap-1.5 text-xs text-green-800"><CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Due in full about 6 months from today, on a day the office receives payments.</p>
-                  </div>
+                  <>
+                    {/* What is owed on the old loan comes off first, then the policy's deductions. */}
+                    <LoanProceeds amount={amountCents / 100} carried={owedCents / 100} release={loanRelease(amountCents / 100, 0, owedCents / 100)} preview />
+                    <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+                      <p className="font-semibold">New loan</p>
+                      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
+                        <dt>Loan amount</dt><dd className="text-right tabular-nums">{peso(amountCents / 100)}</dd>
+                        <dt>Interest ({interestRateLabel(POLICY_RATE)})</dt><dd className="text-right tabular-nums">{peso(interestCents / 100)}</dd>
+                        <dt className="font-semibold">To repay</dt><dd className="text-right font-semibold tabular-nums">{peso((amountCents + interestCents) / 100)}</dd>
+                      </dl>
+                      <p className="mt-2 flex items-start gap-1.5 text-xs text-green-800"><CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />Due in full about 6 months from today, on a day the office receives payments.</p>
+                    </div>
+                  </>
                 )}
                 <p className="text-xs text-gray-500">The amount still owed{penaltyCents > 0 ? ', with its late penalty,' : ''} is recorded as the last payment of {loan.id}, which is then fully paid. Installments that were already past due still count as late in the member&apos;s credit history. The member is notified.</p>
               </>

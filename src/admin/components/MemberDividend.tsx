@@ -129,6 +129,7 @@ export function DividendBreakdown({ dividend }: { dividend: MemberDividend }) {
             ['Net Income: Kadiwa Store', dividend.netIncomeParts.kadiwa],
             ['Net Income: Machinery', dividend.netIncomeParts.machinery],
             ['Net Income: Loan interest', dividend.netIncomeParts.loans],
+            ['Net Income: Others (fees, fines, other income)', dividend.netIncomeParts.others ?? 0],
             ['Total Net Income', dividend.netIncome, 'total'],
             ...dividend.statutoryFunds.map((fund): [string, number, 'less'] => [`${fund.label} (${fund.percent}%)`, fund.amount, 'less']),
             [`Net Surplus (${100 - dividend.rates.statutory}% of Net Income)`, dividend.netSurplus, 'total'],

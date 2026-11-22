@@ -15,6 +15,51 @@ export const GRACE_PERIOD_DAYS = 5;
 export const PENALTY_PER_DAY = 100;
 export const LATE_PENALTY_RULE = `Pay within the ${LOAN_TERM_MONTHS}-month term. After the due date there is a ${GRACE_PERIOD_DAYS}-day grace period; from then on a ₱${PENALTY_PER_DAY} penalty is added for each day until the loan is paid in full.`;
 
+// Loan policy (Polisiya sa Pagpapautang, ALERT-ARBOs), as the backend applies it
+// (services/loanDeductions.js; the server's figures are the ones that count):
+//  - in a member's first year of loans, counted 12 months from their first
+//    loan, a loan covers at most 2 hectares (₱100,000 at ₱50,000 a hectare);
+//  - taken from the proceeds at release: ₱500 savings for a loan of ₱50,000 or
+//    less, ₱1,000 above; 2% Capital Build-Up (share capital up to the member's
+//    10% limit, the rest savings); ₱50 PCIC life insurance. They come out of
+//    the cash part; what it cannot cover is paid at the office at release.
+export const MAX_LOAN_PER_HECTARE = 50000;
+export const FIRST_LOAN_YEAR_HECTARES = 2;
+export const SAVINGS_DEDUCTION_UP_TO = 50000;
+export const SAVINGS_DEDUCTION_SMALL = 500;
+export const SAVINGS_DEDUCTION_LARGE = 1000;
+export const CAPITAL_BUILD_UP_PERCENT = 2;
+export const PCIC_INSURANCE = 50;
+export const DEDUCTIONS_RULE = `Taken from the proceeds: ₱${SAVINGS_DEDUCTION_SMALL} savings (₱${SAVINGS_DEDUCTION_LARGE.toLocaleString('en-PH')} for a loan over ₱${SAVINGS_DEDUCTION_UP_TO.toLocaleString('en-PH')}), ${CAPITAL_BUILD_UP_PERCENT}% Capital Build-Up and ₱${PCIC_INSURANCE} PCIC life insurance.`;
+
+export interface LoanRelease {
+  savings: number;
+  capitalBuildUp: number;
+  pcicInsurance: number;
+  total: number;
+  /** The cash the borrower receives, and what the cash part cannot cover (paid at release). */
+  cashReleased: number;
+  paidAtRelease: number;
+}
+
+/** The release of a loan of `amount` (pesos) with `inKind` of farm inputs, after `carried` paid off a restructured loan. */
+export function loanRelease(amount: number, inKind = 0, carried = 0): LoanRelease {
+  const amountCents = Math.max(0, Math.round(amount * 100));
+  const savingsCents = (amountCents <= SAVINGS_DEDUCTION_UP_TO * 100 ? SAVINGS_DEDUCTION_SMALL : SAVINGS_DEDUCTION_LARGE) * 100;
+  const capitalBuildUpCents = Math.round((amountCents * CAPITAL_BUILD_UP_PERCENT) / 100);
+  const pcicCents = PCIC_INSURANCE * 100;
+  const totalCents = savingsCents + capitalBuildUpCents + pcicCents;
+  const availableCents = Math.max(0, amountCents - Math.round(inKind * 100) - Math.round(carried * 100));
+  const fromProceedsCents = Math.min(totalCents, availableCents);
+  return {
+    savings: savingsCents / 100, capitalBuildUp: capitalBuildUpCents / 100, pcicInsurance: pcicCents / 100, total: totalCents / 100,
+    cashReleased: (availableCents - fromProceedsCents) / 100, paidAtRelease: (totalCents - fromProceedsCents) / 100,
+  };
+}
+
+/** Whether `today` (YYYY-MM-DD) is in the member's first year of loans, which ends on `endsOn` (null: no loan yet). */
+export const inFirstLoanYear = (endsOn: string | null | undefined, today: string) => !endsOn || today < endsOn;
+
 /** "2.5% a month × 6 months (15%)" for a loan under the current policy, else "2.5% flat (whole term)". */
 export function interestRateLabel(rate: number | null | undefined, term: number | null | undefined = LOAN_TERM_MONTHS): string {
   if (rate === null || rate === undefined || Number.isNaN(rate)) return '';

@@ -13,6 +13,7 @@ import { useLiveRefresh } from '../../lib/liveUpdates';
 import { sumMoney } from '../../utils/money';
 import { interestRateLabel, LATE_PENALTY_RULE } from '../../lib/loanPolicy';
 import { LatePenaltyNotice } from '../../app/components/LatePenaltyNotice';
+import { RecordedLoanProceeds, recordedRelease } from '../../app/components/LoanProceeds';
 
 interface LoanStatusProps {
   userRole: UserRole;
@@ -48,6 +49,8 @@ interface Loan {
   penaltyDue: number;
   penaltyPaid: number;
   amountDueNow: number;
+  /** What was taken from the proceeds at release (null for loans released before November 2026). */
+  proceeds: Parameters<typeof RecordedLoanProceeds>[0]['loan'];
 }
 
 interface Payment {
@@ -134,6 +137,10 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         penaltyDue: loan.penaltyDue,
         penaltyPaid: loan.penaltyPaid,
         amountDueNow: loan.amountDueNow,
+        proceeds: {
+          amount: loan.amount, savingsDeducted: loan.savingsDeducted, capitalBuildUp: loan.capitalBuildUp, capitalBuildUpToSavings: loan.capitalBuildUpToSavings,
+          pcicInsurance: loan.pcicInsurance, cashReleased: loan.cashReleased, paidAtRelease: loan.paidAtRelease, renewedFromLoan: loan.renewedFromLoan, netProceeds: loan.netProceeds,
+        },
       })));
       setPayments(data.payments.map((payment) => ({
         id: String(payment.id),
@@ -281,6 +288,8 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                     <p className="text-sm font-medium text-gray-900">₱{loan.monthlyPayment.toLocaleString()}</p>
                   </div>
                 </div>
+
+                {recordedRelease(loan.proceeds) && <div className="mb-4"><RecordedLoanProceeds loan={loan.proceeds} you /></div>}
 
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">

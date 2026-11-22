@@ -159,6 +159,20 @@ export interface AdminLoan {
   renewedFromLoan?: string | null;
   renewalDeduction?: number | null;
   netProceeds?: number | null;
+  /**
+   * Taken from the proceeds at release (loan policy): savings, 2% Capital
+   * Build-Up (capitalBuildUpToSavings of it went to savings, over the 10% share
+   * capital limit) and PCIC insurance; the cash the borrower received and what
+   * they paid at release. All null for loans released before November 2026.
+   */
+  savingsDeducted: number | null;
+  capitalBuildUp: number | null;
+  capitalBuildUpToSavings: number | null;
+  pcicInsurance: number | null;
+  cashReleased: number | null;
+  paidAtRelease: number | null;
+  /** When the member's first year of loans (at most 2 hectares a loan) ends. */
+  firstLoanYearEnds?: string | null;
 }
 
 export interface AdminPayment {
@@ -234,6 +248,8 @@ export interface AdminLoanRequest {
   openLoanTotal?: number | null;
   /** The late penalty due on that loan, deducted with its balance. */
   openLoanPenalty?: number | null;
+  /** When the member's first year of loans (at most 2 hectares) ends; null: no loan yet, so this one is in it. */
+  firstLoanYearEnds?: string | null;
 }
 
 export interface LoanSummary {
@@ -290,6 +306,12 @@ export function mapLoan(loan: Record<string, unknown>): AdminLoan {
     farmArea: optionalNumber(loan.farmArea) ?? null,
     renewalDeduction: optionalNumber(loan.renewalDeduction) ?? null,
     netProceeds: optionalNumber(loan.netProceeds) ?? null,
+    savingsDeducted: optionalNumber(loan.savingsDeducted) ?? null,
+    capitalBuildUp: optionalNumber(loan.capitalBuildUp) ?? null,
+    capitalBuildUpToSavings: optionalNumber(loan.capitalBuildUpToSavings) ?? null,
+    pcicInsurance: optionalNumber(loan.pcicInsurance) ?? null,
+    cashReleased: optionalNumber(loan.cashReleased) ?? null,
+    paidAtRelease: optionalNumber(loan.paidAtRelease) ?? null,
   };
 }
 
@@ -477,6 +499,12 @@ export interface LoanQuote {
   monthlyPayment: number;
   interestRate: number;
   withinLimit: boolean;
+  /** The farm area the maximum is for: at most 2 ha in the member's first year of loans. */
+  eligibleFarmArea: number;
+  /** The member's first year of loans (null when no member was given); limited: the 2 ha cap lowered the maximum. */
+  firstLoanYear: { inFirstYear: boolean; endsOn: string | null; firstLoanOn: string | null; limited: boolean } | null;
+  /** Taken from the proceeds at release, before what a restructured loan still owes. */
+  deductions: { savings: number; capitalBuildUp: number; pcicInsurance: number; total: number; cashReleased: number; paidAtRelease: number };
 }
 
 /** When the office receives loan payments: ISO weekdays (1 = Monday) and open/close in minutes after midnight, Manila time. */
@@ -501,8 +529,11 @@ export function officeOpenAt(hours: PaymentHours, now = new Date()) {
   return hours.days.includes(day) && minutes >= hours.open && minutes < hours.close;
 }
 
-export async function fetchLoanQuote(payload: { farmArea: string; amount: string; term: string | number }): Promise<LoanQuote> {
+/** memberId: the borrower (the office's form); a member's quote is always their own. inKindAmount: the farm inputs in amount. */
+export async function fetchLoanQuote(payload: { farmArea: string; amount: string; term: string | number; inKindAmount?: string; memberId?: number | null }): Promise<LoanQuote> {
   const data = await apiPost<{ quote: Record<string, unknown> }>('/api/loans/quote', payload);
+  const deductions = (data.quote.deductions ?? {}) as Record<string, unknown>;
+  const firstYear = data.quote.firstLoanYear as LoanQuote['firstLoanYear'] | undefined;
   return {
     maximumEligibleAmount: toNumber(data.quote.maximumEligibleAmount),
     calculatedInterest: toNumber(data.quote.calculatedInterest),
@@ -510,6 +541,12 @@ export async function fetchLoanQuote(payload: { farmArea: string; amount: string
     monthlyPayment: toNumber(data.quote.monthlyPayment),
     interestRate: toNumber(data.quote.interestRate),
     withinLimit: Boolean(data.quote.withinLimit),
+    eligibleFarmArea: toNumber(data.quote.eligibleFarmArea ?? data.quote.farmArea),
+    firstLoanYear: firstYear ? { inFirstYear: Boolean(firstYear.inFirstYear), endsOn: firstYear.endsOn ?? null, firstLoanOn: firstYear.firstLoanOn ?? null, limited: Boolean(firstYear.limited) } : null,
+    deductions: {
+      savings: toNumber(deductions.savings), capitalBuildUp: toNumber(deductions.capitalBuildUp), pcicInsurance: toNumber(deductions.pcicInsurance),
+      total: toNumber(deductions.total), cashReleased: toNumber(deductions.cashReleased), paidAtRelease: toNumber(deductions.paidAtRelease),
+    },
   };
 }
 
@@ -640,7 +677,7 @@ export interface MemberDividend {
   firstYear: number;
   rates: { statutory: number; dividendPool: number; patronageRefundPool: number };
   netIncome: number;
-  netIncomeParts: { kadiwa: number; machinery: number; loans: number };
+  netIncomeParts: { kadiwa: number; machinery: number; loans: number; others?: number };
   statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
   statutoryTotal: number;
   netSurplus: number;
@@ -836,9 +873,11 @@ export interface AdminDashboardData {
     pendingRentalRequests: number;
     scheduledOperations: number;
     lowStockItems: number;
-    /** All time: Kadiwa net sales + machinery income less expenses + loan interest collected. */
+    /** All time: Kadiwa net sales + machinery income less expenses + loan interest and penalties collected + others. */
     netIncome: number;
-    netIncomeBreakdown: { kadiwa: number; machinery: number; loans: number };
+    netIncomeBreakdown: { kadiwa: number; machinery: number; loans: number; others?: number };
+    /** Others (in the net income and the capital) by source: membership fees, absence fines and transfer fees collected, other income recorded. */
+    othersBreakdown?: { membershipFees: number; duesFines: number; recorded: number };
     /** Reserve 10%, Education & Training 10%, Community Development 3%, Optional 7% of the net income. */
     statutoryFunds: Array<{ key: string; label: string; percent: number; amount: number }>;
     /** Where the cooperative's money is: share capital, savings, loans to collect, machinery and Kadiwa Store cash, and their total. */
