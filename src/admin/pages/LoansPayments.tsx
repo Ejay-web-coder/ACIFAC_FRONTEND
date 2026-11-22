@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw, Tags } from 'lucide-react';
+import { Search, Plus, PhilippinePeso, Clock, CheckCircle, AlertCircle, X, Eye, AlertTriangle, Receipt, XCircle, ClipboardList, IdCard, PenLine, RefreshCcw, Tags, ScanQrCode } from 'lucide-react';
+import { ScanMemberDialog } from '../../app/components/idcard/ScanMemberDialog';
+import type { ScannedMember } from '../../app/services/idCardApi';
 import { EmptyState, Pagination as Pager, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
-import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, loanIdPath, loanSignaturePath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
+import { createAdminLoan, fetchAdminLoanRequests, fetchAdminLoans, fetchAdminPayments, fetchCurrentUser, fetchMemberLoanHistory, loanIdPath, loanSignaturePath, recordAdminLoanPayment, reviewAdminLoanRequest, type AdminLoan, type AdminLoanRequest, type AdminPayment, type LoanApplicationIds, type LoanIdDocuments, type LoanIdHolder, type LoanSummary, type Pagination } from '../../app/services/authApi';
 import { openProtectedFile } from '../../lib/api';
 import { addDateOnlyDays, dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 import { useLiveRefresh } from '../../lib/liveUpdates';
@@ -212,6 +214,27 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
     setShowPaymentModal(true);
   };
 
+  // Scan ID to pay: the scanned member's open loan gets the Record Payment form.
+  // A member has one open loan at a time; with none, their loan history opens,
+  // and with more (left from before that rule) the list shows them to choose.
+  const [scanning, setScanning] = useState(false);
+  const closeScanner = useCallback(() => setScanning(false), []);
+  const payScannedMember = async (member: ScannedMember) => {
+    const history = await fetchMemberLoanHistory(member.id);
+    const open = history.loans.filter((loan) => loan.status !== 'paid');
+    setScanning(false);
+    if (open.length === 1) { handleRecordPayment(open[0]); return; }
+    if (!open.length) {
+      toast.info(`${member.name} has no loan to pay`, { description: 'Their loans and payments are shown instead.' });
+      setHistoryMember({ id: member.id, name: member.name });
+      return;
+    }
+    setActiveTab('loans');
+    setFilterStatus('all');
+    setSearchTerm(member.memberNumber || member.name);
+    toast.info(`${member.name} has ${open.length} open loans`, { description: 'Open the one being paid and use Record Payment.' });
+  };
+
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLoanForPayment || isSubmittingPayment) return;
@@ -330,6 +353,12 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                 className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 text-sm"
               />
             </label>
+            {canEdit && activeTab !== 'requests' && (
+              // The member at the counter: their ID card opens the payment form of their loan.
+              <button type="button" onClick={() => setScanning(true)} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50">
+                <ScanQrCode className="h-4 w-4" />Scan ID to pay
+              </button>
+            )}
             {activeTab === 'loans' && (
               <select
                 value={filterStatus}
@@ -718,6 +747,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
         );
       })()}
       {showFarmInputs && <FarmInputPricesModal onClose={() => setShowFarmInputs(false)} />}
+      {scanning && (
+        <ScanMemberDialog title="Loan payment: scan member ID" hint="The payment form of their loan opens." onClose={closeScanner} onFound={payScannedMember} />
+      )}
       {historyMember && <LoanHistoryModal memberId={historyMember.id} memberName={historyMember.name} onClose={() => setHistoryMember(null)} />}
       {receiptLoan && <LoanReceiptModal loan={receiptLoan} onClose={() => setReceiptLoan(null)} />}
       {paymentReceipt && <PaymentReceiptModal receipt={paymentReceipt} onClose={() => setPaymentReceipt(null)} />}

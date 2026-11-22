@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { User, CreditCard, Wallet, Coins, Receipt, X, IdCard, Sprout, Users } from 'lucide-react';
+import { User, CreditCard, Wallet, Coins, Receipt, X, IdCard, Sprout, Users, QrCode } from 'lucide-react';
+import { MyIdCard } from '../components/MyIdCard';
 import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
@@ -66,6 +67,7 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
   // Phones: the four records are icons; one opens at a time in a sheet.
   const isMobile = useIsMobile();
   const [openPanel, setOpenPanel] = useState<PanelKey | null>(null);
+  const [showId, setShowId] = useState(false);
 
   useEffect(() => {
     if (!openPanel) return undefined;
@@ -258,12 +260,17 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
               <User className="w-16 h-16 text-blue-600" />
             </div>
           )}
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h2 className="text-2xl font-bold text-gray-900">{member.full_name}</h2>
             <p className="text-gray-600 mt-1">Member ID: {member.member_number || member.id}</p>
+            {/* The QR to show at the door of a meeting or at the office counter. */}
+            <button type="button" onClick={() => setShowId(true)} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
+              <QrCode className="h-4 w-4" />My ID
+            </button>
           </div>
         </div>
       </div>
+      {showId && <MyIdCard onClose={() => setShowId(false)} />}
 
       {/* Personal Information, grouped as on the membership form */}
       {infoGroups.map((group) => (

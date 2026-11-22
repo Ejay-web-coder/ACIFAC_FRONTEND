@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Ban, CalendarClock, ChevronDown, History, LoaderCircle, Lock, MapPin, Pencil, UserRound, X } from 'lucide-react';
+import { Ban, CalendarClock, ChevronDown, History, LoaderCircle, Lock, MapPin, Pencil, ScanQrCode, UserRound, X } from 'lucide-react';
+import { ScanCheckInModal } from './ScanCheckInModal';
 import { toast } from 'sonner';
 import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
 import { formatDate, formatDateTime } from '../../../utils/dateTime';
 import { ActivityStatusBadge, AttendanceBadge, FIELD } from '../../../app/components/attendance/shared';
 import {
-  ATTENDANCE_LABELS, cancelActivity, fetchActivity, fetchActivityHistory, finalizeAttendance, rateLabel, timeRange,
+  ATTENDANCE_LABELS, canScanCheckIn, cancelActivity, fetchActivity, fetchActivityHistory, finalizeAttendance, rateLabel, timeRange,
   type ActivityDetails, type ActivityHistoryEntry,
 } from '../../../app/services/attendanceApi';
 import { ActivityFormModal } from './ActivityFormModal';
@@ -27,6 +28,8 @@ export function ActivityModal({ activityId, mode, onClose, onChanged }: {
   const [pendingCount, setPendingCount] = useState(0);
   const [sheetKey, setSheetKey] = useState(0);
   const [dialog, setDialog] = useState<'edit' | 'finalize' | 'cancel' | null>(null);
+  // Check-in at the door with members' ID cards.
+  const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [showHistory, setShowHistory] = useState(false);
@@ -103,7 +106,7 @@ export function ActivityModal({ activityId, mode, onClose, onChanged }: {
         : details.final
           ? { tone: 'green', text: `Attendance is final${details.finalizedBy ? ` (finalized by ${details.finalizedBy}` : ''}${details.finalizedAt ? ` on ${formatDateTime(details.finalizedAt)})` : details.finalizedBy ? ')' : ''}. A record can still be corrected: each correction needs a reason and is kept in the change history.` }
           : !recording ? { tone: 'amber', text: `Attendance is not final yet: ${details.recorded} of ${details.members} ${details.members === 1 ? 'member' : 'members'} recorded so far. Use Record in the activity list to mark the others and finalize it.` }
-          : { tone: 'amber', text: `Mark the members who came, then Finalize Attendance. Until then nobody is counted absent. Finalizing records the ${details.toMarkAbsent} active ${details.toMarkAbsent === 1 ? 'member' : 'members'} not marked as absent.` };
+          : { tone: 'amber', text: `${canScanCheckIn(details) ? 'Scan members\' ID cards at the door with Scan check-in, or mark the members who came in the list' : 'Mark the members who came'}, then Finalize Attendance. Until then nobody is counted absent. Finalizing records the ${details.toMarkAbsent} active ${details.toMarkAbsent === 1 ? 'member' : 'members'} not marked as absent${details.category === 'meeting' ? ', with the absence fine' : ''}. Mark excused members by hand.` };
   const NOTICE_STYLE: Record<string, string> = {
     red: 'border-red-200 bg-red-50 text-red-800', gray: 'border-gray-200 bg-gray-50 text-gray-700', green: 'border-green-200 bg-green-50 text-green-900', amber: 'border-amber-200 bg-amber-50 text-amber-900',
   };
@@ -215,6 +218,11 @@ export function ActivityModal({ activityId, mode, onClose, onChanged }: {
                 )}
               </div>
               <div className="grid grid-cols-1 gap-2 sm:flex">
+                {canScanCheckIn(details) && (
+                  <button type="button" onClick={() => setScanning(true)} disabled={pendingCount > 0} title={pendingCount ? 'Save or discard your changes first' : 'Check members in at the door with their member ID'} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50">
+                    <ScanQrCode className="h-4 w-4" />Scan check-in
+                  </button>
+                )}
                 {details.canFinalize && (
                   <button type="button" onClick={() => setDialog('finalize')} disabled={pendingCount > 0} title={pendingCount ? 'Save or discard your changes first' : undefined} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-700 px-4 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50">
                     <Lock className="h-4 w-4" />Finalize Attendance
@@ -226,6 +234,8 @@ export function ActivityModal({ activityId, mode, onClose, onChanged }: {
           )}
         </div>
       </div>
+
+      {details && scanning && <ScanCheckInModal activity={details} onClose={() => { setScanning(false); afterChange(); }} />}
 
       {details && dialog === 'edit' && (
         <ActivityFormModal activity={details} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); afterChange(); }} />
@@ -240,7 +250,8 @@ export function ActivityModal({ activityId, mode, onClose, onChanged }: {
           onConfirm={() => { void finalize(); }}
         >
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-700">
-            <li><strong>{details.toMarkAbsent}</strong> active {details.toMarkAbsent === 1 ? 'member who is' : 'members who are'} not marked will be recorded <strong>Absent</strong>.</li>
+            <li><strong>{details.toMarkAbsent}</strong> active {details.toMarkAbsent === 1 ? 'member who is' : 'members who are'} not marked (or scanned) will be recorded <strong>Absent</strong>. Mark excused members first.</li>
+            {details.category === 'meeting' && <li>The meeting dues (share capital and savings) are added under Dues for everyone on the list, and the absence fine for those recorded absent.</li>}
             {notMarkedLeftOut > 0 && <li>{notMarkedLeftOut} inactive, suspended or terminated {notMarkedLeftOut === 1 ? 'member is' : 'members are'} not marked and will be left out (not counted).</li>}
             <li>The activity becomes <strong>Completed</strong> and counts in attendance rates.</li>
             <li>Records can still be corrected afterwards; each correction needs a reason and is kept in the change history.</li>

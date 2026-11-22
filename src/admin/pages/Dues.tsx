@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowRightLeft, CalendarCheck, CheckCircle2, ChevronRight, CircleDollarSign, HandCoins, LoaderCircle, ReceiptText, Search, Users, X } from 'lucide-react';
+import { ArrowRightLeft, CalendarCheck, CheckCircle2, ChevronRight, CircleDollarSign, HandCoins, LoaderCircle, ReceiptText, ScanQrCode, Search, Users, X } from 'lucide-react';
+import { ScanMemberDialog } from '../../app/components/idcard/ScanMemberDialog';
 import { toast } from 'sonner';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { confirmAction } from '../../app/components/common/ConfirmDialog';
@@ -41,6 +42,8 @@ export function Dues() {
   const [rates, setRates] = useState<DuesRates | null>(null);
   const [open, setOpen] = useState<{ id: number; name: string; memberNumber: string | null } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const closeScanner = useCallback(() => setScanning(false), []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setQuery(search); setPage(1); }, 300);
@@ -94,6 +97,10 @@ export function Dues() {
             <select value={filter} onChange={(event) => { setFilter(event.target.value as DuesFilter); setPage(1); }} aria-label="Which members" className={`${INPUT} sm:w-48`}>
               {FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
+            {/* The member at the counter: their ID card opens their dues instead of searching. */}
+            <button type="button" onClick={() => setScanning(true)} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 px-4 text-sm font-semibold text-green-700 hover:bg-green-50">
+              <ScanQrCode className="h-4 w-4" />Scan ID
+            </button>
           </div>
           {!rows ? <ListSkeleton rows={5} /> : !rows.length ? (
             <EmptyState icon={ReceiptText} compact title={filter === 'owing' ? 'Nobody owes anything' : 'No members found'}
@@ -150,6 +157,14 @@ export function Dues() {
       ) : <MeetingsPanel refreshKey={refreshKey} onCharged={() => void load()} />}
 
       {open && <MemberDuesModal member={open} refreshKey={refreshKey} onChanged={() => void load()} onClose={() => setOpen(null)} />}
+      {scanning && (
+        <ScanMemberDialog
+          title="Collect dues: scan member ID"
+          hint="Their dues open."
+          onClose={closeScanner}
+          onFound={(member) => { setScanning(false); setOpen({ id: member.id, name: member.name, memberNumber: member.memberNumber || null }); }}
+        />
+      )}
     </div>
   );
 }

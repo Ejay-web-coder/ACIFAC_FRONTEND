@@ -35,8 +35,10 @@ import {
   Copy,
   ReceiptText,
   Smartphone,
+  ScanQrCode,
   type LucideIcon,
 } from 'lucide-react';
+import { ScanMemberDialog } from './idcard/ScanMemberDialog';
 
 // A new member's temporary password, at the end of the admin's "Temporary password for ..." notification.
 const temporaryPasswordIn = (notification: AppNotification) =>
@@ -198,6 +200,9 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
   // The entry whose details are open (clicked in the list).
   const [openAuditLog, setOpenAuditLog] = useState<AuditLogEntry | null>(null);
   const closeAuditLogDetails = useCallback(() => setOpenAuditLog(null), []);
+  // Scan member ID (office): the scanned member's profile opens.
+  const [showScanMember, setShowScanMember] = useState(false);
+  const closeScanMember = useCallback(() => setShowScanMember(false), []);
   // Opened again later, the audit log shows everyone.
   useEffect(() => { if (!showAuditLogs) { setAuditLogsAdmin(''); setOpenAuditLog(null); } }, [showAuditLogs]);
 
@@ -521,6 +526,17 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
             </div>
 
             <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+              {userRole === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => { setShowScanMember(true); setShowNotifications(false); setShowProfileMenu(false); }}
+                  className={iconButton}
+                  aria-label="Scan member ID"
+                  title="Scan member ID"
+                >
+                  <ScanQrCode className="h-5 w-5" />
+                </button>
+              )}
               {userRole === 'admin' && (
                 <button
                   type="button"
@@ -898,6 +914,13 @@ export function Layout({ userRole, setUserRole, setIsAuthenticated }: LayoutProp
         </div>
       )}
       {showAuditLogs && openAuditLog && <AuditLogDetailsModal entry={openAuditLog} onClose={closeAuditLogDetails} />}
+      {showScanMember && userRole === 'admin' && (
+        <ScanMemberDialog
+          hint="Their profile opens."
+          onClose={closeScanMember}
+          onFound={(member) => { setShowScanMember(false); navigate(`/membership?member=${member.id}`); }}
+        />
+      )}
 
     </div>
   );

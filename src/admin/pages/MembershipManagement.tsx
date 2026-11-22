@@ -1,5 +1,8 @@
 import { useMemo, useEffect, useState } from 'react';
-import { Search, Plus, Edit, RotateCcw, Eye, X, Users, UserPlus, UserX, PiggyBank, ChevronDown, Award } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Plus, Edit, RotateCcw, Eye, X, Users, UserPlus, UserX, PiggyBank, ChevronDown, Award, IdCard } from 'lucide-react';
+import { PrintIdCardsModal } from '../components/idcard/PrintIdCardsModal';
+import { MemberIdCardPanel } from '../components/idcard/MemberIdCardPanel';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
@@ -142,6 +145,10 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
   const [showArchivedMembers, setShowArchivedMembers] = useState(false);
   // Loyalty Awards: members by years of membership, with printable certificates.
   const [showLoyaltyAwards, setShowLoyaltyAwards] = useState(false);
+  // Batch print of member ID cards.
+  const [showPrintIds, setShowPrintIds] = useState(false);
+  // ?member=<id> (the top bar's Scan member ID) opens that member.
+  const [searchParams, setSearchParams] = useSearchParams();
   // Edit and View show the Add Member form; these fill it from the saved member.
   const viewDraft = useMemo(() => (selectedMember ? draftFromMember(selectedMember) : null), [selectedMember]);
   const editDraft = useMemo(() => (editingMember ? draftFromMember(editingMember) : null), [editingMember]);
@@ -291,7 +298,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
     }
   };
 
-  const viewMember = async (member: Member) => {
+  const viewMember = async (member: Pick<Member, 'id'>) => {
     try {
       const { data } = await fetchMemberRequest(member.id);
       setSelectedMember(data);
@@ -303,6 +310,16 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
       toast.error(error instanceof Error ? error.message : 'Unable to load member.');
     }
   };
+
+  // A member scanned in the top bar: open them, then take the request out of the address.
+  const memberToOpen = Number(searchParams.get('member'));
+  useEffect(() => {
+    if (!Number.isInteger(memberToOpen) || memberToOpen <= 0) return;
+    setShowLoyaltyAwards(false);
+    void viewMember({ id: memberToOpen });
+    setSearchParams((current) => { const next = new URLSearchParams(current); next.delete('member'); return next; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberToOpen]);
 
   const [savingEdit, setSavingEdit] = useState(false);
   const handleUpdateMember = async (draft: MemberDraftData, files: MemberFormFiles) => {
@@ -412,8 +429,19 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
               {canEdit && !showArchivedMembers && (
                 <button
                   type="button"
+                  onClick={() => setShowPrintIds(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <IdCard className="h-4 w-4" />
+                  <span className="sm:hidden">Print IDs</span>
+                  <span className="hidden sm:inline">Print ID Cards</span>
+                </button>
+              )}
+              {canEdit && !showArchivedMembers && (
+                <button
+                  type="button"
                   onClick={() => setShowAddModal(true)}
-                  className="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
                 >
                   <Plus className="h-4 w-4" />
                   Add Member
@@ -627,7 +655,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
 
             {/* Content */}
             <div className="p-6 space-y-6">
-              
+              {canEdit && <MemberIdCardPanel key={selectedMember.id} memberId={selectedMember.id} terminated={selectedMember.status === 'archived'} />}
+
               <div className="-mx-2 rounded-xl bg-slate-100 px-2 py-4 sm:mx-0 sm:px-4">
                 {viewDraft && <MemberForm mode="view" initial={viewDraft} saved={viewFiles} />}
               </div>
@@ -708,6 +737,8 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
           onImport={() => { setShowAddModal(false); setShowImportModal(true); }}
         />
       )}
+
+      {showPrintIds && <PrintIdCardsModal onClose={() => setShowPrintIds(false)} />}
 
       {showImportModal && (
         <MemberImportModal

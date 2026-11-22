@@ -107,7 +107,8 @@ export interface ActivityMemberRow {
   status: AttendanceStatus | null;
   checkInTime: string | null;
   remarks: string;
-  source: 'office' | 'finalization' | null;
+  /** office: marked in the list; finalization: recorded absent when finalized; scan: checked in with their member ID. */
+  source: 'office' | 'finalization' | 'scan' | null;
   updatedAt: string | null;
   recordedBy: string | null;
 }
@@ -259,6 +260,26 @@ export const saveAttendance = (id: number, records: AttendanceChange[], reason?:
 
 export const finalizeAttendance = (id: number) =>
   apiPost<{ success: boolean; message: string; data: { markedAbsent: number; activity: Activity } }>(`/api/attendance/activities/${id}/finalize`);
+
+/** What a check-in at the door did: the member, their record, and the activity's counts after it. */
+export interface ScanCheckInResult {
+  /** false when the member had already checked in: nothing changed. */
+  checkedIn: boolean;
+  alreadyCheckedIn: boolean;
+  member: { id: number; memberNumber: string; name: string; status: string; hasPhoto: boolean };
+  record: { status: AttendanceStatus; checkInTime: string | null };
+  /** What the member was marked before the scan (excused, absent), else null. */
+  previousStatus: AttendanceStatus | null;
+  activity: Activity;
+}
+
+/** Checks a member in by their scanned member ID (what the QR holds): present, or late after the start time. */
+export const scanCheckIn = (id: number, token: string) =>
+  apiPost<{ success: boolean; message: string; data: ScanCheckInResult }>(`/api/attendance/activities/${id}/scan`, { token });
+
+/** The activity takes members' scanned IDs now: its day, not cancelled, attendance not final. */
+export const canScanCheckIn = (activity: Pick<ActivityDetails, 'status' | 'final' | 'activityDate' | 'today'>) =>
+  activity.status !== 'cancelled' && !activity.final && activity.activityDate === activity.today;
 
 export const fetchActivityHistory = (id: number) => apiGet<{ success: boolean; data: ActivityHistoryEntry[] }>(`/api/attendance/activities/${id}/history`);
 

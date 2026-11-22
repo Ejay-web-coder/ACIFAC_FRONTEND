@@ -243,7 +243,8 @@ export function AttendanceSheet({ activity, readOnly = false, onSaved, onPending
                                 <button type="button" onClick={() => undo(row.memberId)} className="inline-flex items-center gap-0.5 rounded px-1 text-amber-900 underline-offset-2 hover:underline" aria-label={`Undo the change for ${row.name}`}><RotateCcw className="h-3 w-3" />Undo</button>
                               </span>
                             ) : row.source === 'finalization' ? <span>Not marked; recorded absent at finalization</span>
-                              : row.recordedBy ? <span>Saved by {row.recordedBy}</span> : null}
+                              : row.source === 'scan' ? <span>Checked in with member ID{row.checkInTime ? ` at ${formatClock(row.checkInTime)}` : ''}{row.recordedBy ? ` · scanned by ${row.recordedBy}` : ''}</span>
+                                : row.recordedBy ? <span>Saved by {row.recordedBy}</span> : null}
                           </p>
                         </div>
                         </div>
