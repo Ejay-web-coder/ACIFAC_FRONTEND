@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { User, Bell, Shield, Database, Save } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { User, Bell, Shield, Database, Save, Smartphone } from 'lucide-react';
 import { UserRole } from '../../app/App';
 import { toast } from 'sonner';
 import {
@@ -9,6 +10,10 @@ import { ChangePasswordModal } from '../../app/components/ChangePasswordModal';
 import { formatDateTime } from '../../utils/dateTime';
 import { ProfilePhotoEditor } from '../../app/components/common/ProfilePhotoEditor';
 import { PhoneNotifications } from '../../app/components/PhoneNotifications';
+import { PaymentChannelsSettings } from '../components/PaymentChannelsSettings';
+
+type SettingsTab = 'profile' | 'notifications' | 'payments' | 'security' | 'system';
+const TABS: SettingsTab[] = ['profile', 'notifications', 'payments', 'security', 'system'];
 
 interface SettingsProps {
   userRole: UserRole;
@@ -16,7 +21,10 @@ interface SettingsProps {
 }
 
 export function Settings({ userRole, mustChangePassword = false }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'system'>(mustChangePassword ? 'security' : 'profile');
+  // ?tab=payments opens a tab directly (e.g. from Online Payments).
+  const [searchParams] = useSearchParams();
+  const askedTab = TABS.find((tab) => tab === searchParams.get('tab'));
+  const [activeTab, setActiveTab] = useState<SettingsTab>(mustChangePassword ? 'security' : askedTab ?? 'profile');
   const [account, setAccount] = useState<AuthUser | null>(null);
   const [profileData, setProfileData] = useState({ name: '', email: '', phone: '', position: '' });
   // The cooperative's positions, suggested for the Position field.
@@ -105,6 +113,17 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
             >
               <Bell className="w-5 h-5" />
               Notifications
+            </button>
+            <button
+              onClick={() => setActiveTab('payments')}
+              className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'payments'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Smartphone className="w-5 h-5" />
+              Online Payments
             </button>
             <button
               onClick={() => setActiveTab('security')}
@@ -271,6 +290,9 @@ export function Settings({ userRole, mustChangePassword = false }: SettingsProps
               </div>
             </div>
           )}
+
+          {/* Online Payments Tab: the cooperative's GCash and Maya accounts */}
+          {activeTab === 'payments' && <PaymentChannelsSettings />}
 
           {/* Security Tab */}
           {activeTab === 'security' && (

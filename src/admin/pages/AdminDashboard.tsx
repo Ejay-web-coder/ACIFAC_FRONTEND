@@ -1,4 +1,4 @@
-import { Users, PhilippinePeso, TrendingUp, Tractor, AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, Activity, UserPlus, ScanLine, BarChart3, ChevronRight, ClipboardList, PackageMinus, CalendarClock, CalendarCheck } from 'lucide-react';
+import { Users, PhilippinePeso, TrendingUp, Tractor, AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, Activity, UserPlus, ScanLine, BarChart3, ChevronRight, ClipboardList, PackageMinus, CalendarClock, CalendarCheck, Smartphone } from 'lucide-react';
 import { EmptyState, ListSkeleton, SectionCard, Skeleton, StatCard } from '../../app/components/common/UiKit';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from 'react';
@@ -20,6 +20,7 @@ const ATTENTION: Array<{ key: keyof Stats; label: string; detail: string; action
   { key: 'overdueLoans', label: 'Overdue loans', detail: 'Past due, not fully paid', action: 'Follow up', href: '/admin/loans?status=overdue', tone: 'urgent', icon: AlertTriangle },
   { key: 'pendingLoanRequests', label: 'Loan applications', detail: 'Waiting for review', action: 'Review', href: '/admin/loans?tab=requests', tone: 'todo', icon: ClipboardList },
   { key: 'pendingRentalRequests', label: 'Rental requests', detail: 'Machinery, waiting for review', action: 'Review', href: '/admin/machinery', tone: 'todo', icon: Tractor },
+  { key: 'pendingOnlinePayments', label: 'Online payments', detail: 'GCash and Maya, to check and approve', action: 'Check', href: '/admin/online-payments', tone: 'todo', icon: Smartphone },
   { key: 'lowStockItems', label: 'Low-stock items', detail: 'Kadiwa, at or below reorder level', action: 'Restock', href: '/admin/kadiwa', tone: 'todo', icon: PackageMinus },
   { key: 'loansDueThisWeek', label: 'Loans due this week', detail: 'A payment due in the next 7 days', action: 'View loans', href: '/admin/loans?status=active', tone: 'info', icon: CalendarClock },
   { key: 'scheduledOperations', label: 'Machinery bookings', detail: 'Scheduled, not started yet', action: 'View bookings', href: '/admin/machinery', tone: 'info', icon: CalendarCheck },
@@ -61,7 +62,7 @@ export function AdminDashboard() {
   useLiveRefresh([
     'members', 'users', 'share_contributions', 'loans', 'loan_payments', 'loan_requests', 'rental_requests', 'machinery_operations', 'kadiwa_sales', 'kadiwa_inventory',
     'machinery_services', 'machinery_service_payments', 'machinery_expenses', 'machinery_period_balances',
-    'savings_transactions', 'member_dues', 'member_dues_payments', 'other_income',
+    'savings_transactions', 'member_dues', 'member_dues_payments', 'other_income', 'payment_submissions',
   ], loadDashboard, 1000);
 
   const stats = data?.stats;
@@ -167,9 +168,9 @@ function AttentionCard({ stats, loading }: { stats?: Stats; loading: boolean }) 
       description={!stats ? 'Checking loans, requests and stock…' : toDo ? `${toDo.toLocaleString()} ${toDo === 1 ? 'item needs' : 'items need'} action. Click a tile to open it.` : 'Nothing needs action right now.'}
     >
       {loading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">{ATTENTION.map((item) => <Skeleton key={item.key} className="h-32 w-full rounded-xl" />)}</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">{ATTENTION.map((item) => <Skeleton key={item.key} className="h-32 w-full rounded-xl" />)}</div>
       ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
           {ATTENTION.map((item) => {
             const count = Number(stats?.[item.key] ?? 0);
             const style = TONE_STYLE[count ? item.tone : 'none'];

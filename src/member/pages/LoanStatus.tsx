@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus, History } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus, History, Smartphone } from 'lucide-react';
 import { EmptyState, StatCard } from '../../app/components/common/UiKit';
 import { PagedList } from '../../app/components/common/PagedList';
 import { UserRole } from '../../app/App';
@@ -326,6 +327,11 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                 </div>
                 )}
                 <LatePenaltyNotice loan={loan} className="mt-3" />
+                <div className="mt-3 flex justify-end">
+                  <Link to="/member/pay-online?for=loan" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-green-700 px-4 text-sm font-semibold text-white hover:bg-green-800">
+                    <Smartphone className="h-4 w-4" aria-hidden="true" />Pay online (GCash or Maya)
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

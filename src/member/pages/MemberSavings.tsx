@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, PiggyBank, Wallet } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowDownLeft, ArrowUpRight, PiggyBank, Smartphone, Wallet } from 'lucide-react';
 import { EmptyState, ListSkeleton, Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { useMyMemberData } from '../../lib/useMyMemberData';
@@ -41,7 +42,12 @@ export function MemberSavings() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <p className="text-gray-600">Your savings deposits and withdrawals, as recorded by the ACIFAC office. If something is wrong, please tell the office.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="text-gray-600">Your savings deposits and withdrawals, as recorded by the ACIFAC office. If something is wrong, please tell the office.</p>
+        <Link to="/member/pay-online?for=savings" className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-700 px-4 text-sm font-semibold text-white hover:bg-green-800">
+          <Smartphone className="h-4 w-4" aria-hidden="true" />Deposit online
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Savings balance" value={formatPeso(memberData?.savings.total)} icon={PiggyBank} tone="dark" loading={!memberData} detail="Deposits less withdrawals" />

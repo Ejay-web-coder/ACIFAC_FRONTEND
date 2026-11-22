@@ -45,7 +45,9 @@ export function loanPaymentReceipt(payment: AdminPayment): PaymentReceipt {
   return {
     kind: 'received', title: 'Official Receipt', receiptNo: number('LP', payment.id), date: payment.paymentDate,
     party: payment.memberName, memberNumber: payment.memberNumber ?? null, lines, total: payment.amount,
-    method: 'Cash, at the ACIFAC office', balanceLabel: 'Loan balance after this payment', balance: payment.remainingBalance,
+    // An online payment (Pay online) has its GCash or Maya reference number; the rest were paid at the office.
+    method: payment.paymentMethod ? `${payment.paymentMethod} (paid online)` : 'Cash, at the ACIFAC office', reference: payment.reference ?? null,
+    balanceLabel: 'Loan balance after this payment', balance: payment.remainingBalance,
     recordedBy: payment.recordedBy ?? null, recordedByPosition: payment.recordedByPosition ?? null,
   };
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, CircleDollarSign, HandCoins, ReceiptText } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CheckCircle2, CircleDollarSign, HandCoins, ReceiptText, Smartphone } from 'lucide-react';
 import { EmptyState, ListSkeleton, Pagination, StatCard, StatusBadge } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { useLiveRefresh } from '../../lib/liveUpdates';
@@ -11,7 +12,8 @@ import { DuesRatesNote } from '../../app/components/DuesRatesNote';
 
 // The member's dues under the Membership Policy: share capital and savings
 // for every meeting, absence fines and transfer fees, what is paid and what
-// is still owed. Payments are made at the ACIFAC office.
+// is still owed. Payments are made at the ACIFAC office, or by GCash or Maya
+// from Pay online.
 
 type View = 'unpaid' | 'all' | 'payments';
 const VIEWS: Array<{ value: View; label: string }> = [
@@ -42,7 +44,14 @@ export function MemberDues() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <p className="text-gray-600">Your dues as a member of ACIFAC. Please pay them at the ACIFAC office; payments recorded by the office appear here.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="text-gray-600">Your dues as a member of ACIFAC. Pay them at the ACIFAC office, or online by GCash or Maya; payments the office records appear here.</p>
+        {Boolean(summary?.unpaid) && (
+          <Link to="/member/pay-online?for=dues" className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-green-700 px-4 text-sm font-semibold text-white hover:bg-green-800">
+            <Smartphone className="h-4 w-4" aria-hidden="true" />Pay online
+          </Link>
+        )}
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Still to pay" value={formatPeso(summary?.unpaid)} icon={CircleDollarSign} tone={summary?.unpaid ? 'warning' : 'dark'} loading={!detail}
           detail={summary?.unpaid ? `${summary.unpaidCount} unpaid ${summary.unpaidCount === 1 ? 'due' : 'dues'}, the oldest from ${formatDate(summary.oldestUnpaid)}` : 'Nothing to pay'} />

@@ -20,6 +20,12 @@ describe('Receipt of one payment (paymentReceipt)', () => {
     expect(recorderLine(receipt)).toBe('Lorna Cruz, Treasurer')
   })
 
+  test('a loan payment made online shows GCash or Maya and its reference number; one at the office, cash', () => {
+    expect([loanPaymentReceipt(loanPayment).method, loanPaymentReceipt(loanPayment).reference]).toEqual(['Cash, at the ACIFAC office', null])
+    const online = loanPaymentReceipt({ ...loanPayment, paymentMethod: 'GCash', reference: '1009000011111' })
+    expect([online.method, online.reference]).toEqual(['GCash (paid online)', '1009000011111'])
+  })
+
   test('edge case: a payment whose parts do not add up is one line for the whole amount', () => {
     const receipt = loanPaymentReceipt({ ...loanPayment, principalPaid: 0, interestPaid: 0, penaltyPaid: 0 })
     expect(receipt.lines).toEqual([{ description: 'Loan payment, loan L-2026-007', amount: 5000 }])

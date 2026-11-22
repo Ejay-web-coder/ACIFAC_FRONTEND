@@ -34,6 +34,7 @@ import {
   History,
   Copy,
   ReceiptText,
+  Smartphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -134,6 +135,7 @@ const navigation: NavItem[] = [
   { name: 'Loan Status', href: '/loan-status', icon: PhilippinePeso, roles: ['member'], group: 'My Account', aliases: ['/member/loans'], short: 'Loans' },
   { name: 'Savings', href: '/member/savings', icon: PiggyBank, roles: ['member'], group: 'My Account', short: 'Savings' },
   { name: 'Dues', href: '/member/dues', icon: ReceiptText, roles: ['member'], group: 'My Account', short: 'Dues' },
+  { name: 'Pay Online', href: '/member/pay-online', icon: Smartphone, roles: ['member'], group: 'My Account', short: 'Pay' },
   { name: 'Attendance', href: '/member/attendance', icon: CalendarCheck, roles: ['member'], group: 'My Account', short: 'Attendance' },
   { name: 'Transaction', href: '/transaction', icon: ArrowRightLeft, roles: ['member'], group: 'My Account', aliases: ['/member/transactions'], short: 'Transaction' },
   { name: 'Rental Booking', href: '/rental-booking', icon: ClipboardPlus, roles: ['member'], group: 'My Account', aliases: ['/member/rental-booking'], short: 'Rentals' },
@@ -142,6 +144,7 @@ const navigation: NavItem[] = [
   { name: 'Loans & Payments', href: '/loans', icon: PhilippinePeso, roles: ['admin'], group: 'Finance', aliases: ['/admin/loans'], short: 'Loans' },
   { name: 'Savings', href: '/admin/savings', icon: Wallet, roles: ['admin'], group: 'Finance', short: 'Savings' },
   { name: 'Dues', href: '/admin/dues', icon: ReceiptText, roles: ['admin'], group: 'Finance', short: 'Dues' },
+  { name: 'Online Payments', href: '/admin/online-payments', icon: Smartphone, roles: ['admin'], group: 'Finance', short: 'Online' },
   { name: 'Machinery Operations', href: '/machinery', icon: Tractor, roles: ['admin'], group: 'Operations', aliases: ['/admin/machinery'], short: 'Machinery' },
   { name: 'Kadiwa Store', href: '/kadiwa', icon: Store, roles: ['admin'], group: 'Operations', aliases: ['/admin/kadiwa'], short: 'Kadiwa' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['admin'], group: 'Overview', aliases: ['/admin/analytics'], short: 'Analytics' },

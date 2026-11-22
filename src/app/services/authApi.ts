@@ -194,6 +194,9 @@ export interface AdminPayment {
   recordedBy?: string | null;
   recordedByPosition?: string | null;
   memberNumber?: string | null;
+  /** GCash or Maya for an approved online payment, with its reference number; null for a payment at the office. */
+  paymentMethod?: string | null;
+  reference?: string | null;
 }
 
 export interface AdminLoanRequest {
@@ -871,6 +874,8 @@ export interface AdminDashboardData {
     loansDueThisWeek: number;
     pendingLoanRequests: number;
     pendingRentalRequests: number;
+    /** GCash and Maya payments members reported, waiting for the office to check (Online Payments). */
+    pendingOnlinePayments: number;
     scheduledOperations: number;
     lowStockItems: number;
     /** All time: Kadiwa net sales + machinery income less expenses + loan interest and penalties collected + others. */
