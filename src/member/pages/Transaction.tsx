@@ -6,6 +6,8 @@ import { useMyMemberData } from '../../lib/useMyMemberData';
 import { PagedList } from '../../app/components/common/PagedList';
 import { COOPERATIVE_NAME, drawPdfLogo, loadPdfLogo } from '../../lib/pdfLogo';
 import { dateOnlySortValue, formatDate, formatDateTime } from '../../utils/dateTime';
+import { PaymentReceiptModal } from '../../admin/components/receipt/PaymentReceiptModal';
+import { loanPaymentReceipt, machineryPaymentReceipt, savingsReceipt, type PaymentReceipt } from '../../admin/components/receipt/paymentReceipt';
 
 interface TransactionProps {
   userRole: UserRole;
@@ -31,6 +33,8 @@ interface Transaction {
   reference: string;
   /** Who recorded it at the office (name and position); empty for a booking request. */
   recordedBy: string;
+  /** A payment's receipt, the same one the office prints; loan releases and rental bookings have none. */
+  receipt?: PaymentReceipt;
 }
 
 // The filter chips on phones (the same choices as the Filter Type list).
@@ -58,8 +62,8 @@ const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFra
 // The built-in PDF fonts have no peso sign or narrow spaces (Intl puts one before AM/PM).
 const pdfText = (value: string) => value.replace(/₱/g, 'PHP ').replace(/[\u00A0\u2009\u202F]/g, ' ');
 
-// Builds the same receipt as the View modal as an A4 PDF and saves it.
-async function downloadReceiptPdf(txn: Transaction) {
+// A loan release or rental booking (no payment receipt): the View modal as an A4 PDF.
+async function downloadDetailsPdf(txn: Transaction) {
   const [{ jsPDF }, logo] = await Promise.all([import('jspdf'), loadPdfLogo()]);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   doc.setProperties({ title: `Transaction Receipt - ${txn.id}` });
@@ -161,7 +165,6 @@ export function Transaction({ userRole }: TransactionProps) {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
-
   if (userRole !== 'member') {
     return <div className="p-8">Access restricted to members only</div>;
   }
@@ -174,6 +177,9 @@ export function Transaction({ userRole }: TransactionProps) {
     return <div className="p-4 md:p-8 text-sm text-gray-500">Loading your transactions...</div>;
   }
 
+  // Whose receipts these are (savings and machinery payments; a loan payment carries the loan's member).
+  const owner = { name: memberData.member.full_name, memberNumber: memberData.member.member_number };
+
   // Savings deposits and withdrawals carry the savings balance after each entry.
   let savingsRunning = 0;
   const savingsRows: Transaction[] = [...memberData.savings.transactions]
@@ -182,6 +188,7 @@ export function Transaction({ userRole }: TransactionProps) {
       const withdrawal = deposit.type === 'Withdrawal';
       const category = withdrawal ? 'Savings Withdrawal' : 'Savings Deposit';
       savingsRunning += withdrawal ? -Number(deposit.amount) : Number(deposit.amount);
+      const balance = typeof deposit.balance === 'number' ? deposit.balance : savingsRunning;
       return {
         id: `SAV-${deposit.id}`,
         date: deposit.date,
@@ -189,12 +196,17 @@ export function Transaction({ userRole }: TransactionProps) {
         category,
         description: deposit.notes ? `${category} - ${deposit.notes}` : category,
         amount: Number(deposit.amount),
-        balance: typeof deposit.balance === 'number' ? deposit.balance : savingsRunning,
+        balance,
         balanceLabel: 'Savings Balance',
         status: 'completed' as const,
         paymentMethod: deposit.paymentMethod || 'Not specified',
         reference: deposit.reference || `SAV-${deposit.id}`,
         recordedBy: recorder(deposit.recordedBy, deposit.recordedByPosition),
+        receipt: savingsReceipt({ memberName: owner.name, memberNumber: owner.memberNumber ?? '' }, {
+          id: deposit.id, type: withdrawal ? 'Withdrawal' : 'Deposit', amount: Number(deposit.amount), balance, date: deposit.date,
+          paymentMethod: deposit.paymentMethod ?? '', reference: deposit.reference ?? '', notes: deposit.notes,
+          recordedBy: deposit.recordedBy ?? null, recordedByPosition: deposit.recordedByPosition ?? null,
+        }),
       };
     });
 
@@ -230,6 +242,11 @@ export function Transaction({ userRole }: TransactionProps) {
     paymentMethod: 'Cash, at the ACIFAC office',
     reference: receiptNumber('MS', payment.id),
     recordedBy: recorder(payment.recordedBy, payment.recordedByPosition),
+    // The balance comes from the server: the list may not hold every payment of the service.
+    receipt: {
+      ...machineryPaymentReceipt({ clientName: owner.name, memberNumber: owner.memberNumber, serviceType: payment.serviceType, machineryName: payment.machineryName, serviceDate: payment.serviceDate, feeAmount: payment.feeAmount }, payment, [payment]),
+      balance: payment.balanceAfter,
+    },
   }));
 
   const transactions: Transaction[] = [
@@ -263,6 +280,7 @@ export function Transaction({ userRole }: TransactionProps) {
       paymentMethod: 'Cash, at the ACIFAC office',
       reference: `PAY-${payment.id}`,
       recordedBy: recorder(payment.recordedBy, payment.recordedByPosition),
+      receipt: loanPaymentReceipt(payment),
     })),
   ];
 
@@ -284,8 +302,13 @@ export function Transaction({ userRole }: TransactionProps) {
     setShowReceiptModal(true);
   };
 
+  // A payment downloads the office's receipt (A5); anything else its details.
   const handleDownloadReceipt = (txn: Transaction) => {
-    downloadReceiptPdf(txn).catch(() => {
+    const { receipt } = txn;
+    const saving = receipt
+      ? import('../../admin/components/receipt/paymentReceiptPdf').then((pdf) => pdf.downloadReceiptPdf(receipt))
+      : downloadDetailsPdf(txn);
+    saving.catch(() => {
       toast.error('Unable to create the receipt PDF. Please try again.');
     });
   };
@@ -425,8 +448,13 @@ export function Transaction({ userRole }: TransactionProps) {
         )}
       </div>
 
-      {/* Receipt View Modal */}
-      {showReceiptModal && selectedTransaction && (
+      {/* A payment: the receipt as the office prints it. */}
+      {showReceiptModal && selectedTransaction?.receipt && (
+        <PaymentReceiptModal receipt={selectedTransaction.receipt} onClose={() => setShowReceiptModal(false)} />
+      )}
+
+      {/* A loan release or rental booking: its details. */}
+      {showReceiptModal && selectedTransaction && !selectedTransaction.receipt && (
         <div className="acf-modal fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">

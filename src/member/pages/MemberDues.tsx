@@ -8,7 +8,10 @@ import { errorMessage } from '../../lib/api';
 import { formatDate } from '../../utils/dateTime';
 import { formatPeso } from '../../utils/money';
 import { DUE_KIND_LABELS, fetchMyDues, type Due, type MemberDuesDetail } from '../../app/services/duesApi';
+import { fetchCurrentUser } from '../../app/services/authApi';
 import { DuesRatesNote } from '../../app/components/DuesRatesNote';
+import { PaymentReceiptModal } from '../../admin/components/receipt/PaymentReceiptModal';
+import { duesReceipt, type PaymentReceipt } from '../../admin/components/receipt/paymentReceipt';
 
 // The member's dues under the Membership Policy: share capital and savings
 // for every meeting, absence fines and transfer fees, what is paid and what
@@ -28,11 +31,21 @@ export function MemberDues() {
   const [detail, setDetail] = useState<MemberDuesDetail | null>(null);
   const [error, setError] = useState('');
   const [view, setView] = useState<View>('unpaid');
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  // Whose receipt it is: the member's name and number, as on the office's receipt.
+  const [owner, setOwner] = useState<{ name: string; memberNumber: string | null }>({ name: '', memberNumber: null });
 
   const load = useCallback(() => {
     fetchMyDues().then((response) => { setDetail(response); setError(''); }).catch((reason) => setError(errorMessage(reason, 'Unable to load your dues.')));
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    fetchCurrentUser('passive')
+      .then((response) => { if (active && response.user) setOwner({ name: response.user.display_name || response.user.full_name || '', memberNumber: response.user.member_number ?? null }); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   useLiveRefresh(['member_dues', 'member_dues_payments'], load);
 
   const dues = view === 'unpaid' ? detail?.dues.filter((due) => due.status === 'unpaid') ?? [] : detail?.dues ?? [];
@@ -82,7 +95,12 @@ export function MemberDues() {
                       <p className="font-semibold text-gray-900">{formatDate(item.paymentDate)}</p>
                       <p className="text-xs text-gray-500">{item.paymentMethod}{item.reference ? ` · ${item.reference}` : ''} · {item.duesCount} {item.duesCount === 1 ? 'due' : 'dues'}</p>
                     </div>
-                    <p className="shrink-0 font-bold tabular-nums text-green-700">{formatPeso(item.amount)}</p>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <p className="font-bold tabular-nums text-green-700">{formatPeso(item.amount)}</p>
+                      <button type="button" onClick={() => setReceipt(duesReceipt(owner, item, detail.dues))} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-green-700 hover:bg-green-50" aria-label={`Receipt of the payment of ${formatDate(item.paymentDate)}`}>
+                        <ReceiptText className="h-4 w-4" aria-hidden="true" />Receipt
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -115,6 +133,7 @@ export function MemberDues() {
           </>
         )}
       </section>
+      {receipt && <PaymentReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }
