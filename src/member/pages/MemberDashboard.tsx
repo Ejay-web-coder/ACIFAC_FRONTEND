@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertCircle, AlertTriangle, Banknote, CalendarDays, ChevronRight, CircleCheck, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AlertCircle, Banknote, ChevronRight, CircleCheck, TrendingUp, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Skeleton } from '../../app/components/common/UiKit';
 import { UserRole } from '../../app/App';
@@ -15,8 +15,6 @@ interface MemberDashboardProps {
 
 const GOLD = '#f3c443';
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-/** Whole days from today to a YYYY-MM-DD date (negative when it has passed). */
-const daysUntil = (date: string) => Math.round((Date.parse(`${date.slice(0, 10)}T00:00:00Z`) - Date.parse(`${dateOnlyToday()}T00:00:00Z`)) / 86400000);
 
 // ₱ 10,073.80 as on a price tag: a gold peso sign, the pesos large, the centavos raised.
 function BigMoney({ value }: { value: number }) {
@@ -61,7 +59,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
     return (
       <div className="space-y-3 lg:space-y-4" role="status" aria-label="Loading your member data">
         <Skeleton className="h-56 w-full rounded-3xl" />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3"><Skeleton className="col-span-2 h-32 rounded-2xl lg:col-span-1" /><Skeleton className="h-28 rounded-2xl" /><Skeleton className="h-28 rounded-2xl" /></div>
+        <div className="grid grid-cols-2 gap-3"><Skeleton className="h-28 rounded-2xl" /><Skeleton className="h-28 rounded-2xl" /></div>
         <Skeleton className="h-40 w-full rounded-2xl" />
       </div>
     );
@@ -70,12 +68,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
   const { loans, payments } = memberData;
   const activeLoans = loans.filter((loan) => loan.status === 'active' || loan.status === 'overdue');
   const loanBalance = sumMoney(activeLoans.map((loan) => loan.balance));
-  const nextLoan = activeLoans.filter((loan) => loan.nextPaymentDate).sort((left, right) => String(left.nextPaymentDate).localeCompare(String(right.nextPaymentDate)))[0];
   const recentPayments = payments.slice(0, 2);
-  const isOverdue = nextLoan?.status === 'overdue';
-  // Overdue: what is past due and the late penalty run up on it (paid first).
-  const nextAmount = nextLoan ? (isOverdue ? Math.round((Number(nextLoan.overdueAmount) + Number(nextLoan.penaltyDue)) * 100) / 100 : Number(nextLoan.nextAmountDue ?? nextLoan.monthlyPayment)) : 0;
-  const daysLeft = nextLoan?.nextPaymentDate ? daysUntil(String(nextLoan.nextPaymentDate)) : null;
 
   // Your total savings: the savings deposits (dividends and patronage refunds are confidential: the office only).
   const total = memberData.savings?.total ?? 0;
@@ -101,7 +94,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
     <p className="flex flex-1 items-center justify-center px-4 py-5 text-center text-sm text-gray-500">No transactions yet. Your loan payments appear here once recorded.</p>
   );
 
-  // Fits one screen: the savings, the loan figures, then the recent transactions and activities.
+  // Fits one screen: the savings, the loan balance and share capital, then the recent transactions and activities.
   return (
     <div className="space-y-3 lg:space-y-4">
       {/* Your total savings */}
@@ -115,33 +108,7 @@ export function MemberDashboard({ userRole }: MemberDashboardProps) {
         </div>
       </Link>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
-        {/* Next loan payment: the reminder, with the days left. */}
-        <section className={`col-span-2 rounded-2xl border p-3 shadow-[var(--shadow-card)] sm:p-4 lg:col-span-1 lg:p-5 ${isOverdue ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-[#fdf3d4]'}`} role={isOverdue ? 'alert' : undefined}>
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2.5 text-sm font-semibold text-gray-900">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white ring-1 ring-amber-200">{isOverdue ? <AlertTriangle className="h-4 w-4 text-red-700" /> : <CalendarDays className="h-4 w-4" />}</span>
-              {isOverdue ? 'Overdue loan payment' : 'Next loan payment'}
-            </h2>
-            {daysLeft !== null && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isOverdue || daysLeft < 0 ? 'bg-red-100 text-red-800' : 'bg-white text-gray-800'}`}>
-              {isOverdue || daysLeft < 0 ? 'Past due' : daysLeft === 0 ? 'Due today' : `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`}
-            </span>}
-          </div>
-          {nextLoan ? (
-            <div className="mt-2 flex items-end justify-between gap-3 lg:block">
-              <div className="min-w-0">
-                <p className="truncate text-2xl font-extrabold tabular-nums text-gray-900 lg:text-3xl">{peso(nextAmount)}</p>
-                <p className="text-sm font-medium text-gray-800">{isOverdue
-                  ? nextLoan.penaltyDays > 0 ? `Includes a ${peso(Number(nextLoan.penaltyDue))} late penalty, ${peso(Number(nextLoan.penaltyPerDay))} more each day. Please settle it at the ACIFAC office.`
-                    : nextLoan.penaltyPerDay > 0 && nextLoan.graceEndsOn ? `Pay by ${formatDate(nextLoan.graceEndsOn)} to avoid a ${peso(Number(nextLoan.penaltyPerDay))} a day penalty.`
-                    : 'Please settle it at the ACIFAC office.'
-                  : `Due on ${formatDate(nextLoan.nextPaymentDate)}`}</p>
-              </div>
-              <Link to="/loan-status" className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-[#1b3d26] px-4 text-sm font-semibold text-white hover:bg-green-900 lg:mt-3">View loan details</Link>
-            </div>
-          ) : <p className="mt-2 text-sm text-gray-700">You have no loan payments due.</p>}
-        </section>
-
+      <div className="grid grid-cols-2 gap-3 lg:gap-4">
         <FigureCard icon={Banknote} label="Loan balance" value={peso(loanBalance)} detail={`Still owed on ${loansText}`} link={{ to: '/loan-status', label: 'See loan status' }} />
         <FigureCard icon={TrendingUp} label="Share capital" value={peso(member.share_capital)} detail="Your paid-up share in the cooperative" />
       </div>
