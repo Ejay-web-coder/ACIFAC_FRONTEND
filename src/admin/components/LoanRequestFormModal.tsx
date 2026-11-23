@@ -59,7 +59,7 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
   const [decision, setDecision] = useState<Decision | null>(!decided && savedNote ? 'evaluation' : null);
   const shown: Decision | null = decided ? (request.status as Decision) : decision;
   const [declining, setDeclining] = useState(false);
-  // For Evaluation asks for the message at once; Cancel goes back to the decision ticked before.
+  // Disapproved and For Evaluation ask for their message at once; Cancel goes back to the decision ticked before.
   const [evaluating, setEvaluating] = useState(false);
   const decisionBefore = useRef<Decision | null>(null);
   const [saving, setSaving] = useState(false);
@@ -74,19 +74,19 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
     try { await onDecide(status, reason); } finally { setSaving(false); }
   };
   const pick = (key: Decision) => {
-    if (key === 'evaluation') {
-      decisionBefore.current = decision;
-      setEvaluating(true);
-    }
+    if (key !== 'approved') decisionBefore.current = decision;
+    if (key === 'declined') setDeclining(true);
+    if (key === 'evaluation') setEvaluating(true);
     setDecision(key);
   };
-  const cancelEvaluation = () => {
+  const cancelMessage = () => {
+    setDeclining(false);
     setEvaluating(false);
     setDecision(decisionBefore.current);
   };
+  // Approve saves from the button below; Disapproved and For Evaluation save from their message window.
   const save = () => {
     if (decision === 'approved') void decide('approved');
-    else if (decision === 'declined') setDeclining(true);
     else if (decision === 'evaluation') pick('evaluation');
   };
   // Evaluated by: the note's author when For Evaluation is still the saved decision; else the reviewer now.
@@ -234,10 +234,10 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                     return (
                       <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled && !on ? 'cursor-not-allowed opacity-50' : disabled ? 'cursor-default' : ''}`}
                         title={disabled && !decided ? (overFirstYear ? `In the first year of loans, at most ${FIRST_LOAN_YEAR_HECTARES} hectares (${peso(firstYearMaximum)}).` : 'The member must pay at least 80% of the open loan first.') : undefined}>
-                        {/* For Evaluation opens the message window, also when it is already ticked. */}
+                        {/* Disapproved and For Evaluation open their message window, also when already ticked. */}
                         <input type="radio" name="office-decision" checked={on} disabled={disabled}
-                          onChange={() => { if (key !== 'evaluation') setDecision(key); }}
-                          onClick={() => { if (key === 'evaluation' && !disabled) pick('evaluation'); }}
+                          onChange={() => { if (key === 'approved') setDecision(key); }}
+                          onClick={() => { if (key !== 'approved' && !disabled) pick(key); }}
                           className="h-4 w-4 accent-current" />{label}
                       </label>
                     );
@@ -272,9 +272,9 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                 <p className="mt-2 text-xs text-slate-500">
                   {decided ? `This application was ${request.status === 'approved' ? 'approved' : 'disapproved'}${request.reviewedAt ? ` on ${formatDate(request.reviewedAt)}` : ''}.`
                     : decision === 'approved' ? 'Saving approves the application as applied for and releases the loan with these amounts.'
-                    : decision === 'declined' ? 'Saving asks for the reason, which is sent to the member.'
+                    : decision === 'declined' ? 'The reason you give is sent to the member with the decision.'
                       : decision === 'evaluation' ? 'Saving asks what is being evaluated. The application stays pending until it is approved or disapproved; only the office sees the message.'
-                        : 'Tick the decision, then save it.'}
+                        : 'Tick the decision: Disapproved and For Evaluation ask for a message; Approved is saved with Approve.'}
                 </p>
               </div>
             </Section>
@@ -283,16 +283,16 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
 
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 sm:px-6">
           <button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200">Close</button>
-          {!decided && <button type="button" onClick={save} disabled={!decision || saving}
-            className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${decision === 'declined' ? 'bg-red-600 hover:bg-red-700' : decision === 'evaluation' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
-            {decision === 'declined' ? <><XCircle className="h-4 w-4" />Disapprove…</>
-              : decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation…</>
+          {/* No Disapprove button: ticking Disapproved asks for the reason and disapproves from there. */}
+          {!decided && decision !== 'declined' && <button type="button" onClick={save} disabled={!decision || saving}
+            className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${decision === 'evaluation' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
+            {decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation…</>
                 : <><CheckCircle className="h-4 w-4" />{saving ? 'Approving…' : decision === 'approved' && open ? 'Approve & Restructure' : decision === 'approved' ? 'Approve' : 'Tick a decision'}</>}
           </button>}
         </div>
       </div>
-      {declining && <DeclineModal name={request.memberName} saving={saving} onCancel={() => setDeclining(false)} onDecline={(reason) => void decide('declined', reason)} />}
-      {evaluating && <EvaluationModal name={request.memberName} initial={savedNote} saving={saving} onCancel={cancelEvaluation} onSave={(message) => void decide('evaluation', message)} />}
+      {declining && <DeclineModal name={request.memberName} saving={saving} onCancel={cancelMessage} onDecline={(reason) => void decide('declined', reason)} />}
+      {evaluating && <EvaluationModal name={request.memberName} initial={savedNote} saving={saving} onCancel={cancelMessage} onSave={(message) => void decide('evaluation', message)} />}
     </div>
   );
 }
