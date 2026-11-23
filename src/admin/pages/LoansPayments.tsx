@@ -179,14 +179,14 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
 
   useLiveRefresh(['loans', 'loan_payments', 'loan_requests'], () => { void loadData(); });
 
-  // reason: why it was declined, typed in the Decline window of the application.
-  const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined', reason?: string) => {
+  // reason: why it was declined (Decline window), or what is being evaluated (For Evaluation window).
+  const updateLoanRequestStatus = async (request: LoanRequest, status: 'approved' | 'declined' | 'evaluation', reason?: string) => {
     try {
       await reviewAdminLoanRequest(Number(request.id), status, reason);
       setViewingRequestId(null);
       void loadData();
-      toast.success(status === 'approved' ? 'Loan request approved' : 'Loan request declined', {
-        description: `${request.memberName}'s request #${request.id} was ${status}.`
+      toast.success(status === 'approved' ? 'Loan request approved' : status === 'declined' ? 'Loan request declined' : 'Kept for evaluation', {
+        description: status === 'evaluation' ? `${request.memberName}'s request #${request.id} stays pending with your note.` : `${request.memberName}'s request #${request.id} was ${status}.`
       });
     } catch (error) {
       toast.error('Unable to review loan request', { description: (error as Error).message });
@@ -513,6 +513,9 @@ export function LoansPayments({ userRole }: LoansPaymentsProps) {
                       {request.status === 'pending' && request.openLoanNumber && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-200"><RefreshCcw className="h-3.5 w-3.5" aria-hidden="true" />Has open loan {request.openLoanNumber}</span>}
                     </div>
                     <p className="mt-1 text-sm text-gray-700">{peso(request.amount)} · Application {request.id} · Submitted {formatDateTime(request.submittedAt)}{request.status !== 'pending' && request.reviewedAt ? ` · ${REQUEST_STATUS[request.status].label} ${formatDateTime(request.reviewedAt)}` : ''}</p>
+                    {request.status === 'pending' && request.evaluationNotes && (
+                      <p className="mt-1 line-clamp-2 text-sm text-amber-900" title={request.evaluationNotes}><span className="font-semibold">Evaluating:</span> {request.evaluationNotes}</p>
+                    )}
                   </div>
                   <button type="button" onClick={() => setViewingRequestId(request.id)}
                     className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-green-600 bg-white px-4 text-sm font-semibold text-green-700 hover:bg-green-50 sm:w-auto">

@@ -213,6 +213,10 @@ export interface AdminLoanRequest {
   reviewedAt?: string | null;
   status: 'pending' | 'approved' | 'declined';
   reviewNotes?: string | null;
+  /** For Evaluation (office only, never sent to members): what is being evaluated, who saved it and when. */
+  evaluationNotes?: string | null;
+  evaluatedAt?: string | null;
+  evaluatedBy?: string | null;
   farmArea?: number;
   maximumEligibleAmount?: number;
   interestRate?: number;
@@ -477,7 +481,8 @@ export function previewLoanIdChecks(payload: { memberId?: number; borrowerIdRead
   return apiPost<{ checks: VerificationCheck[] }>('/api/loans/id-checks', payload);
 }
 
-export const reviewAdminLoanRequest = (id: number, status: 'approved' | 'declined', reason?: string) =>
+/** evaluation: keeps it pending with `reason` as the office's note on what is being evaluated. */
+export const reviewAdminLoanRequest = (id: number, status: 'approved' | 'declined' | 'evaluation', reason?: string) =>
   apiPatch<{ message: string }>(`/api/admin/loan-requests/${id}`, { status, reason });
 
 export async function recordAdminLoanPayment(id: number, payload: { amount: number | string; paymentDate: string }) {

@@ -1,6 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle, Clock, Eye, PenLine, RefreshCcw, X, XCircle } from 'lucide-react';
-import { toast } from 'sonner';
 import type { AdminLoanRequest } from '../../app/services/authApi';
 import { dateOnlyToday, formatDate, formatDateTime } from '../../utils/dateTime';
 import { FIRST_LOAN_YEAR_HECTARES, inFirstLoanYear, interestRateLabel, loanRelease, MAX_LOAN_PER_HECTARE } from '../../lib/loanPolicy';
@@ -48,34 +47,50 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
   /** The administrator reviewing it: "Evaluated / Approved by". */
   reviewerName: string;
   onViewSignature: () => void;
-  onDecide: (status: 'approved' | 'declined', reason?: string) => Promise<void>;
+  /** evaluation: keeps it pending, with `reason` as the office's note on what is being evaluated. */
+  onDecide: (status: 'approved' | 'declined' | 'evaluation', reason?: string) => Promise<void>;
   onClose: () => void;
 }) {
-  // VI. For Office Use Only: the administrator ticks the decision, then saves it.
-  const [decision, setDecision] = useState<Decision | null>(null);
   // An application already approved or disapproved opens read-only, ticked with its decision.
   const decided = request.status !== 'pending';
+  // The note saved with For Evaluation (office only); a pending one opens with For Evaluation ticked.
+  const savedNote = request.evaluationNotes?.trim() || '';
+  // VII. For Office Use Only: the administrator ticks the decision, then saves it.
+  const [decision, setDecision] = useState<Decision | null>(!decided && savedNote ? 'evaluation' : null);
   const shown: Decision | null = decided ? (request.status as Decision) : decision;
   const [declining, setDeclining] = useState(false);
+  // For Evaluation asks for the message at once; Cancel goes back to the decision ticked before.
+  const [evaluating, setEvaluating] = useState(false);
+  const decisionBefore = useRef<Decision | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !declining) onClose(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !declining && !evaluating) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, declining]);
-  const decide = async (status: 'approved' | 'declined', reason?: string) => {
+  }, [onClose, declining, evaluating]);
+  const decide = async (status: 'approved' | 'declined' | 'evaluation', reason?: string) => {
     if (saving) return;
     setSaving(true);
     try { await onDecide(status, reason); } finally { setSaving(false); }
   };
+  const pick = (key: Decision) => {
+    if (key === 'evaluation') {
+      decisionBefore.current = decision;
+      setEvaluating(true);
+    }
+    setDecision(key);
+  };
+  const cancelEvaluation = () => {
+    setEvaluating(false);
+    setDecision(decisionBefore.current);
+  };
   const save = () => {
     if (decision === 'approved') void decide('approved');
     else if (decision === 'declined') setDeclining(true);
-    else if (decision === 'evaluation') {
-      toast.info(`Application #${request.id} stays pending for evaluation`, { description: 'Open it again to approve or disapprove it.' });
-      onClose();
-    }
+    else if (decision === 'evaluation') pick('evaluation');
   };
+  // Evaluated by: the note's author when For Evaluation is still the saved decision; else the reviewer now.
+  const showSavedEvaluation = !decided && decision === 'evaluation' && Boolean(savedNote);
 
   const items = request.inKindItems ?? [];
   const inKindTotal = items.reduce((sum, item) => sum + Math.round(Number(item.quantity) * Number(item.unitPrice) * 100), 0) / 100;
@@ -219,7 +234,11 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                     return (
                       <label key={key} className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border-2 px-3 text-sm font-bold uppercase ${on ? tone : 'border-slate-200 text-slate-700 hover:bg-slate-50'} ${disabled && !on ? 'cursor-not-allowed opacity-50' : disabled ? 'cursor-default' : ''}`}
                         title={disabled && !decided ? (overFirstYear ? `In the first year of loans, at most ${FIRST_LOAN_YEAR_HECTARES} hectares (${peso(firstYearMaximum)}).` : 'The member must pay at least 80% of the open loan first.') : undefined}>
-                        <input type="radio" name="office-decision" checked={on} disabled={disabled} onChange={() => setDecision(key)} className="h-4 w-4 accent-current" />{label}
+                        {/* For Evaluation opens the message window, also when it is already ticked. */}
+                        <input type="radio" name="office-decision" checked={on} disabled={disabled}
+                          onChange={() => { if (key !== 'evaluation') setDecision(key); }}
+                          onClick={() => { if (key === 'evaluation' && !disabled) pick('evaluation'); }}
+                          className="h-4 w-4 accent-current" />{label}
                       </label>
                     );
                   })}
@@ -237,15 +256,24 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
                   ))}
                 </dl>
                 <dl className="mt-2 grid grid-cols-1 gap-px overflow-hidden rounded-md border border-slate-300 bg-slate-300 sm:grid-cols-[2fr_1fr]">
-                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Evaluated / Approved by</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? '' : decision ? reviewerName : ''}</dd></div>
-                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Date</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? (request.reviewedAt ? formatDate(request.reviewedAt) : '') : decision ? formatDate(dateOnlyToday()) : ''}</dd></div>
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Evaluated / Approved by</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? '' : showSavedEvaluation ? (request.evaluatedBy || '') : decision ? reviewerName : ''}</dd></div>
+                  <div className="bg-white p-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Date</dt><dd className="mt-0.5 min-h-[1.25rem] text-sm font-medium text-slate-900">{decided ? (request.reviewedAt ? formatDate(request.reviewedAt) : '') : showSavedEvaluation ? formatDate(request.evaluatedAt) : decision ? formatDate(dateOnlyToday()) : ''}</dd></div>
                 </dl>
+                {savedNote && (
+                  <div className="mt-2 rounded-md bg-amber-50 p-2 text-sm text-amber-900 ring-1 ring-amber-200">
+                    <p className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="text-xs font-bold uppercase tracking-wide">For evaluation{request.evaluatedAt ? ` · ${formatDateTime(request.evaluatedAt)}` : ''}{request.evaluatedBy ? ` · ${request.evaluatedBy}` : ''}</span>
+                      {!decided && <button type="button" onClick={() => pick('evaluation')} className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"><PenLine className="h-3.5 w-3.5" />Edit message</button>}
+                    </p>
+                    <p className="mt-1 whitespace-pre-line break-words">{savedNote}</p>
+                  </div>
+                )}
                 {decided && request.status === 'declined' && request.reviewNotes && <p className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-800">Reason: {request.reviewNotes}</p>}
                 <p className="mt-2 text-xs text-slate-500">
                   {decided ? `This application was ${request.status === 'approved' ? 'approved' : 'disapproved'}${request.reviewedAt ? ` on ${formatDate(request.reviewedAt)}` : ''}.`
                     : decision === 'approved' ? 'Saving approves the application as applied for and releases the loan with these amounts.'
                     : decision === 'declined' ? 'Saving asks for the reason, which is sent to the member.'
-                      : decision === 'evaluation' ? 'The application stays pending until it is approved or disapproved.'
+                      : decision === 'evaluation' ? 'Saving asks what is being evaluated. The application stays pending until it is approved or disapproved; only the office sees the message.'
                         : 'Tick the decision, then save it.'}
                 </p>
               </div>
@@ -258,12 +286,46 @@ export function LoanRequestFormModal({ request, idSummary, reviewerName, onViewS
           {!decided && <button type="button" onClick={save} disabled={!decision || saving}
             className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${decision === 'declined' ? 'bg-red-600 hover:bg-red-700' : decision === 'evaluation' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
             {decision === 'declined' ? <><XCircle className="h-4 w-4" />Disapprove…</>
-              : decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation</>
+              : decision === 'evaluation' ? <><Clock className="h-4 w-4" />Keep for evaluation…</>
                 : <><CheckCircle className="h-4 w-4" />{saving ? 'Approving…' : decision === 'approved' && open ? 'Approve & Restructure' : decision === 'approved' ? 'Approve' : 'Tick a decision'}</>}
           </button>}
         </div>
       </div>
       {declining && <DeclineModal name={request.memberName} saving={saving} onCancel={() => setDeclining(false)} onDecline={(reason) => void decide('declined', reason)} />}
+      {evaluating && <EvaluationModal name={request.memberName} initial={savedNote} saving={saving} onCancel={cancelEvaluation} onSave={(message) => void decide('evaluation', message)} />}
+    </div>
+  );
+}
+
+// For Evaluation: what is being evaluated (required). It stays with the
+// application for the office; the member is not told.
+function EvaluationModal({ name, initial, saving, onCancel, onSave }: { name: string; initial: string; saving: boolean; onCancel: () => void; onSave: (message: string) => void }) {
+  const [message, setMessage] = useState(initial);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  const trimmed = message.trim();
+  return (
+    <div className="acf-modal fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true" aria-labelledby="evaluation-title">
+      <form onSubmit={(event) => { event.preventDefault(); if (trimmed) onSave(trimmed); }} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700"><Clock className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h3 id="evaluation-title" className="text-lg font-bold text-slate-900">Keep {name}&apos;s application for evaluation</h3>
+            <p className="text-sm text-slate-600">It stays pending until it is approved or disapproved. Only the office sees this message; the member is not told.</p>
+          </div>
+        </div>
+        <label className="mt-4 block text-sm font-medium text-slate-700">Message
+          <textarea autoFocus required rows={4} maxLength={1000} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="e.g. Checking the farm area with the barangay before approving."
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200" />
+        </label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={saving} className="min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200">Cancel</button>
+          <button type="submit" disabled={saving || !trimmed} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"><Clock className="h-4 w-4" />{saving ? 'Saving…' : 'Save for evaluation'}</button>
+        </div>
+      </form>
     </div>
   );
 }
