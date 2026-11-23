@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { RefreshCcw, X } from 'lucide-react';
-import { fetchMemberLoanHistory, fetchMyLoanHistory, type MemberLoanHistory } from '../services/authApi';
+import { Receipt, RefreshCcw, X } from 'lucide-react';
+import { fetchMemberLoanHistory, fetchMyLoanHistory, type AdminPayment, type MemberLoanHistory } from '../services/authApi';
 import { errorMessage } from '../../lib/api';
-import { formatDate } from '../../utils/dateTime';
+import { formatDate, paymentTimeLabel } from '../../utils/dateTime';
+import { PaymentReceiptModal } from '../../admin/components/receipt/PaymentReceiptModal';
+import { loanPaymentReceipt, type PaymentReceipt } from '../../admin/components/receipt/paymentReceipt';
 import { StatusBadge } from './common/UiKit';
 import { interestRateLabel } from '../../lib/loanPolicy';
 import { RecordedLoanProceeds, recordedRelease } from './LoanProceeds';
@@ -18,6 +20,13 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
   const [history, setHistory] = useState<MemberLoanHistory | null>(null);
   const [error, setError] = useState('');
   const [section, setSection] = useState<'loans' | 'payments'>('loans');
+  // The receipt open over the summary (Escape closes only the receipt).
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const receiptButton = (payment: AdminPayment, className: string) => (
+    <button type="button" onClick={() => setReceipt(loanPaymentReceipt(payment))} className={`inline-flex items-center justify-center gap-1 font-semibold text-green-700 hover:bg-green-50 ${className}`} aria-label={`Receipt of the payment of ${formatDate(payment.paymentDate)}`}>
+      <Receipt className="h-4 w-4" aria-hidden="true" />Receipt
+    </button>
+  );
 
   useEffect(() => {
     let active = true;
@@ -121,7 +130,7 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="font-medium text-gray-900">{formatDate(payment.paymentDate)}</p>
-                            <p className="text-xs text-gray-500">{payment.loanNumber}</p>
+                            <p className="text-xs text-gray-500">{[paymentTimeLabel(payment.paymentDate, payment.createdAt), payment.loanNumber].filter(Boolean).join(' · ')}</p>
                           </div>
                           <p className="font-semibold tabular-nums text-gray-900">{peso(payment.amount)}</p>
                         </div>
@@ -131,24 +140,26 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
                           <div className="text-right"><dt className="text-gray-500">Balance after</dt><dd className="tabular-nums text-gray-900">{peso(payment.remainingBalance)}</dd></div>
                         </dl>
                         {payment.penaltyPaid > 0 && <p className="mt-1 text-xs text-red-700">Late penalty: {peso(payment.penaltyPaid)} of this payment</p>}
+                        {receiptButton(payment, 'mt-2 min-h-10 w-full rounded-xl border border-green-600 px-3 text-sm')}
                       </li>
                     ))}
                   </ul>
                   <div className="mt-3 hidden overflow-x-auto sm:block">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="w-full min-w-[720px] text-sm">
                       <thead className="text-left text-xs text-gray-500">
-                        <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 font-medium">Loan</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 pr-3 text-right font-medium">Penalty</th><th className="py-2 text-right font-medium">Balance after</th></tr>
+                        <tr><th className="py-2 pr-3 font-medium">Date</th><th className="py-2 pr-3 font-medium">Loan</th><th className="py-2 pr-3 text-right font-medium">Amount</th><th className="py-2 pr-3 text-right font-medium">Principal</th><th className="py-2 pr-3 text-right font-medium">Interest</th><th className="py-2 pr-3 text-right font-medium">Penalty</th><th className="py-2 pr-3 text-right font-medium">Balance after</th><th className="py-2"><span className="sr-only">Receipt</span></th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {history.payments.map((payment) => (
                           <tr key={payment.id}>
-                            <td className="py-2 pr-3 whitespace-nowrap">{formatDate(payment.paymentDate)}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{formatDate(payment.paymentDate)}{paymentTimeLabel(payment.paymentDate, payment.createdAt) && <span className="block text-xs text-gray-500">{paymentTimeLabel(payment.paymentDate, payment.createdAt)}</span>}</td>
                             <td className="py-2 pr-3 whitespace-nowrap">{payment.loanNumber}</td>
                             <td className="py-2 pr-3 text-right font-semibold tabular-nums">{peso(payment.amount)}</td>
                             <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.principalPaid)}</td>
                             <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.interestPaid)}</td>
                             <td className={`py-2 pr-3 text-right tabular-nums ${payment.penaltyPaid > 0 ? 'text-red-700' : 'text-gray-400'}`}>{peso(payment.penaltyPaid)}</td>
-                            <td className="py-2 text-right tabular-nums">{peso(payment.remainingBalance)}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums">{peso(payment.remainingBalance)}</td>
+                            <td className="py-2 text-right">{receiptButton(payment, 'min-h-9 rounded-lg px-2 text-xs')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -162,6 +173,8 @@ export function LoanHistoryModal({ memberId, memberName, onClose }: { memberId?:
         <div className="flex justify-end border-t border-gray-200 px-6 py-4">
           <button type="button" onClick={onClose} className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">Close</button>
         </div>
+        {/* Inside the panel, so a click on the receipt does not reach the backdrop. */}
+        {receipt && <PaymentReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
       </div>
     </div>
   );

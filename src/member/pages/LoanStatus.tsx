@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus, History, Smartphone } from 'lucide-react';
+import { PhilippinePeso, Calendar, CheckCircle, TrendingDown, Plus, History, Smartphone, Receipt } from 'lucide-react';
 import { EmptyState, StatCard } from '../../app/components/common/UiKit';
 import { PagedList } from '../../app/components/common/PagedList';
 import { UserRole } from '../../app/App';
 import { createMyLoanRequest, fetchMyMemberData } from '../../app/services/authApi';
 import { toast } from 'sonner';
-import { formatDate, formatDateTime } from '../../utils/dateTime';
+import { formatDate, formatDateTime, paymentTimeLabel } from '../../utils/dateTime';
+import { PaymentReceiptModal } from '../../admin/components/receipt/PaymentReceiptModal';
+import { loanPaymentReceipt, type PaymentReceipt } from '../../admin/components/receipt/paymentReceipt';
 import { LoanApplicationModal, type LoanApplicationPayload } from '../../app/components/LoanApplicationForm';
 import { LoanHistoryModal } from '../../app/components/LoanHistoryModal';
 import type { Member } from '../../admin/pages/MembershipManagement';
@@ -63,6 +65,10 @@ interface Payment {
   interestPaid: number;
   penaltyPaid: number;
   remainingBalance: number;
+  /** When the office recorded it (the time of the payment). */
+  createdAt?: string;
+  /** The receipt, the same one the office prints. */
+  receipt: PaymentReceipt;
 }
 
 interface LoanRequest {
@@ -87,7 +93,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
   // The loan summary: every loan and payment, as the office sees it.
   const [showLoanHistory, setShowLoanHistory] = useState(false);
   const [activeSection, setActiveSection] = useState<'loans' | 'applications' | 'payments'>('loans');
-
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
 
   const loadLoanData = useCallback(() => fetchMyMemberData().then((data) => {
       setApplicationMember({
@@ -152,6 +158,8 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         interestPaid: payment.interestPaid,
         penaltyPaid: payment.penaltyPaid,
         remainingBalance: payment.remainingBalance,
+        createdAt: payment.createdAt,
+        receipt: loanPaymentReceipt(payment),
       })));
       setLoanRequests((data.loanRequests ?? []).map((request) => ({
         id: request.id,
@@ -206,6 +214,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
         </div>
       </div>
       {showLoanHistory && <LoanHistoryModal onClose={() => setShowLoanHistory(false)} />}
+      {receipt && <PaymentReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
@@ -381,6 +390,7 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   <div className="min-w-0">
                     <p className="text-lg font-bold text-gray-900">₱{payment.amount.toLocaleString()}</p>
                     <p className="text-sm text-gray-600">{formatDate(payment.paymentDate)}</p>
+                    {paymentTimeLabel(payment.paymentDate, payment.createdAt) && <p className="text-xs text-gray-500">{paymentTimeLabel(payment.paymentDate, payment.createdAt)}</p>}
                   </div>
                   <span className="truncate text-xs text-gray-500">#{payment.id}</span>
                 </div>
@@ -390,6 +400,9 @@ export function LoanStatus({ userRole }: LoanStatusProps) {
                   <div><dt className="text-xs text-gray-500">Balance after</dt><dd className="font-medium text-gray-900">₱{payment.remainingBalance.toLocaleString()}</dd></div>
                 </dl>
                 {payment.penaltyPaid > 0 && <p className="mt-2 text-xs text-red-700">Late penalty: ₱{payment.penaltyPaid.toLocaleString()} of this payment</p>}
+                <button type="button" onClick={() => setReceipt(payment.receipt)} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50" aria-label={`Receipt of the payment of ${formatDate(payment.paymentDate)}`}>
+                  <Receipt className="h-4 w-4" aria-hidden="true" />Receipt
+                </button>
               </div>
             ))}
           </div>

@@ -5,8 +5,10 @@ import { UserRole } from '../../app/App';
 import { useMyMemberData } from '../../lib/useMyMemberData';
 import { fetchProtectedImage } from '../../lib/profilePhoto';
 import { sumMoney } from '../../utils/money';
-import { formatDate } from '../../utils/dateTime';
+import { formatDate, paymentTimeLabel } from '../../utils/dateTime';
 import { useIsMobile } from '../../app/components/ui/use-mobile';
+import { PaymentReceiptModal } from '../../admin/components/receipt/PaymentReceiptModal';
+import { loanPaymentReceipt, type PaymentReceipt } from '../../admin/components/receipt/paymentReceipt';
 
 const peso = (value: number) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -68,6 +70,8 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
   const isMobile = useIsMobile();
   const [openPanel, setOpenPanel] = useState<PanelKey | null>(null);
   const [showId, setShowId] = useState(false);
+  // A loan payment's receipt, over the page (and over the phone sheet).
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
 
   useEffect(() => {
     if (!openPanel) return undefined;
@@ -218,19 +222,37 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
         {payments.slice(0, 5).map((payment) => (
           <li key={payment.id} className="rounded-lg border border-gray-200 p-3 text-sm">
             <div className="flex items-start justify-between gap-3">
-              <p className="font-medium text-gray-900">{formatDate(payment.paymentDate)}</p>
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900">{formatDate(payment.paymentDate)}</p>
+                {paymentTimeLabel(payment.paymentDate, payment.createdAt) && <p className="text-xs text-gray-500">{paymentTimeLabel(payment.paymentDate, payment.createdAt)}</p>}
+              </div>
               <p className="font-semibold tabular-nums text-gray-900">{money(payment.amount)}</p>
             </div>
             <div className="mt-1 flex items-center justify-between gap-3">
               <p className="text-xs text-gray-500">Remaining balance <span className="font-medium tabular-nums text-gray-900">{money(payment.remainingBalance)}</span></p>
               <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Completed</span>
             </div>
+            <button type="button" onClick={() => setReceipt(loanPaymentReceipt(payment))} className="mt-2 inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-green-600 px-3 text-sm font-semibold text-green-700 hover:bg-green-50" aria-label={`Receipt of the payment of ${formatDate(payment.paymentDate)}`}>
+              <Receipt className="h-4 w-4" aria-hidden="true" />Receipt
+            </button>
           </li>
         ))}
       </ul>
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[560px]"><thead className="border-y border-gray-200 bg-gray-50"><tr>{['Date', 'Amount', 'Remaining Balance', 'Status'].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{heading}</th>)}</tr></thead>
-          <tbody className="divide-y divide-gray-100">{payments.slice(0, 5).map((payment) => <tr key={payment.id}><td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}</td><td className="px-4 py-3 text-sm font-semibold text-gray-900">{money(payment.amount)}</td><td className="px-4 py-3 text-sm text-gray-900">{money(payment.remainingBalance)}</td><td className="px-4 py-3"><span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Completed</span></td></tr>)}</tbody>
+        <table className="w-full min-w-[620px]"><thead className="border-y border-gray-200 bg-gray-50"><tr>{['Date', 'Amount', 'Remaining Balance', 'Status'].map((heading) => <th key={heading} className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{heading}</th>)}<th className="px-4 py-3"><span className="sr-only">Receipt</span></th></tr></thead>
+          <tbody className="divide-y divide-gray-100">{payments.slice(0, 5).map((payment) => (
+            <tr key={payment.id}>
+              <td className="px-4 py-3 text-sm text-gray-600">{formatDate(payment.paymentDate)}{paymentTimeLabel(payment.paymentDate, payment.createdAt) && <span className="block text-xs text-gray-500">{paymentTimeLabel(payment.paymentDate, payment.createdAt)}</span>}</td>
+              <td className="px-4 py-3 text-sm font-semibold text-gray-900">{money(payment.amount)}</td>
+              <td className="px-4 py-3 text-sm text-gray-900">{money(payment.remainingBalance)}</td>
+              <td className="px-4 py-3"><span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Completed</span></td>
+              <td className="px-4 py-3 text-right">
+                <button type="button" onClick={() => setReceipt(loanPaymentReceipt(payment))} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-green-700 hover:bg-green-50" aria-label={`Receipt of the payment of ${formatDate(payment.paymentDate)}`}>
+                  <Receipt className="h-4 w-4" aria-hidden="true" />Receipt
+                </button>
+              </td>
+            </tr>
+          ))}</tbody>
         </table>
       </div>
     </div>
@@ -325,6 +347,8 @@ export function MemberProfile({ userRole }: MemberProfileProps) {
           <span className="font-medium">+63 XXX XXX XXXX</span>
         </p>
       </div>
+      {/* Outside the phone sheet, so a click on the receipt does not close the sheet. */}
+      {receipt && <PaymentReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

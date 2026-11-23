@@ -79,6 +79,19 @@ export function formatDateTime(value: string | Date | null | undefined) {
   return date ? dateTimeFormatter.format(date) : '';
 }
 
+/**
+ * The time of a payment made on `date` (YYYY-MM-DD), from when the office
+ * recorded it: the time alone ("10:32 AM") when it was recorded that day in
+ * Manila, else "Recorded Nov 23, 2026, 10:32 AM" (entered on a later day, so
+ * the time is not when it was paid); '' when the record has no time.
+ */
+export function paymentTimeLabel(date: string, recordedAt: string | null | undefined) {
+  const recorded = recordedAt ? parseTimestamp(recordedAt) : null;
+  if (!recorded) return '';
+  const time = timeFormatter.format(recorded);
+  return dateOnlyToday(recorded) === date.slice(0, 10) ? time : `Recorded ${compactDateFormatter.format(recorded)}, ${time}`;
+}
+
 export function dateOnlySortValue(value: string) {
   if (!DATE_ONLY_PATTERN.test(value)) return Number.NaN;
   const [year, month, day] = value.split('-').map(Number);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { addDateOnlyDays, dateOnlySortValue, dateOnlyToday, formatDate, formatDateTime, formatTime, isDateOnly } from '../../src/utils/dateTime'
+import { addDateOnlyDays, dateOnlySortValue, dateOnlyToday, formatDate, formatDateTime, formatTime, isDateOnly, paymentTimeLabel } from '../../src/utils/dateTime'
 
 describe('Dates and times in Manila time (dateTime)', () => {
   test('a calendar date is written in words and never shifted by time zones', () => {
@@ -22,6 +22,19 @@ describe('Dates and times in Manila time (dateTime)', () => {
     expect(formatDate('not a date')).toBe('')
     expect(formatTime(undefined)).toBe('')
     expect(Number.isNaN(dateOnlySortValue('11/11/2026'))).toBe(true)
+  })
+
+  test('a payment shows the time it was recorded that day, in Manila time', () => {
+    // 02:32 UTC is 10:32 AM in Manila, on the payment's date.
+    expect(paymentTimeLabel('2026-11-23', '2026-11-23T02:32:00Z')).toBe('10:32 AM')
+    // 17:00 UTC on the 22nd is already 1:00 AM on the 23rd in Manila.
+    expect(paymentTimeLabel('2026-11-23', '2026-11-22T17:00:00Z')).toBe('1:00 AM')
+  })
+
+  test('edge case: a payment recorded on a later day says when it was recorded; no record time shows nothing', () => {
+    expect(paymentTimeLabel('2026-11-20', '2026-11-23T02:32:00Z')).toBe('Recorded Nov 23, 2026, 10:32 AM')
+    expect(paymentTimeLabel('2026-11-23', undefined)).toBe('')
+    expect(paymentTimeLabel('2026-11-23', 'not a time')).toBe('')
   })
 
   test('edge case: adding days crosses months and leap days correctly', () => {
