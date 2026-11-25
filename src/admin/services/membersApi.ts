@@ -56,8 +56,10 @@ export interface ShareContribution {
 export interface ShareDetails {
   contributions: ShareContribution[];
   total: number;
+  /** The most any member may hold: 10% of cooperativeTotal, the same for every member. */
   maximum: number;
   remaining: number;
+  cooperativeTotal?: number;
 }
 
 export interface MembersResponse {

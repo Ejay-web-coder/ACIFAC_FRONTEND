@@ -592,8 +592,11 @@ export interface ShareDetails {
     recordedByName: string | null;
   }>;
   total: number;
+  /** The most any member may hold: 10% of cooperativeTotal, the same for every member. */
   maximum: number;
   remaining: number;
+  /** The cooperative's total share capital (every member's, terminated members left out). */
+  cooperativeTotal?: number;
 }
 
 export interface MyMemberData {

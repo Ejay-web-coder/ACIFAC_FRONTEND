@@ -64,6 +64,8 @@ export interface Member {
     total: number;
     maximum: number;
     remaining: number;
+    /** The cooperative's total share capital; maximum is 10% of it, the same for every member. */
+    cooperativeTotal?: number;
   };
   profile?: {
     suffix?: string;
@@ -665,7 +667,7 @@ export function MembershipManagement({ userRole }: MembershipManagementProps) {
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b-2 border-green-200 pb-3">
                   <div>
                     <h3 className="text-lg font-bold text-green-900">Share Details</h3>
-                    <p className="mt-1 text-sm text-green-800">Installment contributions. A member may hold at most 10% of the cooperative's total share capital.</p>
+                    <p className="mt-1 text-sm text-green-800">Installment contributions. Every member has the same maximum: 10% of the cooperative's total share capital{selectedMember.shareDetails?.cooperativeTotal !== undefined ? ` (₱${selectedMember.shareDetails.cooperativeTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })} now)` : ''}.</p>
                   </div>
                   {canEdit && <button type="button" onClick={() => setShowShareContributionModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"><Plus className="h-4 w-4" />Add Contribution</button>}
                 </div>
