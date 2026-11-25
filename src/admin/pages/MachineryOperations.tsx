@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Plus, Calendar, Check, X, ClipboardList, Tractor, Settings2 } from 'lucide-react';
+import { Plus, Calendar, Check, X, ClipboardList, Tractor, Settings2, UserRound } from 'lucide-react';
 import { Pagination, StatCard } from '../../app/components/common/UiKit';
 import { usePagination } from '../../app/components/common/usePagination';
 import { UserRole } from '../../app/App';
@@ -19,6 +19,7 @@ import { BagSalesPanel } from '../components/machinery/BagSalesPanel';
 import { MachineSettingsModal } from '../components/machinery/MachineSettingsModal';
 import { DeclineRentalModal } from '../components/machinery/DeclineRentalModal';
 import { AddMachineModal } from '../components/machinery/AddMachineModal';
+import { BookingOperatorModal } from '../components/machinery/OperatorField';
 import { ConditionBadge } from '../components/machinery/shared';
 import { MachineAvailabilityCalendar } from '../../app/components/MachineAvailabilityCalendar';
 import { confirmAction } from '../../app/components/common/ConfirmDialog';
@@ -40,6 +41,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
   const tab: TabId = TABS.some((entry) => entry.id === searchParams.get('tab')) ? searchParams.get('tab') as TabId : 'rentals';
   const selectTab = (id: TabId) => setSearchParams(id === 'rentals' ? {} : { tab: id }, { replace: true });
   const [settingsMachine, setSettingsMachine] = useState<Machinery | null>(null);
+  const [operatorBooking, setOperatorBooking] = useState<MachineryOperation | null>(null);
   const [showAddMachine, setShowAddMachine] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [rentalRequests, setRentalRequests] = useState<RentalRequest[]>([]);
@@ -255,7 +257,7 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
         </nav>
       )}
 
-      {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} />}
+      {canEdit && tab === 'services' && <ServicesPanel machinery={machinery} rentalRequests={rentalRequests} operations={operations} />}
       {canEdit && tab === 'bags' && <BagSalesPanel />}
       {canEdit && tab === 'expenses' && <ExpensesPanel machinery={machinery} />}
 
@@ -368,12 +370,19 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
                         <span className="text-gray-500"> · {op.purpose}</span>
                       </p>
                       <p className="mt-0.5 text-xs text-gray-500">{formatDate(op.startDate)}{op.endDate !== op.startDate ? ` to ${formatDate(op.endDate)}` : ''} · {op.duration} day{op.duration === 1 ? '' : 's'}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Operator: {op.operatorName ? <span className="font-medium text-gray-800">{op.operatorName}</span> : <span className="italic">not entered</span>}</p>
                     </div>
-                    {op.status !== 'completed' && (
-                      <button type="button" onClick={() => void completeBooking(op)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        <Check className="h-4 w-4" />Mark completed
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button type="button" onClick={() => setOperatorBooking(op)} aria-label={`${op.operatorName ? 'Change' : 'Enter'} the operator of the ${op.machineryName} booking of ${op.memberName}`}
+                        className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none">
+                        <UserRound className="h-4 w-4" />{op.operatorName ? 'Change operator' : 'Enter operator'}
                       </button>
-                    )}
+                      {op.status !== 'completed' && (
+                        <button type="button" onClick={() => void completeBooking(op)} className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none">
+                          <Check className="h-4 w-4" />Mark completed
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -445,6 +454,9 @@ export function MachineryOperations({ userRole }: MachineryOperationsProps) {
       )}
       {showAddMachine && (
         <AddMachineModal machinery={machinery} onClose={() => setShowAddMachine(false)} onAdded={() => { setShowAddMachine(false); void loadData(); }} />
+      )}
+      {operatorBooking && (
+        <BookingOperatorModal operation={operatorBooking} onClose={() => setOperatorBooking(null)} onSaved={() => { setOperatorBooking(null); void loadData(); }} />
       )}
       {declining && (
         <DeclineRentalModal request={declining} saving={reviewing} onCancel={() => setDeclining(null)} onDecline={(reason) => void updateRequestStatus(declining.id, 'declined', reason)} />

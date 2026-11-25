@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Calculator, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { searchMembers, type Machinery, type MemberSuggestion, type RentalRequest } from '../../../app/services/authApi';
+import { searchMembers, type Machinery, type MachineryOperation, type MemberSuggestion, type RentalRequest } from '../../../app/services/authApi';
 import {
   CROPPING_PERIODS, SEASON_LABELS, createService, fetchRates, isBagUnit, quoteService, rateLabel, seasonForDate, updateService,
   type ClientCategory, type CroppingPeriod, type MachineryService, type Season, type ServicePayload, type ServiceQuote, type ServiceRate,
@@ -9,6 +9,7 @@ import {
 import { errorMessage } from '../../../lib/api';
 import { dateOnlyToday, formatDate } from '../../../utils/dateTime';
 import { Modal, bags, inputClass, labelClass, peso, primaryButton, secondaryButton } from './shared';
+import { OperatorField } from './OperatorField';
 
 // Paddy prices per kg used in the Jan–Jul 2026 IDD report.
 const PADDY_PRICES = [{ label: 'Fresh ₱14/kg', value: '14' }, { label: 'Dry ₱24/kg', value: '24' }];
@@ -16,6 +17,8 @@ const PADDY_PRICES = [{ label: 'Fresh ₱14/kg', value: '14' }, { label: 'Dry �
 interface Props {
   machinery: Machinery[];
   rentalRequests: RentalRequest[];
+  /** Approved bookings: picking one under "From rental request" fills in its operator. */
+  operations?: MachineryOperation[];
   service?: MachineryService | null;
   defaultMachineryId?: string;
   onClose: () => void;
@@ -24,7 +27,7 @@ interface Props {
 
 const text = (value: number | null | undefined) => (value === null || value === undefined ? '' : String(value));
 
-export function RecordServiceModal({ machinery, rentalRequests, service, defaultMachineryId, onClose, onSaved }: Props) {
+export function RecordServiceModal({ machinery, rentalRequests, operations = [], service, defaultMachineryId, onClose, onSaved }: Props) {
   const editing = Boolean(service);
   const machines = machinery.filter((machine) => machine.pricingMode === 'per_service' || machine.id === service?.machineryId);
   const [form, setForm] = useState({
@@ -52,6 +55,7 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     amountPaid: '',
     paymentDate: dateOnlyToday(),
     rentalRequestId: text(service?.rentalRequestId),
+    operatorName: service?.operatorName ?? '',
     notes: service?.notes ?? '',
   });
   const [member, setMember] = useState<{ id: number; name: string; number: string | null } | null>(
@@ -136,6 +140,13 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
     && (request.machineryId === form.machineryId || machinery.find((machine) => machine.id === request.machineryId)?.parentMachineryId === form.machineryId));
   const finalFee = form.changeFee && form.feeAmount.trim() ? Number(form.feeAmount) : quote?.feeAmount ?? null;
 
+  // The work done on a booking: its operator is filled in unless one is typed already.
+  const pickRentalRequest = (id: string) => {
+    set('rentalRequestId', id);
+    const operator = operations.find((operation) => String(operation.rentalRequestId) === id)?.operatorName;
+    if (operator && !form.operatorName.trim()) set('operatorName', operator);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (form.clientCategory === 'member' && !member) { toast.error('Search for the member and pick them from the list.'); return; }
@@ -161,6 +172,7 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
       feeAmount: form.changeFee ? form.feeAmount : undefined,
       feeOverrideReason: form.changeFee ? form.feeOverrideReason.trim() : undefined,
       rentalRequestId: form.rentalRequestId ? Number(form.rentalRequestId) : null,
+      operatorName: form.operatorName.trim(),
       notes: form.notes.trim(),
       ...(editing ? {} : { amountPaid: form.amountPaid || '0', paymentDate: form.paymentDate }),
     };
@@ -237,12 +249,13 @@ export function RecordServiceModal({ machinery, rentalRequests, service, default
             </label>
             {linkableRequests.length > 0 && (
               <label className={labelClass}>From rental request
-                <select value={form.rentalRequestId} onChange={(event) => set('rentalRequestId', event.target.value)} className={inputClass}>
+                <select value={form.rentalRequestId} onChange={(event) => pickRentalRequest(event.target.value)} className={inputClass}>
                   <option value="">None</option>
                   {linkableRequests.map((request) => <option key={request.id} value={request.id}>#{request.id} {request.memberName}{request.clientCategory === 'non_member' ? ' (non-member)' : ''} · {formatDate(request.startDate, true)}</option>)}
                 </select>
               </label>
             )}
+            <OperatorField machineryId={form.machineryId} value={form.operatorName} onChange={(value) => set('operatorName', value)} className="sm:col-span-2" />
           </fieldset>
 
           <fieldset className="rounded-xl border border-gray-200 p-4">

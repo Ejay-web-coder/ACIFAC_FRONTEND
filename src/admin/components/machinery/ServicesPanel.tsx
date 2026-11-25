@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus, Receipt, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Pagination, SectionCard } from '../../../app/components/common/UiKit';
-import type { Machinery, RentalRequest } from '../../../app/services/authApi';
+import type { Machinery, MachineryOperation, RentalRequest } from '../../../app/services/authApi';
 import { CROPPING_PERIODS, deleteService, fetchServices, rateLabel, type MachineryService } from '../../../app/services/machineryApi';
 import { errorMessage } from '../../../lib/api';
 import { useLiveRefresh } from '../../../lib/liveUpdates';
@@ -14,7 +14,7 @@ import { confirmAction } from '../../../app/components/common/ConfirmDialog';
 
 const selectClass = 'h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm';
 
-export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machinery[]; rentalRequests: RentalRequest[] }) {
+export function ServicesPanel({ machinery, rentalRequests, operations = [] }: { machinery: Machinery[]; rentalRequests: RentalRequest[]; operations?: MachineryOperation[] }) {
   const currentYear = Number(dateOnlyToday().slice(0, 4));
   const [filters, setFilters] = useState({ machineryId: '', croppingPeriod: '', year: String(currentYear), paymentStatus: '', search: '' });
   const [page, setPage] = useState(1);
@@ -57,6 +57,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
     : service.unit === 'bags_per_ha'
       ? <>{hectares(service.areaHa)}<span className="block text-xs text-gray-500">fee {bags(service.feeBags)} · wet season</span></>
       : service.unit === 'per_day' ? `${service.days} day(s)` : hectares(service.areaHa);
+  const operatorOf = (service: MachineryService) => service.operatorName && <span className="block text-xs text-gray-500">Operator: <span className="font-medium text-gray-700">{service.operatorName}</span></span>;
   const clientBadge = (service: MachineryService) => <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${service.clientCategory === 'member' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>{service.clientCategory === 'member' ? 'M' : 'NM'}</span>;
   const actionsOf = (service: MachineryService) => (
     <>
@@ -130,6 +131,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
                 {service.serviceType}
                 <span className="block text-xs text-gray-500">{formatDate(service.serviceDate, true)} · {service.croppingPeriod} cropping {service.year}</span>
                 <span className="block text-xs text-gray-500">{service.machineryName} · {rateLabel(service.unit, service.rateUsed)}</span>
+                {operatorOf(service)}
               </div>
               <dl className="grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-3 text-sm tabular-nums">
                 <div><dt className="text-xs text-gray-500">Work</dt><dd className="text-gray-900">{workOf(service)}</dd></div>
@@ -169,7 +171,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
                     {clientBadge(service)}
                     {service.clientAddress && <span className="block text-xs text-gray-500">{service.clientAddress}</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{service.serviceType}<span className="block text-xs text-gray-500">{service.machineryName} · {rateLabel(service.unit, service.rateUsed)}</span></td>
+                  <td className="px-4 py-3 text-gray-700">{service.serviceType}<span className="block text-xs text-gray-500">{service.machineryName} · {rateLabel(service.unit, service.rateUsed)}</span>{operatorOf(service)}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-700">
                     {workOf(service)}
                   </td>
@@ -194,7 +196,7 @@ export function ServicesPanel({ machinery, rentalRequests }: { machinery: Machin
       </SectionCard>
 
       {editing !== undefined && (
-        <RecordServiceModal machinery={machinery} rentalRequests={rentalRequests} service={editing} defaultMachineryId={filters.machineryId || undefined}
+        <RecordServiceModal machinery={machinery} rentalRequests={rentalRequests} operations={operations} service={editing} defaultMachineryId={filters.machineryId || undefined}
           onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); void load(); }} />
       )}
       {paying && <PaymentModal service={paying} onClose={() => setPaying(null)} onChanged={() => { void load(); }} />}

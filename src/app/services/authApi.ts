@@ -1098,6 +1098,10 @@ export interface MachineryOperation {
   duration: number;
   rentalFee: number;
   status: 'ongoing' | 'completed' | 'scheduled';
+  /** The request it was approved from (null for bookings made before requests). */
+  rentalRequestId: number | null;
+  /** Who operated the machine for this booking; null when not entered. */
+  operatorName: string | null;
 }
 
 export async function fetchAdminMachinery(params: { page?: number; limit?: number } = {}) {
@@ -1120,6 +1124,8 @@ export async function fetchMachineryCatalog() {
 export const reviewRentalRequest = (id: number, status: 'approved' | 'declined', reason?: string) =>
   apiPatch<{ message: string }>(`/api/machinery/requests/${id}`, status === 'declined' ? { status, reason } : { status });
 export const completeMachineryOperation = (id: number) => apiPatch<{ operation: MachineryOperation }>(`/api/machinery/operations/${id}`, { status: 'completed' });
+/** Who operated the machine for an approved booking; a blank name removes it. */
+export const setOperationOperator = (id: number, operatorName: string) => apiPatch<{ operation: MachineryOperation }>(`/api/machinery/operations/${id}/operator`, { operatorName });
 export const updateMachineryRequest = (id: string, payload: Partial<{ name: string; type: string; dailyFee: string | number; status: 'available' | 'maintenance'; lastMaintenance: string | null; nextMaintenance: string | null }>) => apiPatch<{ machinery: Machinery }>(`/api/machinery/${id}`, payload);
 /** Members book for themselves; the office books for a member (memberDatabaseId) or a non-member (clientCategory 'non_member' and clientName). */
 export const createRentalRequest = (payload: { machineryId: string; startDate: string; endDate: string; purpose: string; notes: string; memberDatabaseId?: number; clientCategory?: RenterCategory; clientName?: string }) =>

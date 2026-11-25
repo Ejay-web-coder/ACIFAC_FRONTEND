@@ -79,6 +79,8 @@ export interface MachineryService {
   balance: number;
   paymentStatus: PaymentStatus;
   rentalRequestId: number | null;
+  /** Who operated the machine for this service; null when not entered. */
+  operatorName: string | null;
   notes: string;
   lastPaymentDate: string | null;
 }
@@ -131,6 +133,8 @@ export interface ServicePayload {
   amountPaid?: string;
   paymentDate?: string;
   rentalRequestId?: number | null;
+  /** Blank removes the operator. */
+  operatorName?: string;
   notes?: string;
 }
 
@@ -262,6 +266,12 @@ export async function fetchBagSales(params: { year?: number | string; search?: s
 export const createBagSale = async (payload: BagSalePayload) => mapBagSale((await apiPost<{ sale: Record<string, unknown> }>('/api/machinery/bag-sales', payload)).sale);
 export const updateBagSale = async (id: number, payload: BagSalePayload) => mapBagSale((await apiPatch<{ sale: Record<string, unknown> }>(`/api/machinery/bag-sales/${id}`, payload)).sale);
 export const deleteBagSale = (id: number) => apiDelete<{ message: string }>(`/api/machinery/bag-sales/${id}`);
+
+/** A name already entered as an operator; onMachine: they ran the machine asked about. */
+export interface OperatorSuggestion { name: string; onMachine: boolean; lastUsed: string }
+/** Operators of bookings and services, those of the given machine first, then the most recent. */
+export const fetchOperators = async (machineryId?: string) =>
+  (await apiGet<{ operators: OperatorSuggestion[] }>(`/api/machinery/operators${query({ machineryId })}`)).operators;
 
 export const fetchRates = async (machineryId: string) => (await apiGet<{ rates: Record<string, unknown>[] }>(`/api/machinery/${encodeURIComponent(machineryId)}/rates`)).rates.map(mapRate);
 export const createRate = async (machineryId: string, payload: { serviceType: string; unit: ServiceUnit; season?: Season | null; memberRate: string; nonMemberRate: string; effectiveFrom: string; effectiveTo?: string | null }) =>

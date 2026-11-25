@@ -77,7 +77,8 @@ export function MachineHistoryModal({ machine, from, to, periodLabel, onClose }:
                         <tr key={row.id}>
                           <td className="whitespace-nowrap px-3 py-2">{formatDate(row.serviceDate, true)}</td>
                           <td className="px-3 py-2">{row.serviceType}<p className="text-xs text-gray-500">{row.unit === 'per_100_bags' ? `${row.totalBags ?? 0} bags` : row.unit === 'bags_per_ha' ? `${row.areaHa} ha · ${row.feeBags ?? 0} bags fee` : `${row.areaHa} ha`}</p></td>
-                          <td className="px-3 py-2">{row.clientName}{row.clientCategory === 'non_member' && <span className="ml-1 text-xs text-gray-500">(non-member)</span>}</td>
+                          <td className="px-3 py-2">{row.clientName}{row.clientCategory === 'non_member' && <span className="ml-1 text-xs text-gray-500">(non-member)</span>}
+                            {row.operatorName && <p className="text-xs text-gray-500">Operator: {row.operatorName}</p>}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{peso(row.feeAmount)}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{peso(row.amountPaid)}</td>
                           <td className="px-3 py-2"><PaymentBadge status={row.paymentStatus} /></td>
